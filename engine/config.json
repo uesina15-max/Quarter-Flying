@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "window": {
+    "title": "Quarter Flying Engine",
+    "width": 1280,
+    "height": 720,
+    "vsync": true
+  },
+  "paths": {
+    "assetRoot": "./",
+    "shaderRoot": "./assets/shaders/"
+  }
+}

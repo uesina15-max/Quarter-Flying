@@ -1,0 +1,7 @@
+@echo off
+cd /d "@CMAKE_CURRENT_BINARY_DIR@"
+python editor/main.py
+if errorlevel 1 (
+    echo Error running editor
+    pause
+)

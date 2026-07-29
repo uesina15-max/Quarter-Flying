@@ -1,0 +1,1 @@
+# GE Editor panels package

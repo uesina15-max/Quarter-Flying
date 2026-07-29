@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "objects": [
+    {
+      "name": "cube_grid",
+      "model": "assets/models/cube.obj",
+      "grid": {
+        "count": [10, 1, 10],
+        "spacing": [2.5, 0.0, 2.5],
+        "origin": [-12.5, 0.0, -12.5]
+      },
+      "material": {
+        "color": [0.7, 0.7, 0.7],
+        "roughness": 0.5,
+        "metallic": 0.5
+      }
+    },
+    {
+      "name": "center_pyramid",
+      "model": "assets/models/pyramid.obj",
+      "instances": [
+        {
+          "position": [0.0, 3.0, 0.0],
+          "rotation": [0.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0]
+        }
+      ],
+      "material": {
+        "color": [0.9, 0.8, 0.2],
+        "roughness": 0.3,
+        "metallic": 0.8
+      }
+    }
+  ],
+  "lights": [
+    {
+      "type": "point",
+      "position": [0.0, 5.0, 0.0],
+      "color": [1.0, 1.0, 1.0],
+      "intensity": 1.0
+    },
+    {
+      "type": "point",
+      "position": [10.0, 3.0, 10.0],
+      "color": [1.0, 0.2, 0.2],
+      "intensity": 1.0
+    },
+    {
+      "type": "point",
+      "position": [-10.0, 3.0, -10.0],
+      "color": [0.2, 0.2, 1.0],
+      "intensity": 1.0
+    }
+  ]
+}

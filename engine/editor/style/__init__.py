@@ -1,0 +1,1 @@
+# GE Editor style package
