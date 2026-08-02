@@ -49,6 +49,10 @@ namespace Engine {
     using ComponentFactory = std::function<void(ECSRegistry&, Entity, const nlohmann::json&)>;
     // 부분 데이터 업데이트 함수 (StringHash 기반으로 변경)
     using ComponentFieldPatcher = std::function<void(ECSRegistry&, Entity, StringHash, const nlohmann::json&)>;
+    // 동적 컴포넌트 제거 함수 (타입 문자열 기반 dynamic remove)
+    using ComponentRemover = std::function<void(ECSRegistry&, Entity)>;
+    // 동적 컴포넌트 존재 여부 확인 함수
+    using ComponentChecker = std::function<bool(ECSRegistry&, Entity)>;
 
     struct ComponentInfo {
         std::string name;
@@ -58,6 +62,8 @@ namespace Engine {
         ComponentSerializer serialize;
         ComponentFactory deserialize;
         ComponentFieldPatcher patchField;
+        ComponentRemover remove;    // dynamic remove by type name
+        ComponentChecker hasComponent; // dynamic has-component check
     };
 
     // ========================================
@@ -199,6 +205,12 @@ namespace Engine {
         info.fields.push_back({Engine::StringHash(#Member), #Member, Engine::FieldType::FieldEnum, offsetof(Type, Member), DisplayName, "", 0.0f, 0.0f, {}});
 
 #define GE_END_COMPONENT(CompType) \
+        info.remove = [](Engine::ECSRegistry& reg, Engine::Entity e) { \
+            reg.RemoveComponent<CompType>(e); \
+        }; \
+        info.hasComponent = [](Engine::ECSRegistry& reg, Engine::Entity e) -> bool { \
+            return reg.HasComponent<CompType>(e); \
+        }; \
         Engine::ComponentRegistry::RegisterPODComponent<CompType>(info); \
     }
 

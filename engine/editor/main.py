@@ -151,9 +151,12 @@ class EditorMainWindow(QMainWindow):
 
         # Edit
         edit_menu = mb.addMenu("Edit")
-        act_undo  = QAction("Undo", self, shortcut="Ctrl+Z")
-        act_redo  = QAction("Redo", self, shortcut="Ctrl+Y")
-        edit_menu.addActions([act_undo, act_redo])
+        self._act_undo = QAction("Undo", self, shortcut="Ctrl+Z")
+        self._act_redo = QAction("Redo", self, shortcut="Ctrl+Y")
+        self._act_undo.triggered.connect(self._on_undo)
+        self._act_redo.triggered.connect(self._on_redo)
+        edit_menu.addActions([self._act_undo, self._act_redo])
+        self._update_undo_redo_actions()
 
         # View
         view_menu = mb.addMenu("View")
@@ -411,9 +414,53 @@ class EditorMainWindow(QMainWindow):
             self.status.log("엔진 ECS 연결 완료")
             print("[Editor] 엔진 ECS 연결 완료")
 
+            import ge_python
+            ge_python.EditorAPI.get_instance().set_registry(registry)
+            self.inspector.connect_editor(ge_python.EditorAPI.get_instance())
+            self._update_undo_redo_actions()
+
         except Exception as e:
             print(f"[Editor] ECS 연결 실패: {e}")
             self.status.log(f"ECS 연결 실패: {e}")
+
+    def _on_undo(self):
+        if not HAS_ENGINE:
+            return
+        try:
+            import ge_python
+            ge_python.CommandManager.get_instance().undo()
+            self._after_edit_command()
+        except ge_python.EngineError as e:
+            self.status.log(f"Undo failed: {e}")
+
+    def _on_redo(self):
+        if not HAS_ENGINE:
+            return
+        try:
+            import ge_python
+            ge_python.CommandManager.get_instance().redo()
+            self._after_edit_command()
+        except ge_python.EngineError as e:
+            self.status.log(f"Redo failed: {e}")
+
+    def _after_edit_command(self):
+        self._update_undo_redo_actions()
+        if self.inspector._current_entity_id != -1:
+            self.inspector.on_entity_selected(self.inspector._current_entity_id)
+
+    def _update_undo_redo_actions(self):
+        if not HAS_ENGINE:
+            self._act_undo.setEnabled(False)
+            self._act_redo.setEnabled(False)
+            return
+        try:
+            import ge_python
+            cm = ge_python.CommandManager.get_instance()
+            self._act_undo.setEnabled(cm.can_undo())
+            self._act_redo.setEnabled(cm.can_redo())
+        except Exception:
+            self._act_undo.setEnabled(False)
+            self._act_redo.setEnabled(False)
 
     # ----------------------------------------------------------------
     # 레이아웃 리셋

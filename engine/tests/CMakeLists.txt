@@ -68,6 +68,22 @@ add_executable(SimpleEngineTests
     ResultPropertyTests.cpp
     StringHashTests.cpp
 
+    # --- Command / Transaction Tests ---
+    TransactionTests.cpp
+    RotateScaleEntityCommandTests.cpp
+    CreateDestroyEntityCommandTests.cpp
+    AddRemoveComponentCommandTests.cpp
+    EditorCommandIntegrationTests.cpp
+
+    # --- Editor Command Sources ---
+    ../editor/commands/MoveEntityCommand.cpp
+    ../editor/commands/RotateEntityCommand.cpp
+    ../editor/commands/ScaleEntityCommand.cpp
+    ../editor/commands/CreateEntityCommand.cpp
+    ../editor/commands/DestroyEntityCommand.cpp
+    ../editor/commands/AddComponentCommand.cpp
+    ../editor/commands/RemoveComponentCommand.cpp
+
     # --- RenderGraph Tests ---
     HandleTypeContractTests.cpp
     RendererInstancingTests.cpp

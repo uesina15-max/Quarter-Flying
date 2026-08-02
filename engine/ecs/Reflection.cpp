@@ -174,6 +174,12 @@ namespace Engine {
                 comp->dirty = true;
                 reg.OnComponentModified(e, Engine::StringHash("ScriptComponent"));
             };
+            info.remove = [](Engine::ECSRegistry& reg, Engine::Entity e) {
+                reg.RemoveComponent<ScriptComponent>(e);
+            };
+            info.hasComponent = [](Engine::ECSRegistry& reg, Engine::Entity e) -> bool {
+                return reg.HasComponent<ScriptComponent>(e);
+            };
             
             Engine::ComponentRegistry::Register(info);
         }
@@ -234,6 +240,12 @@ namespace Engine {
                 else if (fieldHash == Engine::StringHash("hit_action")) comp->hit_action = val.get<std::string>();
                 else if (fieldHash == Engine::StringHash("default_state")) comp->default_state = static_cast<AIState>(val.get<int>());
                 reg.OnComponentModified(e, Engine::StringHash("AIComponent"));
+            };
+            info.remove = [](Engine::ECSRegistry& reg, Engine::Entity e) {
+                reg.RemoveComponent<AIComponent>(e);
+            };
+            info.hasComponent = [](Engine::ECSRegistry& reg, Engine::Entity e) -> bool {
+                return reg.HasComponent<AIComponent>(e);
             };
             
             Engine::ComponentRegistry::Register(info);

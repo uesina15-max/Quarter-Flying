@@ -25,11 +25,24 @@ set(PLATFORM_SOURCES
 
 set(CORE_SOURCES
     core/Engine.cpp
+    core/CommandManager.cpp
+    core/Transaction.cpp
     core/logging/Logger.cpp
     core/memory/FrameAllocator.cpp
     core/memory/MemoryTracker.cpp
     core/UUID.cpp
     ${PLATFORM_SOURCES}
+)
+
+set(EDITOR_SOURCES
+    editor/EditorAPI.cpp
+    editor/commands/MoveEntityCommand.cpp
+    editor/commands/RotateEntityCommand.cpp
+    editor/commands/ScaleEntityCommand.cpp
+    editor/commands/CreateEntityCommand.cpp
+    editor/commands/DestroyEntityCommand.cpp
+    editor/commands/AddComponentCommand.cpp
+    editor/commands/RemoveComponentCommand.cpp
 )
 
 set(JOB_SOURCES
@@ -80,6 +93,7 @@ set(ASSET_SOURCES
 # 2. Engine Shared Library
 add_library(ge_engine SHARED
     ${CORE_SOURCES}
+    ${EDITOR_SOURCES}
     ${JOB_SOURCES}
     ${RENDERER_SOURCES}
     ${ECS_SOURCES}
@@ -122,6 +136,7 @@ pybind11_add_module(ge_python
     bindings/MathBindings.cpp
     bindings/ECSBindings.cpp
     bindings/EngineBindings.cpp
+    bindings/EditorBindings.cpp
 )
 target_link_libraries(ge_python PRIVATE ge_engine)
 
@@ -143,7 +158,10 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(rapidcheck)
 
-add_subdirectory(tests)
+# Only add tests directory if it exists
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    add_subdirectory(tests)
+endif()
 
 # 5. Installation (Python Editor as main entry point)
 # Install Python module

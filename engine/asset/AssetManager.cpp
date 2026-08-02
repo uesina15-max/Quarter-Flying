@@ -104,18 +104,14 @@ namespace Engine
         std::function<void(Result<AssetHandle>)> callback
     )
     {
-        // Async loading implementation (future)
-        // Currently sync loading as placeholder
-        auto result = LoadAsset(path);
-        
-        if (callback)
-        {
-            callback(result);
-        }
-
-        std::promise<Result<AssetHandle>> promise;
-        promise.set_value(result);
-        return promise.get_future();
+        return std::async(std::launch::async, [this, path, callback]() {
+            auto result = LoadAsset(path);
+            if (callback)
+            {
+                callback(result);
+            }
+            return result;
+        });
     }
 
     void AssetManager::UnloadAsset(AssetHandle handle)

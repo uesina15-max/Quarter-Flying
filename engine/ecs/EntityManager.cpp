@@ -73,7 +73,9 @@ namespace Engine
 
     bool EntityManager::IsEntityValid(Entity entity) const
     {
-        return entity.IsValid() && entity.id < nextEntityID.load(std::memory_order_relaxed);
+        if (!entity.IsValid())
+            return false;
+        return activeEntities.count(entity.id) > 0;
     }
 
     uint32_t EntityManager::GetEntityCount() const

@@ -1,5 +1,6 @@
 #include "WorldManager.h"
 #include "../core/logging/Logger.h"
+#include "../core/CommandManager.h"
 #include <string>
 #include <memory>
 #include <utility>
@@ -50,6 +51,7 @@ namespace Engine
 
     void WorldManager::SetActiveWorld(World* world)
     {
+        CommandManager::GetInstance().Clear();
         activeWorld = world;
         Logger::Log(LogLevel::Info, "WorldManager: Active world changed");
     }

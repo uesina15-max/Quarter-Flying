@@ -7,4 +7,5 @@ PYBIND11_MODULE(ge_python, m) {
     Engine::Bindings::RegisterMathBindings(m);
     Engine::Bindings::RegisterECSBindings(m);
     Engine::Bindings::RegisterEngineBindings(m);
+    Engine::Bindings::RegisterEditorBindings(m);
 }

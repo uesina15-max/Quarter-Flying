@@ -1,6 +1,7 @@
 #include "World.h"
 #include "../job/JobSystem.h"
 #include "../core/logging/Logger.h"
+#include "../core/CommandManager.h"
 #include "SystemDependencyAnalyzer.h"
 #include "ParallelGroupBuilder.h"
 #include "SystemDispatcher.h"
@@ -122,6 +123,7 @@ namespace Engine
 
             // 스냅샷에서 레지스트리 상태 복원
             DeserializeRegistry(*registry, m_Snapshot);
+            CommandManager::GetInstance().Clear();
             m_EditorState = EditorState::Edit;
             Logger::Info("PIE: Stop (Snapshot restored)");
         }

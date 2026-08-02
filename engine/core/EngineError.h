@@ -57,7 +57,16 @@ namespace Engine
         InvalidState,
         InvalidParameter,
         OperationFailed,
-        NotImplemented
+        NotImplemented,
+
+        // Editor / Command errors
+        StaleEntityHandle,
+        DuplicateComponent,
+        InvalidPropertyPath,
+        TransactionAlreadyOpen,
+        NoOpenTransaction,
+        NotMergeable,
+        InternalCommandFailure
     };
     
     // ========================================

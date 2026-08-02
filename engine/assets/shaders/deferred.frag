@@ -71,7 +71,8 @@ void main()
 
     // Reconstruct view-space position from depth
     float depth = texture(gDepth, TexCoords).r;
-    vec4 clipSpacePos = vec4(TexCoords * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    float ndcDepth = depth * 2.0 - 1.0;
+    vec4 clipSpacePos = vec4(TexCoords * 2.0 - 1.0, ndcDepth, 1.0);
     vec4 viewSpacePos = inverseProj * clipSpacePos;
     vec3 FragPos = viewSpacePos.xyz / viewSpacePos.w;
 

@@ -927,3 +927,105 @@ RC_GTEST_PROP(ECSRegistry, EntityDestructionComponentCleanupSequential, ())
         RC_ASSERT(r->meshHandle == i);
     }
 }
+
+// ============================================================================
+// Task 2: ECSRegistry::IsValid 테스트
+// Requirements: 7.3, 7.4
+// ============================================================================
+
+// Test: 살아있는 Entity에 대해 IsValid가 true를 반환
+TEST(ECSRegistry, IsValidReturnsTrueForLiveEntity)
+{
+    ECSRegistry registry;
+
+    Entity entity = registry.CreateEntity();
+
+    EXPECT_TRUE(registry.IsValid(entity));
+}
+
+// Test: DestroyEntity 후 IsValid가 false를 반환
+TEST(ECSRegistry, IsValidReturnsFalseAfterDestroy)
+{
+    ECSRegistry registry;
+
+    Entity entity = registry.CreateEntity();
+    EXPECT_TRUE(registry.IsValid(entity));
+
+    registry.DestroyEntity(entity);
+
+    EXPECT_FALSE(registry.IsValid(entity));
+}
+
+// Test: null Entity (id=0)에 대해 IsValid가 false를 반환
+TEST(ECSRegistry, IsValidReturnsFalseForNullEntity)
+{
+    ECSRegistry registry;
+
+    Entity nullEntity; // id = 0
+    EXPECT_FALSE(registry.IsValid(nullEntity));
+}
+
+// Test: 임의의 ID를 가진 Entity (생성된 적 없음)에 대해 IsValid가 false를 반환
+TEST(ECSRegistry, IsValidReturnsFalseForUnknownEntity)
+{
+    ECSRegistry registry;
+
+    Entity unknown(9999999);
+    EXPECT_FALSE(registry.IsValid(unknown));
+}
+
+// Test: 여러 Entity 중 일부만 파괴했을 때 각각 올바른 결과 반환
+TEST(ECSRegistry, IsValidCorrectForMixedEntities)
+{
+    ECSRegistry registry;
+
+    Entity e1 = registry.CreateEntity();
+    Entity e2 = registry.CreateEntity();
+    Entity e3 = registry.CreateEntity();
+
+    registry.DestroyEntity(e2);
+
+    EXPECT_TRUE(registry.IsValid(e1));
+    EXPECT_FALSE(registry.IsValid(e2));
+    EXPECT_TRUE(registry.IsValid(e3));
+}
+
+// Property Test: 생성된 Entity는 항상 IsValid == true
+// Validates: Requirements 7.3
+RC_GTEST_PROP(ECSRegistry, IsValidTrueForAllCreatedEntities, ())
+{
+    auto numEntities = *rc::gen::inRange<uint32_t>(1u, 201u);
+
+    ECSRegistry registry;
+    std::vector<Entity> entities;
+
+    for (uint32_t i = 0; i < numEntities; ++i)
+    {
+        Entity e = registry.CreateEntity();
+        entities.push_back(e);
+        RC_ASSERT(registry.IsValid(e));
+    }
+}
+
+// Property Test: DestroyEntity 후 IsValid == false
+// Validates: Requirements 7.3
+RC_GTEST_PROP(ECSRegistry, IsValidFalseAfterDestroyForAllEntities, ())
+{
+    auto numEntities = *rc::gen::inRange<uint32_t>(1u, 101u);
+
+    ECSRegistry registry;
+    std::vector<Entity> entities;
+
+    for (uint32_t i = 0; i < numEntities; ++i)
+    {
+        entities.push_back(registry.CreateEntity());
+    }
+
+    // 모든 Entity를 파괴하고 각각 false 확인
+    for (Entity e : entities)
+    {
+        RC_ASSERT(registry.IsValid(e));
+        registry.DestroyEntity(e);
+        RC_ASSERT(!registry.IsValid(e));
+    }
+}

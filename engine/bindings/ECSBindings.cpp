@@ -33,6 +33,15 @@ void RegisterEntityBindings(pybind11::module_& m) {
         });
 }
 
+// Read-only snapshot of a TransformComponent exposed to Python.
+// Values are copied out of the ECS at query time so Python scripts
+// cannot mutate engine state by accident.
+struct TransformComponentView {
+    Vec3       position;
+    Quaternion rotation;
+    Vec3       scale;
+};
+
 void RegisterComponentBindings(pybind11::module_& m) {
     namespace py = pybind11;
 
@@ -40,39 +49,46 @@ void RegisterComponentBindings(pybind11::module_& m) {
     // Components
     // ============================================================
 
-    // TransformComponent
+    // TransformComponentView — read-only snapshot (Req 6.2, 6.6)
+    // Must be registered before TransformComponent because ECSRegistry
+    // may expose factory helpers that return views.
+    py::class_<TransformComponentView>(m, "TransformComponentView")
+        .def(py::init<>())
+        .def_readonly("position", &TransformComponentView::position)
+        .def_readonly("rotation", &TransformComponentView::rotation)
+        .def_readonly("scale",    &TransformComponentView::scale)
+        .def("__repr__", [](const TransformComponentView& v) {
+            return "TransformComponentView(pos=(" +
+                   std::to_string(v.position.x) + "," +
+                   std::to_string(v.position.y) + "," +
+                   std::to_string(v.position.z) + "))";
+        });
+
+    // TransformComponent — all fields read-only (Req 6.1, 6.3)
+    // Transform mutations must go through EditorAPI.
     py::class_<TransformComponent>(m, "TransformComponent")
         .def(py::init<>())
-        .def_readwrite("position", &TransformComponent::position)
-        .def_readwrite("rotation", &TransformComponent::rotation)
-        .def_readwrite("scale",    &TransformComponent::scale)
-        .def_property("position_x",
-            [](const TransformComponent& tc){ return tc.position.x; },
-            [](TransformComponent& tc, float v){ tc.position.x = v; })
-        .def_property("position_y",
-            [](const TransformComponent& tc){ return tc.position.y; },
-            [](TransformComponent& tc, float v){ tc.position.y = v; })
-        .def_property("position_z",
-            [](const TransformComponent& tc){ return tc.position.z; },
-            [](TransformComponent& tc, float v){ tc.position.z = v; })
-        .def_property("rotation_x",
-            [](const TransformComponent& tc){ return tc.rotation.x; },
-            [](TransformComponent& tc, float v){ tc.rotation.x = v; })
-        .def_property("rotation_y",
-            [](const TransformComponent& tc){ return tc.rotation.y; },
-            [](TransformComponent& tc, float v){ tc.rotation.y = v; })
-        .def_property("rotation_z",
-            [](const TransformComponent& tc){ return tc.rotation.z; },
-            [](TransformComponent& tc, float v){ tc.rotation.z = v; })
-        .def_property("scale_x",
-            [](const TransformComponent& tc){ return tc.scale.x; },
-            [](TransformComponent& tc, float v){ tc.scale.x = v; })
-        .def_property("scale_y",
-            [](const TransformComponent& tc){ return tc.scale.y; },
-            [](TransformComponent& tc, float v){ tc.scale.y = v; })
-        .def_property("scale_z",
-            [](const TransformComponent& tc){ return tc.scale.z; },
-            [](TransformComponent& tc, float v){ tc.scale.z = v; });
+        .def_readonly("position", &TransformComponent::position)
+        .def_readonly("rotation", &TransformComponent::rotation)
+        .def_readonly("scale",    &TransformComponent::scale)
+        .def_property_readonly("position_x",
+            [](const TransformComponent& tc){ return tc.position.x; })
+        .def_property_readonly("position_y",
+            [](const TransformComponent& tc){ return tc.position.y; })
+        .def_property_readonly("position_z",
+            [](const TransformComponent& tc){ return tc.position.z; })
+        .def_property_readonly("rotation_x",
+            [](const TransformComponent& tc){ return tc.rotation.x; })
+        .def_property_readonly("rotation_y",
+            [](const TransformComponent& tc){ return tc.rotation.y; })
+        .def_property_readonly("rotation_z",
+            [](const TransformComponent& tc){ return tc.rotation.z; })
+        .def_property_readonly("scale_x",
+            [](const TransformComponent& tc){ return tc.scale.x; })
+        .def_property_readonly("scale_y",
+            [](const TransformComponent& tc){ return tc.scale.y; })
+        .def_property_readonly("scale_z",
+            [](const TransformComponent& tc){ return tc.scale.z; });
 
     // RenderableComponent
     py::class_<RenderableComponent>(m, "RenderableComponent")

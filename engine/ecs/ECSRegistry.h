@@ -35,6 +35,10 @@ namespace Engine
 
         void DestroyEntity(Entity entity);
 
+        // Entity 유효성 검사
+        // entity.IsValid() 먼저 확인 후 EntityManager에 살아있는지 확인
+        bool IsValid(Entity entity) const;
+
         // ========================================
         // Component Management
         // ========================================

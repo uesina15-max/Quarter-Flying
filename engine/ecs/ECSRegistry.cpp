@@ -47,6 +47,11 @@ namespace Engine
         entityManager->DestroyEntity(entity);
     }
 
+    bool ECSRegistry::IsValid(Entity entity) const
+    {
+        return entityManager->IsEntityValid(entity);
+    }
+
     void ECSRegistry::OnComponentModified(Entity entity, StringHash componentHash)
     {
         // 렌더링 시스템, 물리 시스템 등에 Dirty 상태 알림

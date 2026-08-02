@@ -48,11 +48,13 @@ class ComponentWidget(QGroupBox):
 
 # 0: Int, 1: Float, 2: Bool, 3: Vec3, 4: String, 5: EntityRef, 6: Enum
 class DynamicComponentWidget(ComponentWidget):
-    def __init__(self, comp_name: str, schema_jsonstr: str, entity_id: int, registry, parent=None):
+    def __init__(self, comp_name: str, schema_jsonstr: str, entity_id: int, registry, editor_api=None, parent=None):
         super().__init__(f"  {comp_name}", parent)
         self.comp_name = comp_name
         self.entity_id = entity_id
         self.registry = registry
+        self.editor_api = editor_api
+        self._merge_active = False
         
         schema_data = json.loads(schema_jsonstr) if schema_jsonstr else {}
         self._schema_version = schema_data.get("version", 1)
@@ -115,6 +117,8 @@ class DynamicComponentWidget(ComponentWidget):
                     sp.setDecimals(2)
                     sp.setButtonSymbols(QDoubleSpinBox.NoButtons)
                     sp.valueChanged.connect(make_change_handler(field['name']))
+                    if self._uses_editor_api(field['name']):
+                        sp.installEventFilter(self)
                     v_layout.addWidget(sp)
                     widget.append(sp)
                 h.addLayout(v_layout)
@@ -148,6 +152,45 @@ class DynamicComponentWidget(ComponentWidget):
         self._building = False
         if HAS_ENGINE and self.registry:
             self.load_data()
+
+    def _uses_editor_api(self, fname: str) -> bool:
+        return (
+            self.editor_api is not None
+            and self.comp_name == "TransformComponent"
+            and fname == "position"
+        )
+
+    def eventFilter(self, obj, event):
+        if not self._uses_editor_api("position"):
+            return super().eventFilter(obj, event)
+
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.FocusIn:
+            self._begin_merge_session()
+        elif event.type() == QEvent.FocusOut:
+            self._end_merge_session()
+        return super().eventFilter(obj, event)
+
+    def _begin_merge_session(self):
+        if self._merge_active or not HAS_ENGINE:
+            return
+        try:
+            import ge_python
+            ge_python.CommandManager.get_instance().begin_merge_session()
+            self._merge_active = True
+        except Exception as e:
+            print(f"[Inspector] Merge session start failed: {e}")
+
+    def _end_merge_session(self):
+        if not self._merge_active or not HAS_ENGINE:
+            return
+        try:
+            import ge_python
+            ge_python.CommandManager.get_instance().end_merge_session()
+        except Exception as e:
+            print(f"[Inspector] Merge session end failed: {e}")
+        finally:
+            self._merge_active = False
 
     def set_read_only(self, read_only: bool):
         for data in self._fields.values():
@@ -203,7 +246,15 @@ class DynamicComponentWidget(ComponentWidget):
         elif ftype in (5, 6): val = w.currentData()
         
         try:
-            from ge_python import Entity
+            from ge_python import Entity, Vec3
+
+            if self._uses_editor_api(fname):
+                self.editor_api.move_entity(
+                    Entity(self.entity_id),
+                    Vec3(val[0], val[1], val[2]),
+                )
+                return
+
             # Partial Single-Field Update calling with schema version protection!
             self.registry.SetComponentFieldJson(
                 Entity(self.entity_id), 
@@ -220,6 +271,7 @@ class InspectorPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.registry = None
+        self.editor_api = None
         self._current_entity_id = -1
         self._play_mode = False
         self._build_ui()
@@ -261,6 +313,9 @@ class InspectorPanel(QWidget):
     def connect_registry(self, registry):
         self.registry = registry
 
+    def connect_editor(self, editor_api):
+        self.editor_api = editor_api
+
     @Slot(int)
     def on_entity_selected(self, entity_id: int):
         self._current_entity_id = entity_id
@@ -294,7 +349,7 @@ class InspectorPanel(QWidget):
                     json_str = self.registry.GetComponentJson(Entity(entity_id), c)
                     if json_str and json_str != "{}":
                         schema = self.registry.GetComponentSchema(c)
-                        w = DynamicComponentWidget(c, schema, entity_id, self.registry)
+                        w = DynamicComponentWidget(c, schema, entity_id, self.registry, self.editor_api)
                         w.set_read_only(self._play_mode)
                         self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, w)
             except Exception as e:
