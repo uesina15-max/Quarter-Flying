@@ -159,6 +159,7 @@ namespace Engine
         void UpdateLODInstance(LODInstance& instance, const Camera& camera);
         LODConfig* FindLODConfig(uint64_t meshGuid);
         LODInstance* FindInstance(uint32_t entityId);
+        const LODInstance* FindInstance(uint32_t entityId) const;
 
     private:
         std::unordered_map<uint64_t, LODConfig> lodConfigs;

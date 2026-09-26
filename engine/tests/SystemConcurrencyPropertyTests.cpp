@@ -40,6 +40,19 @@ static const size_t kCompBHash = typeid(RenderableComponent).hash_code();
 // overlapped in time (parallel) or ran back-to-back (sequential).
 // ============================================================================
 
+// 아래 헬퍼 타입은 전부 익명 네임스페이스에 둔다(이 파일에서만 보이게).
+// 증상: SystemConcurrencyPropertyTests의 4개 테스트가 오랫동안 "기존 무관 실패"로 방치돼 있었다.
+//   RapidCheck는 "Falsifiable after 1 tests"로 실패했고, Integration 테스트는
+//   "Expected: (windowA.end.time_since_epoch().count()) > (0), actual: 0 vs 0"로 실패했다.
+//   Writer와 Reader가 같은 컴포넌트를 쓰는데도 병렬로 판정됐고, 시스템 하나는 Update가 아예 안 돈 것처럼 보였다.
+// 원인: 이 파일과 SystemParallelExecutionTests.cpp 양쪽에 전역 `class ReadOnlySystemA`가 서로 다른
+//   정의로 있었다(ODR 위반). 클래스 안에 정의된 멤버 함수는 inline이라 링커가 한쪽 정의만 남기고,
+//   다른 파일의 ReadOnlySystemA가 그 정의로 실행됐다. 그래서 읽는 컴포넌트 해시가 달라 충돌이
+//   없는 것으로 판정됐고, Update는 window를 기록하는 대신 updateCount++로 엉뚱한 메모리를 건드렸다.
+//   컴파일 에러도 링크 에러도 크래시도 없이 조용히 틀리게 동작했다.
+namespace
+{
+
 struct ExecutionWindow
 {
     std::chrono::steady_clock::time_point start;
@@ -196,6 +209,7 @@ static bool CanRunInParallel(const System& a, const System& b)
 
     return true;
 }
+} // namespace (anonymous)
 
 // ============================================================================
 // Test Fixture

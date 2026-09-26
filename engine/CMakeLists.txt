@@ -43,6 +43,8 @@ set(EDITOR_SOURCES
     editor/commands/DestroyEntityCommand.cpp
     editor/commands/AddComponentCommand.cpp
     editor/commands/RemoveComponentCommand.cpp
+    editor/commands/InstantiatePrefabCommand.cpp
+    editor/commands/RevertPrefabInstanceCommand.cpp
 )
 
 set(JOB_SOURCES
@@ -68,6 +70,10 @@ set(RENDERER_SOURCES
     renderer/LODSystem.cpp
     renderer/OcclusionCulling.cpp
     renderer/DynamicResolution.cpp
+    renderer/DebugGridRenderer.cpp
+    renderer/BoneLineRenderer.cpp
+    renderer/SceneMeshRenderer.cpp
+    renderer/ParticleRenderer.cpp
 )
 
 set(ECS_SOURCES
@@ -75,6 +81,8 @@ set(ECS_SOURCES
     ecs/WorldManager.cpp
     ecs/Reflection.cpp
     ecs/ScriptSystem.cpp
+    ecs/RenderSystem.cpp
+    ecs/ParticleSystem.cpp
     ecs/ComponentManager.cpp
     ecs/ComponentTypeRegistry.cpp
     ecs/ECSRegistry.cpp
@@ -90,14 +98,31 @@ set(ASSET_SOURCES
     asset/importers/TextureImporter.cpp
 )
 
+set(ANIMATION_SOURCES
+    animation/Skeleton.cpp
+    animation/SkeletonSignature.cpp
+    animation/AnimationSampler.cpp
+    animation/AnimationPlayer.cpp
+    animation/SkeletonJsonIO.cpp
+    animation/ClipJsonIO.cpp
+    animation/LayerMixer.cpp
+    animation/MotionPreviewState.cpp
+)
+
+set(PREFAB_SOURCES
+    prefab/PrefabAsset.cpp
+)
+
 # 2. Engine Shared Library
-add_library(ge_engine SHARED
+add_library(quarterflying_engine SHARED
     ${CORE_SOURCES}
     ${EDITOR_SOURCES}
     ${JOB_SOURCES}
     ${RENDERER_SOURCES}
     ${ECS_SOURCES}
     ${ASSET_SOURCES}
+    ${ANIMATION_SOURCES}
+    ${PREFAB_SOURCES}
 )
 
 get_filename_component(GLEW_TRUE_INCLUDE_DIR "${glew_SOURCE_DIR}/include" ABSOLUTE)
@@ -106,7 +131,7 @@ message(STATUS "GLEW_TRUE_INCLUDE_DIR: ${GLEW_TRUE_INCLUDE_DIR}")
 get_filename_component(STB_INCLUDE_DIR "${stb_SOURCE_DIR}" ABSOLUTE)
 message(STATUS "STB_INCLUDE_DIR: ${STB_INCLUDE_DIR}")
 
-target_include_directories(ge_engine PUBLIC ${GLEW_TRUE_INCLUDE_DIR} ${STB_INCLUDE_DIR})
+target_include_directories(quarterflying_engine PUBLIC ${GLEW_TRUE_INCLUDE_DIR} ${STB_INCLUDE_DIR})
 
 # Base libraries (always required - GLEW needed for OpenGL in Qt editor too)
 set(BASE_LIBRARIES pybind11::embed nlohmann_json::nlohmann_json fmt::fmt glm::glm glew_s tinyobjloader)
@@ -114,31 +139,32 @@ set(BASE_LIBRARIES pybind11::embed nlohmann_json::nlohmann_json fmt::fmt glm::gl
 # GLFW removed (using Qt-based editor with native window handles)
 message(STATUS "GLFW dependency excluded (using Qt-based editor)")
 
-target_link_libraries(ge_engine PUBLIC ${BASE_LIBRARIES})
+target_link_libraries(quarterflying_engine PUBLIC ${BASE_LIBRARIES})
 
 if(MSVC)
-    target_compile_definitions(ge_engine PRIVATE GE_EXPORTS)
-    target_compile_options(ge_engine PRIVATE /FS)
-    target_link_libraries(ge_engine PRIVATE opengl32.lib user32.lib gdi32.lib)
+    target_compile_definitions(quarterflying_engine PRIVATE GE_EXPORTS)
+    target_compile_options(quarterflying_engine PRIVATE /FS)
+    target_link_libraries(quarterflying_engine PRIVATE opengl32.lib user32.lib gdi32.lib)
     # Enable AddressSanitizer for MSVC (Visual Studio 2019+)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION GREATER_EQUAL 1920)
         option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
         if(ENABLE_ASAN)
-            target_compile_options(ge_engine PRIVATE /fsanitize=address)
-            target_link_options(ge_engine PRIVATE /fsanitize=address)
+            target_compile_options(quarterflying_engine PRIVATE /fsanitize=address)
+            target_link_options(quarterflying_engine PRIVATE /fsanitize=address)
         endif()
     endif()
 endif()
 
 # 3. Python Bindings Module
-pybind11_add_module(ge_python 
+pybind11_add_module(quarterflying
     bindings/PythonModule.cpp
     bindings/MathBindings.cpp
     bindings/ECSBindings.cpp
     bindings/EngineBindings.cpp
     bindings/EditorBindings.cpp
+    bindings/AnimationBindings.cpp
 )
-target_link_libraries(ge_python PRIVATE ge_engine)
+target_link_libraries(quarterflying PRIVATE quarterflying_engine)
 
 # 4. Simple test executable (optional - legacy GLFW main)
 # Removed legacy GLFW main (using Qt-based editor instead)
@@ -165,7 +191,7 @@ endif()
 
 # 5. Installation (Python Editor as main entry point)
 # Install Python module
-install(TARGETS ge_python
+install(TARGETS quarterflying
     LIBRARY DESTINATION .
     RUNTIME DESTINATION .
 )

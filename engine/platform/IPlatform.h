@@ -149,6 +149,23 @@ namespace Engine
         // Platform-specific access
         virtual void* GetNativeWindowHandle(WindowHandle handle) = 0;
         virtual void SetExternalWindowHandle(void* handle) = 0;
+
+        // Graphics context (OpenGL 등 실제 GPU 렌더링 표면을 창에 바인딩).
+        // Renderer 서브시스템이 Initialize()되기 전, 즉 GL 함수 포인터가 필요한
+        // 어떤 코드보다도 먼저 호출되어야 한다.
+        virtual bool CreateGraphicsContext(WindowHandle handle) = 0;
+
+        // 이 창의 GL 컨텍스트를 호출 스레드의 current 컨텍스트로 만든다. 이미 current면 아무 것도
+        // 하지 않는다. 컨텍스트가 없거나 전환에 실패하면 false를 반환한다. 이때 호출자는 이번 프레임에
+        // GL 호출을 하면 안 된다.
+        // 매 프레임 GL 호출 전에 불러야 한다(Engine::TickFrame). 한 프로세스에 Engine이 여러 개
+        // 있으면(Scene 뷰포트 + Play 뷰포트) current 컨텍스트는 스레드 단위 상태라 마지막으로
+        // 컨텍스트를 만든 쪽 것으로 바뀌어 있기 때문이다.
+        virtual bool MakeGraphicsContextCurrent(WindowHandle handle) = 0;
+
+        // 이번 프레임에 그린 백버퍼를 화면에 표시(더블버퍼 스왑)한다.
+        // 매 프레임 렌더링 이후(Renderer::LateTick 이후) 호출되어야 한다.
+        virtual void PresentFrame(WindowHandle handle) = 0;
     };
 
 } // namespace Engine

@@ -1,5 +1,13 @@
 #include "Mesh.h"
 #include <GL/glew.h>
+// tinyobjloader's vendored fast_float fails to compile under MSVC 19.44 (error C3615,
+// reproduced even under C++20). Its official opt-out disables the fast_float path in
+// favor of the built-in parser -- see cmake/Dependencies.cmake, which defines this
+// PUBLIC on the tinyobjloader target (propagates here via quarterflying_engine's link). Guarded
+// with #ifndef so this file still protects itself if that ever changes.
+#ifndef TINYOBJLOADER_DISABLE_FAST_FLOAT
+#define TINYOBJLOADER_DISABLE_FAST_FLOAT
+#endif
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include "../core/logging/Logger.h"
@@ -52,9 +60,18 @@ namespace Engine
 
     void Mesh::drawInstanced(uint32_t instanceCount) const
     {
-        glBindVertexArray(m_vao);
+        // 주의: 여기서 m_vao(이 메시 자체의 3-attribute짜리 VAO - position/normal/uv뿐,
+        // 인스턴스 attribute 없음)를 bind하면 안 된다. 유일한 호출부인
+        // InstancedBatchManager::RenderBatch()가 이미 인스턴스 attribute(model 행렬/
+        // color/roughness/...)까지 포함하는 자신의 VAO(batch->instanceVAO, mesh의 VBO/EBO를
+        // 공유하도록 SetupInstanceVAO()가 구성함)를 bind해둔 상태에서 이 함수를 부른다.
+        // 예전엔 여기서 m_vao로 다시 bind해버려서 그 인스턴스 attribute들이 전부 안 잡힌
+        // 상태(model 행렬이 정의되지 않은 값 - 사실상 축퇴 행렬)로 그려지고 있었다.
+        // draw call 자체는 GL 에러 없이 "성공"하기 때문에 화면에 아무 것도 안 보이는데도
+        // 원인 추적이 어려웠던 버그 - RenderSystem이 생기기 전까지 인스턴스 렌더링 경로가
+        // 한 번도 실제로 실행된 적이 없어서 발견되지 않았다(CLAUDE.md의 "InstanceData GPU
+        // 레이아웃 미검증" 항목과 같은 뿌리).
         glDrawElementsInstanced(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, 0, instanceCount);
-        glBindVertexArray(0);
     }
 
     static std::unordered_map<std::string, std::shared_ptr<Mesh>> s_meshCache;
@@ -88,11 +105,11 @@ namespace Engine
         auto mesh = std::make_shared<Mesh>();
         mesh->create(vertices, indices);
         s_meshCache[path] = mesh;
-        
-        Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Successfully loaded and cached mesh: {} (vertices: {}, indices: {})", 
+
+        Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Successfully loaded and cached mesh: {} (vertices: {}, indices: {})",
                     path, vertices.size(), indices.size());
         Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Current cache size: {} meshes", s_meshCache.size());
-        
+
         return mesh;
     }
 }

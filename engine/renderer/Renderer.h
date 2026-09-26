@@ -11,6 +11,12 @@
 #include "DynamicResolution.h"
 #include "Frustum.h"
 #include "Camera.h"
+#include "DebugGridRenderer.h"
+#include "BoneLineRenderer.h"
+#include "SceneMeshRenderer.h"
+#include "ParticleRenderer.h"
+#include "RenderMode.h"
+#include "../animation/MotionPreviewState.h"
 #include <memory>
 
 namespace Engine
@@ -73,6 +79,25 @@ namespace Engine
         void SetMainCamera(Camera* camera) { mainCamera = camera; }
         Camera* GetMainCamera() const { return mainCamera; }
 
+        // Motion Mixer 프리뷰 (Phase 4A, 착수 계약서 §C11)
+        void SetRenderMode(RenderMode mode) { renderMode = mode; }
+        RenderMode GetRenderMode() const { return renderMode; }
+
+        void SetMotionPreviewState(MotionPreviewState* state) { motionPreviewState = state; }
+        MotionPreviewState* GetMotionPreviewState() const { return motionPreviewState; }
+
+        // ROADMAP.md P0-2에서 발견: 씬 에디터/플레이 모드가 각자 별도의 EngineViewport(=
+        // 별도 Engine 인스턴스, 별도 GL 컨텍스트)를 갖고 같은 Qt 메인 스레드에서 각자의
+        // QTimer로 독립적으로 TickFrame()을 돈다. wglMakeCurrent는 스레드 단위 상태라
+        // 어느 한쪽이 자기 컨텍스트를 만들면(InitializeFromWindowHandle) 그 뒤로 다른 쪽이
+        // 이전에 만들어둔 "현재 컨텍스트"를 밀어낼 수 있다 - glViewport는 컨텍스트별 상태라
+        // 이 경우 실제로 그리는 시점에 완전히 다른(엉뚱한 크기의) viewport가 걸려있을 수
+        // 있다(실측: 96x480, 카메라 projection은 1.3 종횡비를 가정 - 실제로 이 버그로
+        // 씬 메시가 가로로 심하게 눌려 보였다). 근본 해결(컨텍스트 전환/공유 정리)은
+        // 더 큰 작업이라 후속 과제로 남기고, 여기서는 매 프레임 그리기 직전에 우리가 알고
+        // 있는 올바른 크기로 glViewport를 다시 걸어서 증상을 막는다.
+        void SetViewportSize(uint32_t width, uint32_t height) { viewportWidth = width; viewportHeight = height; }
+
         // Frame lifecycle
         void BeginFrame();
         void EndFrame();
@@ -103,9 +128,28 @@ namespace Engine
         
         // Camera for culling calculations
         Camera* mainCamera;
-        
+
         // Frustum for culling
         Frustum frustum;
+
+        // 임시 디버그 그리드 (RenderSystem이 생기기 전까지의 최소 렌더링 기준선)
+        std::unique_ptr<DebugGridRenderer> debugGrid;
+
+        // ECS RenderSystem이 InstancedBatchManager에 채운 배치를 실제로 그린다 (ROADMAP.md P0-2).
+        std::unique_ptr<SceneMeshRenderer> sceneMeshRenderer;
+
+        // ParticleSystem이 채운 ForwardTransparent 배치를 그린다 (VFX Lite Phase 3).
+        std::unique_ptr<ParticleRenderer> particleRenderer;
+
+        // 매 프레임 glViewport 재적용용 (SetViewportSize 주석 참고). 0이면 아직 아무도
+        // 설정 안 한 것이므로 재적용을 건너뛴다(엔진 초기화 극초반 등).
+        uint32_t viewportWidth = 0;
+        uint32_t viewportHeight = 0;
+
+        // Motion Mixer 프리뷰 (Phase 4A)
+        RenderMode renderMode = RenderMode::Scene;
+        MotionPreviewState* motionPreviewState = nullptr;  // 소유하지 않음 - Engine이 소유
+        std::unique_ptr<BoneLineRenderer> boneLineRenderer;
         
         // Feature flags
         bool frameInProgress;

@@ -4,6 +4,7 @@ engine/build/
 engine/build_*/
 cmake-build-*/
 out/
+engine/build_*.txt
 
 # Visual Studio
 .vs/
@@ -22,7 +23,11 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 *.cmake
-!cmake/*.cmake
+# NOTE: this project's real cmake modules live at engine/cmake/, not <root>/cmake/.
+# `!cmake/*.cmake` (root-anchored) silently ignored engine/cmake/CompilerFlags.cmake and
+# engine/cmake/Dependencies.cmake since the very first commit -- use a depth-agnostic
+# pattern so it actually matches.
+!**/cmake/*.cmake
 CMakeSettings.json
 
 # Compiled Object files

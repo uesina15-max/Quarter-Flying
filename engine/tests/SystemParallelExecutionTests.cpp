@@ -12,6 +12,11 @@
 
 using namespace Engine;
 
+// 헬퍼 타입은 익명 네임스페이스에 둔다. SystemConcurrencyPropertyTests.cpp에도 같은 이름의
+// ReadOnlySystemA가 있어서 ODR 위반으로 그쪽 테스트가 조용히 틀리게 동작했다(그 파일 주석 참고).
+namespace
+{
+
 // 테스트용 Component 타입
 struct TestComponentA
 {
@@ -203,6 +208,7 @@ public:
 
     std::atomic<int> updateCount{0};
 };
+} // namespace (anonymous)
 
 class SystemParallelExecutionTest : public ::testing::Test
 {

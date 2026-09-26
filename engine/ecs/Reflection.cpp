@@ -2,6 +2,7 @@
 #include <fstream>
 #include "Components.h"
 #include "ScriptComponent.h"
+#include "../prefab/PrefabInstanceComponent.h"
 #include <string>
 #include <unordered_map>
 
@@ -252,10 +253,74 @@ namespace Engine {
         }
     }
 
+    void RegisterPrefabComponentsReflection() {
+        // PrefabInstanceComponent registration lives here (alongside the other 5
+        // component types) rather than in engine/prefab/ — PrefabAsset itself
+        // should not take on responsibility for its own reflection wiring. See
+        // docs/PREFAB_IMPLEMENTATION_PLAN.md's "모듈 경계 정정" revision note.
+        GE_BEGIN_COMPONENT(PrefabInstanceComponent)
+            GE_FIELD(PrefabInstanceComponent, prefabPath, String, "Prefab Path")
+            GE_FIELD(PrefabInstanceComponent, sourcePrefabVersion, Int, "Source Prefab Version")
+        GE_END_COMPONENT(PrefabInstanceComponent)
+    }
+
+    void RegisterParticleComponentsReflection() {
+        // VFX Lite Phase 1 — docs/VFX_LITE_IMPLEMENTATION_PLAN.md §2.4.
+        // 여기 20개 필드 = 범위 정의서 §2의 18개 파라미터(Direction과 Alpha Fade가
+        // 각각 필드 2개). 순서는 Components.h의 선언 순서·§2의 그룹 순서와 같게 유지한다.
+        //
+        // Enum 필드가 하나도 없는 것은 의도된 것이다 — 아래 매크로가 만드는 직렬화
+        // switch에 Enum case가 없어서 조용히 누락되기 때문(docs/VFX_LITE_PLAN.md §7.3).
+        // 블렌드 모드를 파라미터로 만들지 않기로 한 결정(구현 계획서 §2.2) 덕분에
+        // enum이 필요한 필드가 애초에 생기지 않았다.
+        GE_BEGIN_COMPONENT(ParticleEffectComponent)
+            // 생성
+            GE_FIELD(ParticleEffectComponent, spawnRate, Float, "Spawn Rate")
+            GE_FIELD(ParticleEffectComponent, maxParticle, Int, "Max Particle")
+            GE_FIELD(ParticleEffectComponent, lifetime, Float, "Lifetime")
+            GE_FIELD(ParticleEffectComponent, burst, Int, "Burst")
+            // 이동
+            GE_FIELD(ParticleEffectComponent, initialSpeed, Float, "Initial Speed")
+            GE_FIELD(ParticleEffectComponent, directionBase, Vec3, "Direction")
+            GE_FIELD(ParticleEffectComponent, directionSpread, Float, "Direction Spread")
+            GE_FIELD(ParticleEffectComponent, gravity, Float, "Gravity")
+            GE_FIELD(ParticleEffectComponent, drag, Float, "Drag")
+            // 크기
+            GE_FIELD(ParticleEffectComponent, startSize, Float, "Start Size")
+            GE_FIELD(ParticleEffectComponent, endSize, Float, "End Size")
+            // 색상
+            GE_FIELD(ParticleEffectComponent, startColor, Vec3, "Start Color")
+            GE_FIELD(ParticleEffectComponent, startAlpha, Float, "Start Alpha")
+            GE_FIELD(ParticleEffectComponent, endColor, Vec3, "End Color")
+            GE_FIELD(ParticleEffectComponent, endAlpha, Float, "End Alpha")
+            // 회전
+            GE_FIELD(ParticleEffectComponent, startRotation, Float, "Start Rotation")
+            GE_FIELD(ParticleEffectComponent, rotationSpeed, Float, "Rotation Speed")
+            // 랜덤
+            GE_FIELD(ParticleEffectComponent, speedVariance, Float, "Speed +/-")
+            GE_FIELD(ParticleEffectComponent, sizeVariance, Float, "Size +/-")
+            GE_FIELD(ParticleEffectComponent, rotationVariance, Float, "Rotation +/-")
+        GE_END_COMPONENT(ParticleEffectComponent)
+    }
+
+    void RegisterActionPlayerComponentReflection() {
+        // Sound Lite Phase 5 — docs/SOUND_LITE_IMPLEMENTATION_PLAN.md §2.3.
+        // 등록만 하면 에디터 Inspector 폼이 자동으로 나온다(VFX Lite Phase 1에서 확인된
+        // 성질). Enum 필드가 없는 것은 의도된 것이다 - Components.h의 주석 참고.
+        GE_BEGIN_COMPONENT(ActionPlayerComponent)
+            GE_FIELD(ActionPlayerComponent, action, String, "Action File")
+            GE_FIELD(ActionPlayerComponent, playOnStart, Bool, "Play On Start")
+            GE_FIELD(ActionPlayerComponent, loop, Bool, "Loop")
+        GE_END_COMPONENT(ActionPlayerComponent)
+    }
+
     static int InitializeReflection() {
         RegisterPODComponentsReflection();
         RegisterScriptComponentReflection();
         RegisterAIComponentReflection();
+        RegisterPrefabComponentsReflection();
+        RegisterParticleComponentsReflection();
+        RegisterActionPlayerComponentReflection();
         return 0;
     }
     static int s_dummyInit = InitializeReflection();

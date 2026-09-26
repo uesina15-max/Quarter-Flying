@@ -3,8 +3,14 @@
 #include "../editor/EditorAPI.h"
 #include "../core/CommandManager.h"
 #include "../ecs/Entity.h"
+#include "../ecs/ECSRegistry.h"  // EditorAPI.h only forward-declares ECSRegistry; pybind11's
+                                  // __is_base_of type-trait checks need the complete type here.
 #include "../core/Types.h"
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/stl/filesystem.h>
+#include <filesystem>
+#include <optional>
 
 namespace py = pybind11;
 
@@ -50,6 +56,18 @@ void RegisterEditorBindings(pybind11::module_& m)
             UnwrapOrThrow(self.DestroyEntity(entity));
         })
 
+        // ---- Prefabs ----
+        .def("instantiate_prefab", [](Editor::EditorAPI& self, const std::filesystem::path& prefabPath,
+                                       std::optional<Vec3> position) {
+            return UnwrapOrThrow(self.InstantiatePrefab(prefabPath, position));
+        }, py::arg("prefab_path"), py::arg("position") = std::nullopt)
+        .def("capture_prefab", [](Editor::EditorAPI& self, Entity entity, const std::filesystem::path& outputPath) {
+            UnwrapOrThrow(self.CapturePrefab(entity, outputPath));
+        }, py::arg("entity"), py::arg("output_path"))
+        .def("revert_prefab_instance", [](Editor::EditorAPI& self, Entity entity) {
+            UnwrapOrThrow(self.RevertPrefabInstance(entity));
+        }, py::arg("entity"))
+
         // ---- Component editing ----
         .def("add_component", [](Editor::EditorAPI& self, Entity entity, const std::string& componentType) {
             UnwrapOrThrow(self.AddComponent(entity, componentType));
@@ -58,7 +76,14 @@ void RegisterEditorBindings(pybind11::module_& m)
             UnwrapOrThrow(self.RemoveComponent(entity, componentType));
         });
 
-    py::class_<CommandManager>(m, "CommandManager")
+    // CommandManager is a singleton only ever exposed by reference via get_instance()
+    // (never constructed or owned from the Python side), and it isn't copyable (holds
+    // std::vector<std::unique_ptr<ICommand>>). A plain py::class_<CommandManager> makes
+    // MSVC eagerly instantiate the implicit copy constructor while resolving pybind11's
+    // internal traits, which fails because that copy ctor is deleted (C2672 via the
+    // unique_ptr members). The nodelete holder tells pybind11 it never owns/copies/deletes
+    // the instance, matching how this type is actually used.
+    py::class_<CommandManager, std::unique_ptr<CommandManager, py::nodelete>>(m, "CommandManager")
         .def_static("get_instance", &CommandManager::GetInstance, py::return_value_policy::reference)
         .def("undo", [](CommandManager& self) {
             UnwrapOrThrow(self.Undo());

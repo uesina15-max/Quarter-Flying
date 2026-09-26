@@ -42,41 +42,41 @@ def test_main_editor_import():
         return False
 
 def test_ge_python_binding():
-    """ge_python 바인딩 테스트"""
+    """엔진 바인딩 모듈 테스트"""
+    from engine_binding import binding as ge_python, HAS_ENGINE
+    if not HAS_ENGINE:
+        print("✗ engine binding import failed")
+        return False
     try:
-        import ge_python
-        print("✓ ge_python import successful")
-        
+        print("✓ engine binding import successful")
+
         # EngineConfig 테스트
         config = ge_python.EngineConfig()
         config.windowTitle = "Test"
         config.windowWidth = 800
         config.windowHeight = 600
         print("✓ EngineConfig creation successful")
-        
+
         # InputEvent 테스트
         event = ge_python.InputEvent()
         event.type = ge_python.InputEventType.KeyDown
         event.keyCode = ge_python.KeyCode.A
         print("✓ InputEvent creation successful")
-        
+
         return True
-    except ImportError as e:
-        print(f"✗ ge_python import failed: {e}")
-        return False
     except Exception as e:
-        print(f"✗ ge_python binding test failed: {e}")
+        print(f"✗ engine binding test failed: {e}")
         return False
 
 def test_engine_initialization():
     """엔진 초기화 테스트 (윈도우 없이)"""
     try:
-        import ge_python
-        
+        from engine_binding import binding as ge_python
+
         # Engine 객체 생성만 테스트 (초기화는 윈도우 핸들 필요)
         engine = ge_python.Engine()
         print("✓ Engine object creation successful")
-        
+
         return True
     except Exception as e:
         print(f"✗ Engine creation failed: {e}")
@@ -85,7 +85,7 @@ def test_engine_initialization():
 def test_window_handle_binding():
     """윈도우 핸들 바인딩 테스트"""
     try:
-        import ge_python
+        from engine_binding import binding as ge_python
         from PySide6.QtWidgets import QApplication, QWidget
         
         app = QApplication.instance()
@@ -119,7 +119,7 @@ def run_all_tests():
     tests = [
         ("Viewport Import", test_viewport_import),
         ("Main Editor Import", test_main_editor_import),
-        ("ge_python Binding", test_ge_python_binding),
+        ("Engine Binding", test_ge_python_binding),
         ("Engine Initialization", test_engine_initialization),
         ("Window Handle Binding", test_window_handle_binding)
     ]

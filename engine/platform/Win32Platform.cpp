@@ -18,6 +18,7 @@
 #include "../core/logging/Logger.h"
 #include "../core/assert/Assert.h"
 #include <windowsx.h>
+#include <GL/glew.h>
 
 // Undefine Windows macros that conflict with our method names
 #ifdef CreateWindow
@@ -81,8 +82,19 @@ namespace Engine
         if (!RegisterClassExW(&wc))
         {
             DWORD error = GetLastError();
-            Logger::Log(LogLevel::Error, "Failed to register window class (Error: {})", error);
-            return false;
+            if (error == ERROR_CLASS_ALREADY_EXISTS)
+            {
+                // 같은 프로세스 안에서 여러 Win32Platform 인스턴스(예: Scene Editor 뷰포트 +
+                // Play Mode 뷰포트)가 동일한 hInstance/WindowProc/클래스명으로 등록을 시도하는
+                // 경우 정상적으로 발생한다. 클래스는 이미 이 프로세스에 유효하게 등록되어
+                // 있으므로 재등록 실패를 오류로 취급하지 않고 기존 클래스를 그대로 사용한다.
+                Logger::Log(LogLevel::Info, "Window class already registered, reusing existing registration");
+            }
+            else
+            {
+                Logger::Log(LogLevel::Error, "Failed to register window class (Error: {})", error);
+                return false;
+            }
         }
 
         initialized = true;
@@ -100,6 +112,19 @@ namespace Engine
         // Destroy all windows
         for (auto& pair : windows)
         {
+            // GL 컨텍스트가 있으면 창을 파괴하기 전에 먼저 정리한다.
+            if (pair.second.hglrc)
+            {
+                wglMakeCurrent(nullptr, nullptr);
+                wglDeleteContext(pair.second.hglrc);
+                pair.second.hglrc = nullptr;
+            }
+            if (pair.second.hdc && pair.second.hwnd)
+            {
+                ReleaseDC(pair.second.hwnd, pair.second.hdc);
+                pair.second.hdc = nullptr;
+            }
+
             if (pair.second.isValid && pair.second.hwnd)
             {
                 ::DestroyWindow(pair.second.hwnd);
@@ -224,6 +249,22 @@ namespace Engine
 
     bool Win32Platform::PollEvents()
     {
+        // 증상: 에디터에서 Play Mode로 전환하거나 Play 버튼을 누르면 프로세스가
+        // "Windows fatal exception: access violation"(Segmentation fault)으로 죽었다.
+        // faulthandler 스택을 보면 viewport.tick -> TickFrame 안에서 Qt 핸들러
+        // (_on_play, _set_mode 등)가 실행되고 있었고, 그 핸들러가 다시 TickFrame을 부르거나
+        // 두 번째 Engine을 초기화했다.
+        // 원인: 아래 PeekMessage(hwnd=nullptr)는 이 스레드의 메시지 큐 전체를 펌프한다. 임베드
+        // 모드에서 그 큐의 주인은 Qt이므로, 엔진 프레임 한가운데서 임의의 Qt 코드가 실행됐다.
+        // 결과는 (a) 같은 Engine의 TickFrame 재진입, (b) 다른 Engine이 GL 컨텍스트를 바꿔 놓은
+        // 상태로 이 Engine이 계속 렌더링하는 것, 두 가지였다. 외부 HWND는 서브클래싱하지 않아서
+        // 엔진이 받을 메시지가 애초에 없다(입력은 PushInputEvent로 들어온다). 따라서 임베드
+        // 모드에서는 펌프하지 않는다.
+        if (hostOwnsMessageLoop)
+        {
+            return true;
+        }
+
         MSG msg;
         while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
         {
@@ -278,6 +319,9 @@ namespace Engine
             return;
         }
 
+        // 이 스레드의 메시지 루프는 호스트(Qt) 소유다 - PollEvents() 주석 참고
+        hostOwnsMessageLoop = true;
+
         // Store external window data as ID 1
         uint32_t windowID = 1;
         WindowData windowData;
@@ -295,6 +339,147 @@ namespace Engine
         hwndToWindowID[hwnd] = windowID;
 
         Logger::Log(LogLevel::Info, "External Win32 window registered (ID: 1)");
+    }
+
+    bool Win32Platform::CreateGraphicsContext(WindowHandle handle)
+    {
+        auto it = windows.find(handle.id);
+        if (it == windows.end() || !it->second.isValid || !it->second.hwnd)
+        {
+            Logger::Log(LogLevel::Error, "CreateGraphicsContext - Invalid window handle");
+            return false;
+        }
+
+        WindowData& wd = it->second;
+
+        if (wd.hglrc)
+        {
+            // 이미 이 창에 컨텍스트가 생성되어 있으면 재사용한다 (재초기화 방어).
+            Logger::Log(LogLevel::Warning, "CreateGraphicsContext - Context already exists for this window, reusing");
+            return true;
+        }
+
+        HDC hdc = GetDC(wd.hwnd);
+        if (!hdc)
+        {
+            Logger::Log(LogLevel::Error, "CreateGraphicsContext - GetDC failed");
+            return false;
+        }
+
+        PIXELFORMATDESCRIPTOR pfd = {};
+        pfd.nSize = sizeof(pfd);
+        pfd.nVersion = 1;
+        pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+        pfd.iPixelType = PFD_TYPE_RGBA;
+        pfd.cColorBits = 32;
+        pfd.cDepthBits = 24;
+        pfd.cStencilBits = 8;
+        pfd.iLayerType = PFD_MAIN_PLANE;
+
+        int pixelFormat = ChoosePixelFormat(hdc, &pfd);
+        if (pixelFormat == 0)
+        {
+            Logger::Log(LogLevel::Error, "CreateGraphicsContext - ChoosePixelFormat failed (Error: {})", GetLastError());
+            ReleaseDC(wd.hwnd, hdc);
+            return false;
+        }
+
+        if (!SetPixelFormat(hdc, pixelFormat, &pfd))
+        {
+            Logger::Log(LogLevel::Error, "CreateGraphicsContext - SetPixelFormat failed (Error: {})", GetLastError());
+            ReleaseDC(wd.hwnd, hdc);
+            return false;
+        }
+
+        HGLRC hglrc = wglCreateContext(hdc);
+        if (!hglrc)
+        {
+            Logger::Log(LogLevel::Error, "CreateGraphicsContext - wglCreateContext failed (Error: {})", GetLastError());
+            ReleaseDC(wd.hwnd, hdc);
+            return false;
+        }
+
+        if (!wglMakeCurrent(hdc, hglrc))
+        {
+            Logger::Log(LogLevel::Error, "CreateGraphicsContext - wglMakeCurrent failed (Error: {})", GetLastError());
+            wglDeleteContext(hglrc);
+            ReleaseDC(wd.hwnd, hdc);
+            return false;
+        }
+
+        // GLEW는 프로세스 전체에서 한 번만 초기화하면 된다 (여러 창/컨텍스트가 있어도
+        // 함수 포인터 자체는 공유됨 - 단, 각 컨텍스트가 활성화된 상태에서 첫 초기화가 이뤄져야 함).
+        static bool s_glewInitialized = false;
+        if (!s_glewInitialized)
+        {
+            glewExperimental = GL_TRUE;
+            GLenum glewResult = glewInit();
+            if (glewResult != GLEW_OK)
+            {
+                Logger::Log(LogLevel::Error, "CreateGraphicsContext - glewInit failed: {}",
+                            reinterpret_cast<const char*>(glewGetErrorString(glewResult)));
+                wglMakeCurrent(nullptr, nullptr);
+                wglDeleteContext(hglrc);
+                ReleaseDC(wd.hwnd, hdc);
+                return false;
+            }
+            s_glewInitialized = true;
+
+            const char* glVersion = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+            const char* glRenderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+            Logger::Log(LogLevel::Info, "CreateGraphicsContext - OpenGL context ready: {} ({})",
+                        glVersion ? glVersion : "unknown", glRenderer ? glRenderer : "unknown");
+        }
+
+        wd.hdc = hdc;
+        wd.hglrc = hglrc;
+
+        RECT rect;
+        GetClientRect(wd.hwnd, &rect);
+        GLsizei width = static_cast<GLsizei>(rect.right - rect.left);
+        GLsizei height = static_cast<GLsizei>(rect.bottom - rect.top);
+        if (width > 0 && height > 0)
+        {
+            glViewport(0, 0, width, height);
+        }
+        glEnable(GL_DEPTH_TEST);
+
+        return true;
+    }
+
+    bool Win32Platform::MakeGraphicsContextCurrent(WindowHandle handle)
+    {
+        auto it = windows.find(handle.id);
+        if (it == windows.end() || !it->second.isValid || !it->second.hdc || !it->second.hglrc)
+        {
+            return false;
+        }
+
+        WindowData& wd = it->second;
+        if (wglGetCurrentContext() == wd.hglrc)
+        {
+            return true;  // 흔한 경우(Engine이 하나뿐) - 드라이버 호출 없이 끝낸다
+        }
+
+        if (!wglMakeCurrent(wd.hdc, wd.hglrc))
+        {
+            Logger::Log(LogLevel::Error,
+                "MakeGraphicsContextCurrent - wglMakeCurrent failed (Error: {}) - skipping GL work this frame",
+                GetLastError());
+            return false;
+        }
+        return true;
+    }
+
+    void Win32Platform::PresentFrame(WindowHandle handle)
+    {
+        auto it = windows.find(handle.id);
+        if (it == windows.end() || !it->second.isValid || !it->second.hdc)
+        {
+            return;
+        }
+
+        ::SwapBuffers(it->second.hdc);
     }
 
     LRESULT CALLBACK Win32Platform::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)

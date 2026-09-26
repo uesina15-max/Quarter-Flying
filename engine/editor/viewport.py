@@ -2,14 +2,25 @@ import sys
 import os
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import QTimer, Qt
-import ge_python
+from engine_binding import binding as ge_python
+
+from style.theme import COLORS
 
 class EngineViewport(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
-        
+
+        # 네이티브 렌더링 서페이스(HWND) 임베딩 위젯: Qt가 이 위젯 위에 자체 배경을
+        # 다시 그리지 않도록 한다. 이게 없으면 전역 스타일시트(QWidget { background-color })가
+        # 매 paint 이벤트마다 엔진이 그린 프레임 위를 패널 배경색으로 덮어써서
+        # 실제로는 렌더링이 되고 있어도 항상 검은(패널색) 화면으로만 보인다.
+        self.setAttribute(Qt.WA_NativeWindow, True)
+        self.setAttribute(Qt.WA_PaintOnScreen, True)
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
+        self.setAutoFillBackground(False)
+
         self.engine = ge_python.Engine()
         self.initialized = False
         
@@ -34,11 +45,30 @@ class EngineViewport(QWidget):
                 print(f"[Error] Engine initialization failed on HWND {hwnd}: {e}")
                 self.initialized = False
                 # Fallback 상태 표시
-                self.setStyleSheet("background-color: #2b1111; border: 2px solid #ff4444;")
+                self.setStyleSheet(f"background-color: {COLORS['bg_base']}; border: 2px solid {COLORS['accent_danger']};")
 
     def tick(self):
         if self.initialized:
             self.engine.TickFrame()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.initialized:
+            # 엔진 쪽 glViewport/카메라 종횡비가 창 크기 변화를 전혀 모르고 있었다 - 특히
+            # Motion Editor로 전환할 때처럼 Qt가 이 위젯을 다른(크기가 다른) 레이아웃으로
+            # 재부모 이동시키는 경우 반드시 필요하다(그렇지 않으면 예전 크기 기준으로 그려져
+            # 화면이 검게 보이거나 잘린다). PushInputEvent는 스레드 세이프한 비동기 큐라서
+            # 여기서 바로 불러도 안전하다.
+            e = ge_python.InputEvent()
+            e.type = ge_python.InputEventType.WindowResize
+            e.windowWidth = self.width()
+            e.windowHeight = self.height()
+            self.engine.PushInputEvent(e)
+
+    def paintEngine(self):
+        # Qt의 QPainter 기반 페인트 엔진을 비활성화 — 렌더링은 네이티브 HWND에 엔진이
+        # 직접 그린다 (WA_PaintOnScreen과 짝을 이루는 표준 패턴).
+        return None
 
     def mouseMoveEvent(self, event):
         if self.initialized:

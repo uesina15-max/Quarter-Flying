@@ -7,6 +7,8 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QFrame
 from PySide6.QtCore import Qt, QTimer
 import time
 
+from style.theme import COLORS
+
 
 class StatusBar(QWidget):
     """
@@ -25,8 +27,8 @@ class StatusBar(QWidget):
         self.setFixedHeight(24)
         self.setObjectName("status_bar_main")
         self.setStyleSheet(
-            "background-color: #0d1b2a; "
-            "border-top: 1px solid #1e3a5f;"
+            f"background-color: {COLORS['bg_header']}; "
+            f"border-top: 1px solid {COLORS['border']};"
         )
 
         self._frame_count = 0
@@ -48,7 +50,7 @@ class StatusBar(QWidget):
         layout.setSpacing(0)
 
         # 엔진 상태 표시기
-        self.lbl_engine_status = self._make_label("● OFFLINE", "#e94560")
+        self.lbl_engine_status = self._make_label("● OFFLINE", COLORS['accent_danger'])
         layout.addWidget(self.lbl_engine_status)
 
         layout.addWidget(self._make_separator())
@@ -66,23 +68,25 @@ class StatusBar(QWidget):
         layout.addWidget(self._make_separator())
 
         # 선택 정보
-        self.lbl_selection = self._make_label("No Selection", color="#8899aa")
+        self.lbl_selection = self._make_label("No Selection", color=COLORS['text_secondary'])
         layout.addWidget(self.lbl_selection)
 
         # 중앙 여백
         layout.addStretch()
 
         # 로그 메시지 (우측)
-        self.lbl_log = self._make_label("", color="#556677")
+        self.lbl_log = self._make_label("", color=COLORS['text_dim'])
         layout.addWidget(self.lbl_log)
 
         layout.addWidget(self._make_separator())
 
         # 버전 정보
-        ver = self._make_label("Quarter Flying  v0.1.0", color="#556677")
+        ver = self._make_label("Quarter Flying  v0.1.0", color=COLORS['text_dim'])
         layout.addWidget(ver)
 
-    def _make_label(self, text: str, color: str = "#8899aa") -> QLabel:
+    def _make_label(self, text: str, color: str = None) -> QLabel:
+        if color is None:
+            color = COLORS['text_secondary']
         lbl = QLabel(text)
         lbl.setStyleSheet(
             f"color: {color}; font-size: 10px; "
@@ -93,7 +97,7 @@ class StatusBar(QWidget):
     def _make_separator(self) -> QFrame:
         sep = QFrame()
         sep.setFrameShape(QFrame.VLine)
-        sep.setStyleSheet("color: #1e3a5f;")
+        sep.setStyleSheet(f"color: {COLORS['border']};")
         sep.setFixedWidth(1)
         return sep
 
@@ -113,7 +117,12 @@ class StatusBar(QWidget):
     def _update_fps_display(self):
         self._fps = self._frame_count
         self._frame_count = 0
-        color = "#00ff88" if self._fps >= 55 else ("#ffaa00" if self._fps >= 30 else "#e94560")
+        if self._fps >= 55:
+            color = COLORS['accent_green']
+        elif self._fps >= 30:
+            color = COLORS['accent_orange']
+        else:
+            color = COLORS['accent_danger']
         self.lbl_fps.setText(f"FPS: {int(self._fps)}")
         self.lbl_fps.setStyleSheet(
             f"color: {color}; font-size: 10px; "
@@ -128,12 +137,12 @@ class StatusBar(QWidget):
         if online:
             self.lbl_engine_status.setText("● ONLINE")
             self.lbl_engine_status.setStyleSheet(
-                "color: #00ff88; font-size: 10px; font-weight: bold; padding: 0px 6px;"
+                f"color: {COLORS['accent_green']}; font-size: 10px; font-weight: bold; padding: 0px 6px;"
             )
         else:
             self.lbl_engine_status.setText("● OFFLINE")
             self.lbl_engine_status.setStyleSheet(
-                "color: #e94560; font-size: 10px; font-weight: bold; padding: 0px 6px;"
+                f"color: {COLORS['accent_danger']}; font-size: 10px; font-weight: bold; padding: 0px 6px;"
             )
 
     def set_entity_count(self, count: int):
@@ -145,20 +154,20 @@ class StatusBar(QWidget):
         if entity_id < 0:
             self.lbl_selection.setText("No Selection")
             self.lbl_selection.setStyleSheet(
-                "color: #556677; font-size: 10px; padding: 0px 6px;"
+                f"color: {COLORS['text_dim']}; font-size: 10px; padding: 0px 6px;"
             )
         else:
             display = name if name else f"Entity_{entity_id}"
             self.lbl_selection.setText(f"Selected: {display}  [{entity_id}]")
             self.lbl_selection.setStyleSheet(
-                "color: #00d4ff; font-size: 10px; padding: 0px 6px;"
+                f"color: {COLORS['accent']}; font-size: 10px; padding: 0px 6px;"
             )
 
     def log(self, message: str):
         """짧은 로그 메시지를 상태 바에 표시 (3초 후 자동 소거)"""
         self.lbl_log.setText(f"▸ {message}")
         self.lbl_log.setStyleSheet(
-            "color: #ffaa00; font-size: 10px; padding: 0px 6px;"
+            f"color: {COLORS['accent_orange']}; font-size: 10px; padding: 0px 6px;"
         )
         QTimer.singleShot(3000, self._clear_log)
 

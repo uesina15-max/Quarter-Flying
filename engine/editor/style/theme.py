@@ -1,37 +1,45 @@
 """
 GE Editor Dark Theme
 다크 테마 QSS 스타일시트 및 색상 팔레트 정의
+
+Blender-inspired minimal dark theme with orange accent:
+- Dark, low-saturation gray backgrounds
+- Orange as the main accent color
+- Light gray text and icons for contrast
 """
+
+import sys
 
 # ============================================================
 # Color Palette
 # ============================================================
 COLORS = {
-    # Background layers
-    "bg_base":        "#1a1a2e",   # 최하위 배경
-    "bg_panel":       "#16213e",   # 패널 배경
-    "bg_widget":      "#0f3460",   # 위젯 배경
-    "bg_hover":       "#1a4a7a",   # 호버 배경
-    "bg_selected":    "#e94560",   # 선택 강조색
-    "bg_header":      "#0d1b2a",   # 헤더 배경
+    # Background layers — Blender-inspired dark grays
+    "bg_base":        "#1d1d1d",   # 최하위 배경 (very dark gray)
+    "bg_panel":       "#2d2d2d",   # 패널 배경 (dark gray)
+    "bg_widget":      "#3d3d3d",   # 위젯 배경 (medium dark gray)
+    "bg_hover":       "#424242",   # 호버 배경
+    "bg_selected":    "#4a4a4a",   # 선택 강조 배경
+    "bg_header":      "#252525",   # 헤더 배경
 
-    # Text
-    "text_primary":   "#e0e0e0",   # 기본 텍스트
-    "text_secondary": "#8899aa",   # 보조 텍스트
-    "text_dim":       "#556677",   # 흐린 텍스트
-    "text_accent":    "#00d4ff",   # 강조 텍스트 (씨안)
-    "text_warning":   "#ffaa00",   # 경고 텍스트
+    # Text — Light gray for contrast
+    "text_primary":   "#e0e0e0",   # 기본 텍스트 (light gray)
+    "text_secondary": "#b0b0b0",   # 보조 텍스트 (medium light gray)
+    "text_dim":       "#707070",   # 흐린 텍스트 (medium gray)
+    "text_accent":    "#ff8c42",   # 강조 텍스트 (orange accent)
+    "text_warning":   "#ffb347",   # 경고 텍스트 (lighter orange)
 
     # Borders
-    "border":         "#1e3a5f",   # 기본 경계선
-    "border_focus":   "#00d4ff",   # 포커스 경계선
-    "border_light":   "#2a5080",   # 밝은 경계선
+    "border":         "#404040",   # 기본 경계선
+    "border_focus":   "#ff8c42",   # 포커스 경계선 (orange)
+    "border_light":   "#505050",   # 밝은 경계선
 
-    # Accent
-    "accent":         "#e94560",   # 메인 강조색 (딥핑크/레드)
-    "accent_blue":    "#00d4ff",   # 보조 강조색 (씨안)
-    "accent_green":   "#00ff88",   # 성공/활성화 색상
-    "accent_orange":  "#ff7700",   # 경고 색상
+    # Accent — Orange as main accent color
+    "accent":         "#ff8c42",   # 메인 강조색 (orange)
+    "accent_blue":    "#ff8c42",   # accent와 동일 값 (다른 파일에서 참조하는 별칭, 하위 호환용)
+    "accent_green":   "#7cb342",   # 성공/활성화 (muted green)
+    "accent_orange":  "#ff8c42",   # 경고 (same as main accent)
+    "accent_danger":  "#ef5350",   # 삭제/위험 전용 (muted red)
 }
 
 # ============================================================
@@ -80,7 +88,7 @@ QMenuBar::item {{
 
 QMenuBar::item:selected {{
     background-color: {COLORS['bg_hover']};
-    color: {COLORS['accent_blue']};
+    color: {COLORS['accent']};
 }}
 
 QMenuBar::item:pressed {{
@@ -101,7 +109,7 @@ QMenu::item {{
 
 QMenu::item:selected {{
     background-color: {COLORS['bg_hover']};
-    color: {COLORS['accent_blue']};
+    color: {COLORS['accent']};
 }}
 
 QMenu::separator {{
@@ -126,13 +134,13 @@ QSplitter::handle:vertical {{
 }}
 
 QSplitter::handle:hover {{
-    background-color: {COLORS['accent_blue']};
+    background-color: {COLORS['accent']};
 }}
 
 /* --- Panel Headers --- */
 #panel_header {{
     background-color: {COLORS['bg_header']};
-    color: {COLORS['accent_blue']};
+    color: {COLORS['text_secondary']};
     font-size: 11px;
     font-weight: bold;
     letter-spacing: 1px;
@@ -161,13 +169,13 @@ QTreeWidget::item {{
 
 QTreeWidget::item:hover {{
     background-color: {COLORS['bg_hover']};
-    color: {COLORS['accent_blue']};
+    color: {COLORS['accent']};
 }}
 
 QTreeWidget::item:selected {{
-    background-color: {COLORS['bg_widget']};
-    color: {COLORS['accent_blue']};
-    border-left: 2px solid {COLORS['accent_blue']};
+    background-color: {COLORS['bg_selected']};
+    color: {COLORS['accent']};
+    border-left: 2px solid {COLORS['accent']};
 }}
 
 QTreeWidget::branch:has-children:!has-siblings:closed,
@@ -213,7 +221,7 @@ QScrollBar::handle:vertical {{
 }}
 
 QScrollBar::handle:vertical:hover {{
-    background-color: {COLORS['accent_blue']};
+    background-color: {COLORS['accent']};
 }}
 
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
@@ -234,7 +242,7 @@ QScrollBar::handle:horizontal {{
 }}
 
 QScrollBar::handle:horizontal:hover {{
-    background-color: {COLORS['accent_blue']};
+    background-color: {COLORS['accent']};
 }}
 
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
@@ -252,7 +260,7 @@ QLineEdit {{
 }}
 
 QLineEdit:focus {{
-    border: 1px solid {COLORS['accent_blue']};
+    border: 1px solid {COLORS['accent']};
     background-color: {COLORS['bg_panel']};
 }}
 
@@ -270,7 +278,7 @@ QDoubleSpinBox {{
 }}
 
 QDoubleSpinBox:focus {{
-    border: 1px solid {COLORS['accent_blue']};
+    border: 1px solid {COLORS['accent']};
 }}
 
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
@@ -296,42 +304,42 @@ QPushButton {{
 
 QPushButton:hover {{
     background-color: {COLORS['bg_hover']};
-    border-color: {COLORS['accent_blue']};
-    color: {COLORS['accent_blue']};
+    border-color: {COLORS['accent']};
+    color: {COLORS['accent']};
 }}
 
 QPushButton:pressed {{
     background-color: {COLORS['accent']};
-    color: white;
+    color: {COLORS['bg_base']};
     border-color: {COLORS['accent']};
 }}
 
 QPushButton#btn_create {{
     background-color: {COLORS['bg_widget']};
-    border: 1px solid {COLORS['accent_blue']};
-    color: {COLORS['accent_blue']};
+    border: 1px solid {COLORS['accent']};
+    color: {COLORS['accent']};
     font-weight: bold;
 }}
 
 QPushButton#btn_create:hover {{
-    background-color: {COLORS['accent_blue']};
+    background-color: {COLORS['accent']};
     color: {COLORS['bg_base']};
 }}
 
 QPushButton#btn_delete {{
-    border: 1px solid {COLORS['accent']};
-    color: {COLORS['accent']};
+    border: 1px solid {COLORS['accent_danger']};
+    color: {COLORS['accent_danger']};
 }}
 
 QPushButton#btn_delete:hover {{
-    background-color: {COLORS['accent']};
-    color: white;
+    background-color: {COLORS['accent_danger']};
+    color: {COLORS['text_primary']};
 }}
 
 QPushButton#btn_mode_active {{
     background-color: {COLORS['bg_widget']};
-    color: {COLORS['accent_blue']};
-    border: 1px solid {COLORS['accent_blue']};
+    color: {COLORS['accent']};
+    border: 1px solid {COLORS['accent']};
     font-weight: bold;
 }}
 
@@ -362,28 +370,28 @@ QLabel#label_section {{
 }}
 
 QLabel#label_component_title {{
-    color: {COLORS['accent_blue']};
+    color: {COLORS['accent']};
     font-size: 12px;
     font-weight: bold;
     padding: 4px 0px;
 }}
 
 QLabel#label_axis_x {{
-    color: #ff6666;
+    color: #d97a7a;
     font-weight: bold;
     font-size: 11px;
     min-width: 14px;
 }}
 
 QLabel#label_axis_y {{
-    color: #66ff66;
+    color: #7ac98a;
     font-weight: bold;
     font-size: 11px;
     min-width: 14px;
 }}
 
 QLabel#label_axis_z {{
-    color: #6699ff;
+    color: #7a9fd9;
     font-weight: bold;
     font-size: 11px;
     min-width: 14px;
@@ -404,12 +412,12 @@ QCheckBox::indicator {{
 }}
 
 QCheckBox::indicator:checked {{
-    background-color: {COLORS['accent_blue']};
-    border-color: {COLORS['accent_blue']};
+    background-color: {COLORS['accent']};
+    border-color: {COLORS['accent']};
 }}
 
 QCheckBox::indicator:hover {{
-    border-color: {COLORS['accent_blue']};
+    border-color: {COLORS['accent']};
 }}
 
 /* --- Combo Box --- */
@@ -426,7 +434,7 @@ QComboBox:hover {{
 }}
 
 QComboBox:focus {{
-    border-color: {COLORS['accent_blue']};
+    border-color: {COLORS['accent']};
 }}
 
 QComboBox::drop-down {{
@@ -439,7 +447,7 @@ QComboBox QAbstractItemView {{
     color: {COLORS['text_primary']};
     border: 1px solid {COLORS['border_light']};
     selection-background-color: {COLORS['bg_hover']};
-    selection-color: {COLORS['accent_blue']};
+    selection-color: {COLORS['accent']};
 }}
 
 /* --- Status Bar --- */
@@ -494,7 +502,7 @@ QToolButton {{
 QToolButton:hover {{
     background-color: {COLORS['bg_hover']};
     border-color: {COLORS['border_light']};
-    color: {COLORS['accent_blue']};
+    color: {COLORS['accent']};
 }}
 
 QToolButton:pressed {{
@@ -503,8 +511,8 @@ QToolButton:pressed {{
 
 QToolButton:checked {{
     background-color: {COLORS['bg_widget']};
-    border-color: {COLORS['accent_blue']};
-    color: {COLORS['accent_blue']};
+    border-color: {COLORS['accent']};
+    color: {COLORS['accent']};
 }}
 
 /* --- Tooltip --- */
@@ -522,3 +530,35 @@ QToolTip {{
 def apply_theme(app):
     """QApplication에 다크 테마 적용"""
     app.setStyleSheet(DARK_THEME_QSS)
+
+
+def apply_dark_title_bar(window):
+    """
+    Windows 네이티브 타이틀바(최소화/최대화/닫기 버튼이 있는 그 줄)를 다크 모드로 전환한다.
+
+    이 줄은 OS가 직접 그리는 영역이라 Qt 스타일시트(DARK_THEME_QSS)로는 절대 손댈 수 없다 -
+    그래서 나머지 UI는 전부 다크인데 타이틀바만 밝은 색으로 남아 튀어 보이는 문제가 있었다.
+    Windows 10 1809+/11의 DWM(`DwmSetWindowAttribute` + `DWMWA_USE_IMMERSIVE_DARK_MODE`)을
+    직접 호출해서 해결한다 - Qt에 대응하는 크로스플랫폼 API가 없어 ctypes로 직접 부른다.
+
+    실패해도(다른 OS, 구버전 Windows, DWM 비활성 등) 예외를 삼키고 조용히 넘어간다 - 이건
+    있으면 좋은 화장(化粧)이지 없다고 에디터가 못 쓰게 되면 안 된다.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        hwnd = int(window.winId())
+        value = ctypes.c_int(1)
+        # 20 = Windows 10 20H1(2004)+ / 11. 그보다 오래된 1809~1909 빌드는 19번을 썼다 -
+        # 20번이 실패하면(음수 HRESULT) 구버전 값으로 한 번 더 시도.
+        hr = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            hwnd, 20, ctypes.byref(value), ctypes.sizeof(value)
+        )
+        if hr != 0:
+            ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 19, ctypes.byref(value), ctypes.sizeof(value)
+            )
+    except Exception as e:
+        print(f"[Theme] 다크 타이틀바 적용 실패(무시하고 계속 진행): {e}")

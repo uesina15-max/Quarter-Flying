@@ -9,17 +9,16 @@ from PySide6.QtCore import QTimer, Qt
 import sys
 import os
 
+from style.theme import COLORS
+
 # 에디터 디렉토리를 경로에 추가
 _EDITOR_DIR = os.path.dirname(os.path.abspath(__file__))
 if _EDITOR_DIR not in sys.path:
     sys.path.insert(0, _EDITOR_DIR)
 
-try:
-    import ge_python
-    HAS_ENGINE = True
-except ImportError:
-    HAS_ENGINE = False
-    print("[QtEngineViewport] ge_python not found - running in dummy mode")
+from engine_binding import binding as ge_python, HAS_ENGINE
+if not HAS_ENGINE:
+    print("[QtEngineViewport] engine module not found - running in dummy mode")
 
 
 class QtEngineViewport(QWidget):
@@ -52,9 +51,9 @@ class QtEngineViewport(QWidget):
         
         if not HAS_ENGINE:
             # 더미 모드 표시
-            label = QLabel("Engine Integration Test\n(ge_python required)")
+            label = QLabel("Engine Integration Test\n(엔진 모듈 로드 필요)")
             label.setAlignment(Qt.AlignCenter)
-            label.setStyleSheet("color: #334455; font-size: 14px;")
+            label.setStyleSheet(f"color: {COLORS['text_dim']}; font-size: 14px;")
             layout.addWidget(label)
     
     def _init_engine(self):
@@ -100,7 +99,7 @@ class QtEngineViewport(QWidget):
                 platform = self.engine.GetPlatform()
                 if platform:
                     # platform.on_resize 메서드가 있다고 가정
-                    # 실제 구현은 ge_python 바인딩에 따라 다름
+                    # 실제 구현은 엔진 모듈 바인딩에 따라 다름
                     pass
             except Exception as e:
                 print(f"[QtEngineViewport] Resize error: {e}")

@@ -1,0 +1,886 @@
+﻿Help on module ge_python:
+
+NAME
+    ge_python - GE Engine Python Bindings
+
+CLASSES
+    builtins.Exception(builtins.BaseException)
+        EngineError
+    pybind11_builtins.pybind11_object(builtins.object)
+        CameraComponent
+        CommandManager
+        ECSRegistry
+        EditorAPI
+        Engine
+        EngineConfig
+        Entity
+        InputEvent
+        InputEventType
+        KeyCode
+        MouseButton
+        Quaternion
+        RenderableComponent
+        ScriptComponent
+        TransformComponent
+        TransformComponentView
+        Vec3
+        World
+
+    class CameraComponent(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      CameraComponent
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.CameraComponent) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors defined here:
+     |
+     |  far_plane
+     |
+     |  fov
+     |
+     |  is_main_camera
+     |
+     |  near_plane
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class CommandManager(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      CommandManager
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(self, /, *args, **kwargs)
+     |      Initialize self.  See help(type(self)) for accurate signature.
+     |
+     |  begin_merge_session(...)
+     |      begin_merge_session(self: ge_python.CommandManager) -> None
+     |
+     |  can_redo(...)
+     |      can_redo(self: ge_python.CommandManager) -> bool
+     |
+     |  can_undo(...)
+     |      can_undo(self: ge_python.CommandManager) -> bool
+     |
+     |  clear(...)
+     |      clear(self: ge_python.CommandManager) -> None
+     |
+     |  end_merge_session(...)
+     |      end_merge_session(self: ge_python.CommandManager) -> None
+     |
+     |  is_in_merge_session(...)
+     |      is_in_merge_session(self: ge_python.CommandManager) -> bool
+     |
+     |  redo(...)
+     |      redo(self: ge_python.CommandManager) -> None
+     |
+     |  undo(...)
+     |      undo(self: ge_python.CommandManager) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods defined here:
+     |
+     |  get_instance(...) method of builtins.PyCapsule instance
+     |      get_instance() -> ge_python.CommandManager
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class ECSRegistry(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      ECSRegistry
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  CreateEntity(...)
+     |      CreateEntity(self: ge_python.ECSRegistry) -> ge_python.Entity
+     |
+     |  DestroyEntity(...)
+     |      DestroyEntity(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> None
+     |
+     |  GetAllEntities(...)
+     |      GetAllEntities(self: ge_python.ECSRegistry) -> List[ge_python.Entity]
+     |
+     |  GetCameraComponent(...)
+     |      GetCameraComponent(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> ge_python.CameraComponent
+     |
+     |  GetComponentJson(...)
+     |      GetComponentJson(self: ge_python.ECSRegistry, arg0: ge_python.Entity, arg1: str) -> str
+     |
+     |  GetComponentSchema(...)
+     |      GetComponentSchema(self: ge_python.ECSRegistry, arg0: str) -> str
+     |
+     |  GetEntityCount(...)
+     |      GetEntityCount(self: ge_python.ECSRegistry) -> int
+     |
+     |  GetEntityName(...)
+     |      GetEntityName(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> str
+     |
+     |  GetRegisteredComponents(...)
+     |      GetRegisteredComponents(self: ge_python.ECSRegistry) -> List[str]
+     |
+     |  GetRenderableComponent(...)
+     |      GetRenderableComponent(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> ge_python.RenderableComponent
+     |
+     |  GetScriptComponent(...)
+     |      GetScriptComponent(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> ge_python.ScriptComponent
+     |
+     |  GetTransformComponent(...)
+     |      GetTransformComponent(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> ge_python.TransformComponent
+     |
+     |  HasCameraComponent(...)
+     |      HasCameraComponent(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> bool
+     |
+     |  HasRenderableComponent(...)
+     |      HasRenderableComponent(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> bool
+     |
+     |  HasScriptComponent(...)
+     |      HasScriptComponent(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> bool
+     |
+     |  HasTransformComponent(...)
+     |      HasTransformComponent(self: ge_python.ECSRegistry, arg0: ge_python.Entity) -> bool
+     |
+     |  SetComponentFieldJson(...)
+     |      SetComponentFieldJson(self: ge_python.ECSRegistry, arg0: ge_python.Entity, arg1: str, arg2: str, arg3: str, arg4: int) -> None
+     |
+     |  SetComponentJson(...)
+     |      SetComponentJson(self: ge_python.ECSRegistry, arg0: ge_python.Entity, arg1: str, arg2: str) -> None
+     |
+     |  SetEntityName(...)
+     |      SetEntityName(self: ge_python.ECSRegistry, arg0: ge_python.Entity, arg1: str) -> None
+     |
+     |  SetTransformPosition(...)
+     |      SetTransformPosition(self: ge_python.ECSRegistry, arg0: ge_python.Entity, arg1: float, arg2: float, arg3: float) -> None
+     |
+     |  SetTransformRotation(...)
+     |      SetTransformRotation(self: ge_python.ECSRegistry, arg0: ge_python.Entity, arg1: float, arg2: float, arg3: float) -> None
+     |
+     |  SetTransformScale(...)
+     |      SetTransformScale(self: ge_python.ECSRegistry, arg0: ge_python.Entity, arg1: float, arg2: float, arg3: float) -> None
+     |
+     |  __init__(self, /, *args, **kwargs)
+     |      Initialize self.  See help(type(self)) for accurate signature.
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class EditorAPI(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      EditorAPI
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(self, /, *args, **kwargs)
+     |      Initialize self.  See help(type(self)) for accurate signature.
+     |
+     |  add_component(...)
+     |      add_component(self: ge_python.EditorAPI, arg0: ge_python.Entity, arg1: str) -> None
+     |
+     |  begin_transaction(...)
+     |      begin_transaction(self: ge_python.EditorAPI, name: str = 'Transaction') -> None
+     |
+     |  cancel_transaction(...)
+     |      cancel_transaction(self: ge_python.EditorAPI) -> None
+     |
+     |  commit_transaction(...)
+     |      commit_transaction(self: ge_python.EditorAPI) -> None
+     |
+     |  create_entity(...)
+     |      create_entity(self: ge_python.EditorAPI, name: str = '') -> ge_python.Entity
+     |
+     |  destroy_entity(...)
+     |      destroy_entity(self: ge_python.EditorAPI, arg0: ge_python.Entity) -> None
+     |
+     |  is_in_transaction(...)
+     |      is_in_transaction(self: ge_python.EditorAPI) -> bool
+     |
+     |  move_entity(...)
+     |      move_entity(self: ge_python.EditorAPI, arg0: ge_python.Entity, arg1: ge_python.Vec3) -> None
+     |
+     |  remove_component(...)
+     |      remove_component(self: ge_python.EditorAPI, arg0: ge_python.Entity, arg1: str) -> None
+     |
+     |  rotate_entity(...)
+     |      rotate_entity(self: ge_python.EditorAPI, arg0: ge_python.Entity, arg1: ge_python.Quaternion) -> None
+     |
+     |  scale_entity(...)
+     |      scale_entity(self: ge_python.EditorAPI, arg0: ge_python.Entity, arg1: ge_python.Vec3) -> None
+     |
+     |  set_registry(...)
+     |      set_registry(self: ge_python.EditorAPI, arg0: ge_python.ECSRegistry) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods defined here:
+     |
+     |  get_instance(...) method of builtins.PyCapsule instance
+     |      get_instance() -> ge_python.EditorAPI
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class Engine(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      Engine
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  CreateWorld(...)
+     |      CreateWorld(self: ge_python.Engine, arg0: str) -> ge_python.World
+     |
+     |  GetActiveWorld(...)
+     |      GetActiveWorld(self: ge_python.Engine) -> ge_python.World
+     |
+     |  Initialize(...)
+     |      Initialize(self: ge_python.Engine, arg0: ge_python.EngineConfig) -> None
+     |
+     |  InitializeFromWindowHandle(...)
+     |      InitializeFromWindowHandle(self: ge_python.Engine, arg0: int, arg1: ge_python.EngineConfig) -> None
+     |
+     |  PushInputEvent(...)
+     |      PushInputEvent(self: ge_python.Engine, arg0: ge_python.InputEvent) -> None
+     |
+     |  Shutdown(...)
+     |      Shutdown(self: ge_python.Engine) -> None
+     |
+     |  TickFrame(...)
+     |      TickFrame(self: ge_python.Engine) -> None
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.Engine) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class EngineConfig(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      EngineConfig
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.EngineConfig) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors defined here:
+     |
+     |  windowHeight
+     |
+     |  windowTitle
+     |
+     |  windowWidth
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class EngineError(builtins.Exception)
+     |  Method resolution order:
+     |      EngineError
+     |      builtins.Exception
+     |      builtins.BaseException
+     |      builtins.object
+     |
+     |  Data descriptors defined here:
+     |
+     |  __weakref__
+     |      list of weak references to the object
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from builtins.Exception:
+     |
+     |  __new__(*args, **kwargs) class method of builtins.Exception
+     |      Create and return a new object.  See help(type) for accurate signature.
+     |
+     |  ----------------------------------------------------------------------
+     |  Methods inherited from builtins.BaseException:
+     |
+     |  __init__(self, /, *args, **kwargs)
+     |      Initialize self.  See help(type(self)) for accurate signature.
+     |
+     |  __reduce__(self, /)
+     |      Helper for pickle.
+     |
+     |  __repr__(self, /)
+     |      Return repr(self).
+     |
+     |  __setstate__(self, state, /)
+     |
+     |  __str__(self, /)
+     |      Return str(self).
+     |
+     |  add_note(self, note, /)
+     |      Add a note to the exception
+     |
+     |  with_traceback(self, tb, /)
+     |      Set self.__traceback__ to tb and return self.
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors inherited from builtins.BaseException:
+     |
+     |  __cause__
+     |
+     |  __context__
+     |
+     |  __dict__
+     |
+     |  __suppress_context__
+     |
+     |  __traceback__
+     |
+     |  args
+
+    class Entity(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      Entity
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  IsValid(...)
+     |      IsValid(self: ge_python.Entity) -> bool
+     |
+     |  __eq__(...)
+     |      __eq__(self: ge_python.Entity, arg0: ge_python.Entity) -> bool
+     |
+     |  __init__(...)
+     |      __init__(*args, **kwargs)
+     |      Overloaded function.
+     |
+     |      1. __init__(self: ge_python.Entity) -> None
+     |
+     |      2. __init__(self: ge_python.Entity, arg0: int) -> None
+     |
+     |  __repr__(...)
+     |      __repr__(self: ge_python.Entity) -> str
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors defined here:
+     |
+     |  id
+     |
+     |  ----------------------------------------------------------------------
+     |  Data and other attributes defined here:
+     |
+     |  __hash__ = None
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class InputEvent(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      InputEvent
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.InputEvent) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors defined here:
+     |
+     |  keyCode
+     |
+     |  mouseButton
+     |
+     |  mouseDeltaX
+     |
+     |  mouseDeltaY
+     |
+     |  mouseWheelDelta
+     |
+     |  mouseX
+     |
+     |  mouseY
+     |
+     |  type
+     |
+     |  windowHeight
+     |
+     |  windowWidth
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class InputEventType(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      InputEventType
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __eq__(...)
+     |      __eq__(self: object, other: object) -> bool
+     |
+     |  __getstate__(...)
+     |      __getstate__(self: object) -> int
+     |
+     |  __hash__(...)
+     |      __hash__(self: object) -> int
+     |
+     |  __index__(...)
+     |      __index__(self: ge_python.InputEventType) -> int
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.InputEventType, value: int) -> None
+     |
+     |  __int__(...)
+     |      __int__(self: ge_python.InputEventType) -> int
+     |
+     |  __ne__(...)
+     |      __ne__(self: object, other: object) -> bool
+     |
+     |  __repr__(...)
+     |      __repr__(self: object) -> str
+     |
+     |  __setstate__(...)
+     |      __setstate__(self: ge_python.InputEventType, state: int) -> None
+     |
+     |  __str__ = name(...)
+     |      name(self: handle) -> str
+     |
+     |  ----------------------------------------------------------------------
+     |  Readonly properties defined here:
+     |
+     |  __members__
+     |
+     |  name
+     |      name(self: handle) -> str
+     |
+     |  value
+     |
+     |  ----------------------------------------------------------------------
+     |  Data and other attributes defined here:
+     |
+     |  KeyDown = <InputEventType.KeyDown: 1>
+     |
+     |  KeyUp = <InputEventType.KeyUp: 2>
+     |
+     |  MouseButtonDown = <InputEventType.MouseButtonDown: 4>
+     |
+     |  MouseButtonUp = <InputEventType.MouseButtonUp: 5>
+     |
+     |  MouseMove = <InputEventType.MouseMove: 3>
+     |
+     |  MouseWheel = <InputEventType.MouseWheel: 6>
+     |
+     |  None = <InputEventType.None: 0>
+     |
+     |  WindowClose = <InputEventType.WindowClose: 7>
+     |
+     |  WindowResize = <InputEventType.WindowResize: 8>
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class KeyCode(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      KeyCode
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __eq__(...)
+     |      __eq__(self: object, other: object) -> bool
+     |
+     |  __getstate__(...)
+     |      __getstate__(self: object) -> int
+     |
+     |  __hash__(...)
+     |      __hash__(self: object) -> int
+     |
+     |  __index__(...)
+     |      __index__(self: ge_python.KeyCode) -> int
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.KeyCode, value: int) -> None
+     |
+     |  __int__(...)
+     |      __int__(self: ge_python.KeyCode) -> int
+     |
+     |  __ne__(...)
+     |      __ne__(self: object, other: object) -> bool
+     |
+     |  __repr__(...)
+     |      __repr__(self: object) -> str
+     |
+     |  __setstate__(...)
+     |      __setstate__(self: ge_python.KeyCode, state: int) -> None
+     |
+     |  __str__ = name(...)
+     |      name(self: handle) -> str
+     |
+     |  ----------------------------------------------------------------------
+     |  Readonly properties defined here:
+     |
+     |  __members__
+     |
+     |  name
+     |      name(self: handle) -> str
+     |
+     |  value
+     |
+     |  ----------------------------------------------------------------------
+     |  Data and other attributes defined here:
+     |
+     |  A = <KeyCode.A: 65>
+     |
+     |  D = <KeyCode.D: 68>
+     |
+     |  Escape = <KeyCode.Escape: 27>
+     |
+     |  S = <KeyCode.S: 83>
+     |
+     |  W = <KeyCode.W: 87>
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class MouseButton(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      MouseButton
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __eq__(...)
+     |      __eq__(self: object, other: object) -> bool
+     |
+     |  __getstate__(...)
+     |      __getstate__(self: object) -> int
+     |
+     |  __hash__(...)
+     |      __hash__(self: object) -> int
+     |
+     |  __index__(...)
+     |      __index__(self: ge_python.MouseButton) -> int
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.MouseButton, value: int) -> None
+     |
+     |  __int__(...)
+     |      __int__(self: ge_python.MouseButton) -> int
+     |
+     |  __ne__(...)
+     |      __ne__(self: object, other: object) -> bool
+     |
+     |  __repr__(...)
+     |      __repr__(self: object) -> str
+     |
+     |  __setstate__(...)
+     |      __setstate__(self: ge_python.MouseButton, state: int) -> None
+     |
+     |  __str__ = name(...)
+     |      name(self: handle) -> str
+     |
+     |  ----------------------------------------------------------------------
+     |  Readonly properties defined here:
+     |
+     |  __members__
+     |
+     |  name
+     |      name(self: handle) -> str
+     |
+     |  value
+     |
+     |  ----------------------------------------------------------------------
+     |  Data and other attributes defined here:
+     |
+     |  Left = <MouseButton.Left: 0>
+     |
+     |  Middle = <MouseButton.Middle: 2>
+     |
+     |  Right = <MouseButton.Right: 1>
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class Quaternion(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      Quaternion
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(*args, **kwargs)
+     |      Overloaded function.
+     |
+     |      1. __init__(self: ge_python.Quaternion) -> None
+     |
+     |      2. __init__(self: ge_python.Quaternion, arg0: float, arg1: float, arg2: float, arg3: float) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors defined here:
+     |
+     |  w
+     |
+     |  x
+     |
+     |  y
+     |
+     |  z
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class RenderableComponent(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      RenderableComponent
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.RenderableComponent) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors defined here:
+     |
+     |  cast_shadows
+     |
+     |  material_handle
+     |
+     |  mesh_handle
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class ScriptComponent(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      ScriptComponent
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.ScriptComponent) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors defined here:
+     |
+     |  class_name
+     |
+     |  dirty
+     |
+     |  module_name
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class TransformComponent(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      TransformComponent
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.TransformComponent) -> None
+     |
+     |  ----------------------------------------------------------------------
+     |  Readonly properties defined here:
+     |
+     |  position
+     |
+     |  position_x
+     |
+     |  position_y
+     |
+     |  position_z
+     |
+     |  rotation
+     |
+     |  rotation_x
+     |
+     |  rotation_y
+     |
+     |  rotation_z
+     |
+     |  scale
+     |
+     |  scale_x
+     |
+     |  scale_y
+     |
+     |  scale_z
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class TransformComponentView(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      TransformComponentView
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(self: ge_python.TransformComponentView) -> None
+     |
+     |  __repr__(...)
+     |      __repr__(self: ge_python.TransformComponentView) -> str
+     |
+     |  ----------------------------------------------------------------------
+     |  Readonly properties defined here:
+     |
+     |  position
+     |
+     |  rotation
+     |
+     |  scale
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class Vec3(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      Vec3
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  __init__(...)
+     |      __init__(*args, **kwargs)
+     |      Overloaded function.
+     |
+     |      1. __init__(self: ge_python.Vec3) -> None
+     |
+     |      2. __init__(self: ge_python.Vec3, arg0: float, arg1: float, arg2: float) -> None
+     |
+     |  __repr__(...)
+     |      __repr__(self: ge_python.Vec3) -> str
+     |
+     |  ----------------------------------------------------------------------
+     |  Data descriptors defined here:
+     |
+     |  x
+     |
+     |  y
+     |
+     |  z
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+    class World(pybind11_builtins.pybind11_object)
+     |  Method resolution order:
+     |      World
+     |      pybind11_builtins.pybind11_object
+     |      builtins.object
+     |
+     |  Methods defined here:
+     |
+     |  GetRegistry(...)
+     |      GetRegistry(self: ge_python.World) -> ge_python.ECSRegistry
+     |
+     |  __init__(self, /, *args, **kwargs)
+     |      Initialize self.  See help(type(self)) for accurate signature.
+     |
+     |  ----------------------------------------------------------------------
+     |  Static methods inherited from pybind11_builtins.pybind11_object:
+     |
+     |  __new__(*args, **kwargs) class method of pybind11_builtins.pybind11_object
+     |      Create and return a new object.  See help(type) for accurate signature.
+
+DATA
+    A = <KeyCode.A: 65>
+    D = <KeyCode.D: 68>
+    Escape = <KeyCode.Escape: 27>
+    KeyDown = <InputEventType.KeyDown: 1>
+    KeyUp = <InputEventType.KeyUp: 2>
+    Left = <MouseButton.Left: 0>
+    Middle = <MouseButton.Middle: 2>
+    MouseButtonDown = <InputEventType.MouseButtonDown: 4>
+    MouseButtonUp = <InputEventType.MouseButtonUp: 5>
+    MouseMove = <InputEventType.MouseMove: 3>
+    MouseWheel = <InputEventType.MouseWheel: 6>
+    None = <InputEventType.None: 0>
+    Right = <MouseButton.Right: 1>
+    S = <KeyCode.S: 83>
+    W = <KeyCode.W: 87>
+    WindowClose = <InputEventType.WindowClose: 7>
+    WindowResize = <InputEventType.WindowResize: 8>
+
+FILE
+    c:\quarterflying\engine\build\release\ge_python.cp314-win_amd64.pyd
+
+

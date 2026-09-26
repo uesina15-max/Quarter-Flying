@@ -107,6 +107,15 @@ class ActionData:
     events:   List[ActionEvent]    = field(default_factory=list)
     layers:   List[AnimationLayer] = field(default_factory=list)
 
+    # 이 액션이 저장/로드된 파일 경로. **직렬화하지 않는다**(to_dict에 없음) - 파일
+    # 안에 자기 경로를 적어두면 파일을 옮기는 순간 거짓말이 되기 때문이다.
+    #
+    # Sound Lite가 이 값을 쓴다: params.clip이 `.action.json` 위치 기준 상대 경로라
+    # (docs/SOUND_LITE_PLAN.md §6.4) 클립을 로드하려면 기준 폴더를 알아야 하는데,
+    # 액션 객체가 자기 출처를 들고 있으면 패널마다 경로를 따로 배선할 필요가 없다.
+    # 아직 한 번도 저장되지 않은 액션은 None이고, 그 경우 clip은 절대 경로로 둔다.
+    source_path: Optional[str] = None
+
     # ── 직렬화 ───────────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
@@ -195,17 +204,47 @@ class ActionData:
 # File I/O helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def relativize_clip_paths(data: ActionData, base_dir: str) -> None:
+    """Sound 이벤트의 절대 clip 경로를 base_dir 기준 상대 경로로 바꾼다.
+
+    docs/SOUND_LITE_PLAN.md §6.4. 클립을 고르는 시점에는 어느 폴더에 저장될지 모르므로
+    일단 절대 경로로 들고 있다가, **저장 시점에** 여기서 상대 경로로 계산한다.
+
+    다른 드라이브에 있는 클립처럼 상대 경로를 만들 수 없으면 절대 경로를 그대로 둔다 -
+    깨진 상대 경로를 쓰느니 옮길 때 깨지는 절대 경로가 낫다.
+    """
+    for e in data.events:
+        if e.type != EventType.SOUND:
+            continue
+        clip = (e.params or {}).get("clip")
+        if not clip or not os.path.isabs(clip):
+            continue
+        try:
+            e.params["clip"] = os.path.relpath(clip, base_dir).replace(os.sep, "/")
+        except ValueError:
+            pass  # 예: Windows에서 드라이브가 다른 경우
+
+
 def save_action(data: ActionData, filepath: str) -> None:
     """ActionData를 .action.json 파일로 저장."""
-    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+    abs_path = os.path.abspath(filepath)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+    # 저장될 폴더가 확정된 지금이 clip 경로를 상대화할 유일한 시점이다(§6.4).
+    relativize_clip_paths(data, os.path.dirname(abs_path))
+
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(data.to_json())
+    data.source_path = abs_path
 
 
 def load_action(filepath: str) -> ActionData:
     """파일에서 ActionData 로드."""
     with open(filepath, "r", encoding="utf-8") as f:
-        return ActionData.from_json(f.read())
+        action = ActionData.from_json(f.read())
+    # clip의 상대 경로를 풀 기준 폴더를 액션 자신이 들고 있게 한다(§6.4).
+    action.source_path = os.path.abspath(filepath)
+    return action
 
 
 # ─────────────────────────────────────────────────────────────────────────────

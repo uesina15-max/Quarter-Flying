@@ -28,9 +28,13 @@ class MotionEditorWidget(QWidget):
     """
     Motion Editor의 최상위 위젯. main.py에서 QStackedWidget의 한 페이지로 들어간다.
     """
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, shared_viewport=None):
         super().__init__(parent)
         self._current_action: Optional[ActionData] = None
+        # Scene Editor와 공유하는 단일 EngineViewport 인스턴스 (착수 계약서 §C11) - 여기서
+        # 소유하지 않고 AnimationPreviewPanel에 그대로 넘긴다. None이면(엔진 없음/더미 모드)
+        # 기존 2D 프리뷰로 폴백한다.
+        self._shared_viewport = shared_viewport
         self._build_ui()
         self._connect_signals()
 
@@ -51,8 +55,8 @@ class MotionEditorWidget(QWidget):
         self.motion_list = MotionListPanel()
         self.top_h_splitter.addWidget(self.motion_list)
 
-        # 2. 중앙: Animation Preview
-        self.preview = AnimationPreviewPanel()
+        # 2. 중앙: Animation Preview (Motion Mixer 프리뷰 - Scene Editor와 공유 뷰포트)
+        self.preview = AnimationPreviewPanel(shared_viewport=self._shared_viewport)
         self.top_h_splitter.addWidget(self.preview)
 
         # 3. 오른쪽 스플리터 (Inspector / Graph)
@@ -69,10 +73,13 @@ class MotionEditorWidget(QWidget):
         self.timeline = EventTimelinePanel()
         self.main_v_splitter.addWidget(self.timeline)
 
-        # 스플리터 비율 설정
-        self.top_h_splitter.setSizes([200, 600, 350])
-        self.right_v_splitter.setSizes([600, 200])
-        self.main_v_splitter.setSizes([700, 200])
+        # 스플리터 비율 설정 — 뷰포트(중앙)와 모션 그래프(우측 하단)가 레이아웃의
+        # 중심이 되도록 재조정한다("모션 에디터는 뷰포트와 모션 그래프 위주로").
+        # 이전엔 Section Inspector(600) : Motion Graph(200) = 3:1로 그래프가 구석에
+        # 눌려 있었다 - 이제 그래프가 Inspector보다 더 넓은 영역을 받는다.
+        self.top_h_splitter.setSizes([170, 720, 310])
+        self.right_v_splitter.setSizes([320, 480])
+        self.main_v_splitter.setSizes([720, 180])
 
     def _connect_signals(self):
         # List -> Others (액션 선택 변경)
@@ -111,12 +118,27 @@ class MotionEditorWidget(QWidget):
 
     def _on_data_changed(self):
         # 뷰포트나 타임라인 다시 그리기
-        self.preview.canvas.update()
+        # preview.canvas는 공유 EngineViewport가 붙어있는 동안(§C11) None이다 - 그 경우
+        # 다시 그릴 2D 더미 캔버스가 없으므로 건너뛴다(엔진 뷰포트는 자체 타이머로 계속
+        # TickFrame을 돌며 그린다).
+        if self.preview.canvas is not None:
+            self.preview.canvas.update()
         self.timeline.canvas.update()
         self.graph.canvas.update()
         
         if self._current_action:
             self.motion_list.notify_action_renamed(self._current_action)
+
+    # ── Motion Mixer 프리뷰 (Phase 4A, main.py의 _set_mode가 모드 전환 시 호출) ──────
+
+    def attach_viewport(self):
+        self.preview.attach_viewport()
+
+    def activate_motion_preview(self):
+        self.preview.activate_motion_preview()
+
+    def deactivate_motion_preview(self):
+        self.preview.deactivate_motion_preview()
 
     # ── 외부에서 호출할 Actions (메뉴바 등에서 연결) ─────────────────────────
 

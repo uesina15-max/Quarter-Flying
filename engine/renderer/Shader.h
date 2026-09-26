@@ -14,6 +14,13 @@ namespace Engine
         ~Shader();
 
         bool load(const std::string& vertexPath, const std::string& fragmentPath);
+
+        // load()와 달리 파일 경로를 거치지 않고 GLSL 소스 문자열을 바로 컴파일한다 -
+        // 상대경로가 프로세스 CWD 기준이라 에디터(engine/editor/에서 실행)에서 항상
+        // 깨지는 문제(DebugGridRenderer/BoneLineRenderer가 겪었던 것과 동일)를 원천적으로
+        // 피하기 위한 경로. 내부 컴파일/링크 로직은 load()와 동일하게 공유한다.
+        bool loadFromSource(const std::string& vertexSrc, const std::string& fragmentSrc);
+
         void use() const;
 
         void setMat4(const std::string& name, const glm::mat4& value);

@@ -3,20 +3,29 @@ Scene Hierarchy Panel
 씬 계층 뷰 — 엔티티 트리를 표시하고 선택/생성/삭제를 지원
 """
 
+import os
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget,
     QTreeWidgetItem, QPushButton, QMenu, QAbstractItemView,
-    QSizePolicy
+    QSizePolicy, QFileDialog
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QIcon, QColor, QBrush, QFont, QAction
 
-# ge_python 바인딩이 없는 경우에도 더미 모드로 동작
-try:
-    import ge_python
-    HAS_ENGINE = True
-except ImportError:
-    HAS_ENGINE = False
+from style.theme import COLORS
+
+# 엔진 모듈이 없는 경우에도 더미 모드로 동작
+from engine_binding import HAS_ENGINE, to_entity
+
+# engine/editor/panels/scene_hierarchy.py 기준 engine/assets/prefabs/
+# (panels/prefab_browser.py도 같은 경로를 독립적으로 계산한다 - 패널 사이에
+# 공유 "paths" 모듈이 아직 없어서, motion_mixer.py가 이미 하는 것과 같은 방식으로
+# 각자 로컬 상수를 둔다.)
+_PREFAB_ASSETS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "assets", "prefabs",
+)
 
 
 class EntityItem(QTreeWidgetItem):
@@ -48,10 +57,12 @@ class SceneHierarchyPanel(QWidget):
 
     entity_selected = Signal(int)    # entity_id
     entity_deselected = Signal()
+    prefab_capture_status = Signal(str)  # 상태 바 표시용 (성공/실패 메시지 텍스트)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.registry = None          # ge_python ECSRegistry 참조 (2단계 연동)
+        self.editor_api = None        # ge_python EditorAPI 참조 (Create Prefab 등에 필요)
         self._selected_entity_id = -1
         self._dummy_counter = 0       # 더미 엔티티 카운터
 
@@ -99,7 +110,7 @@ class SceneHierarchyPanel(QWidget):
     def _build_toolbar(self) -> QWidget:
         bar = QWidget()
         bar.setFixedHeight(32)
-        bar.setStyleSheet("background-color: #0d1b2a; border-bottom: 1px solid #1e3a5f;")
+        bar.setStyleSheet(f"background-color: {COLORS['bg_header']}; border-bottom: 1px solid {COLORS['border']};")
         h = QHBoxLayout(bar)
         h.setContentsMargins(6, 2, 6, 2)
         h.setSpacing(4)
@@ -181,6 +192,10 @@ class SceneHierarchyPanel(QWidget):
         self._refresh_timer.start(500)  # 500ms마다 씬 갱신
         self.refresh_from_engine()
 
+    def connect_editor(self, editor_api):
+        """엔진 모듈의 EditorAPI 연결 (Create Prefab 등 명령형 API가 필요한 동작용)."""
+        self.editor_api = editor_api
+
     def refresh_from_engine(self):
         """
         엔진 ECS에서 실제 엔티티 목록을 읽어와 트리를 갱신합니다.
@@ -189,11 +204,35 @@ class SceneHierarchyPanel(QWidget):
         if not self.registry or not HAS_ENGINE:
             return
         try:
+            # 버그 1: GetAllEntities()는 ge_python.Entity 객체를 돌려주는데, 그걸 그대로
+            # EntityItem(entity_id: int, ...)에 넣으면 entity_id가 Entity 객체가
+            # 되어버린다. 이 값이 나중에 entity_selected(Signal(int))로 emit되는
+            # 순간 PySide6가 Entity -> int 변환을 못 해서 조용히 0으로 깨진다 -
+            # Scene Hierarchy에서 뭘 클릭해도 Inspector는 항상 entity 0을 보여주고
+            # 있었다(docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4 실측 검증 중 발견).
+            # .id로 미리 풀어서 EntityItem.entity_id를 항상 raw int로 유지한다
+            # (자체 타입 힌트도 원래 int였다 - create_entity()의 툴바 경로는 이미
+            # entity.id를 이렇게 풀어서 쓰고 있었다).
+            #
+            # 버그 2: 이 메서드는 500ms 타이머로 반복 호출되는데(connect_registry()),
+            # self.tree.clear()가 선택 상태를 통째로 지우고 아래 루프는 선택을 복원하지
+            # 않았다 - 즉 무엇을 선택하든 0.5초 안에 항상 선택 해제되어 Inspector가
+            # "No Selection"으로 돌아갔다(같은 실측 검증 중 발견). 갱신 전 선택된
+            # entity_id를 기억해뒀다가, 다시 존재하면 재선택한다.
+            previously_selected = self._selected_entity_id
+
             entities = self.registry.GetAllEntities()
             self.tree.clear()
+            item_to_reselect = None
             for eid in entities:
-                name = self.registry.GetEntityName(eid) if hasattr(self.registry, 'GetEntityName') else f"Entity_{eid}"
-                self.tree.addTopLevelItem(EntityItem(eid, name))
+                name = self.registry.GetEntityName(eid) if hasattr(self.registry, 'GetEntityName') else f"Entity_{eid.id}"
+                item = EntityItem(eid.id, name)
+                self.tree.addTopLevelItem(item)
+                if eid.id == previously_selected:
+                    item_to_reselect = item
+
+            if item_to_reselect is not None:
+                self.tree.setCurrentItem(item_to_reselect)
         except Exception as e:
             print(f"[SceneHierarchy] 엔진 동기화 실패: {e}")
 
@@ -300,7 +339,7 @@ class SceneHierarchyPanel(QWidget):
 
         if self.registry and HAS_ENGINE:
             try:
-                self.registry.DestroyEntity(ge_python.Entity(entity_id))
+                self.registry.DestroyEntity(to_entity(entity_id))
             except Exception as e:
                 print(f"[SceneHierarchy] 엔티티 삭제 실패: {e}")
 
@@ -341,11 +380,47 @@ class SceneHierarchyPanel(QWidget):
             action_dup.triggered.connect(lambda: self._duplicate_entity(item))
             menu.addAction(action_dup)
 
+            # 실제 ECS에 연결되어 있어야만 의미가 있다 - 연결 전 더미 트리 항목은
+            # 캡처할 실제 컴포넌트가 없다.
+            if self.registry and self.editor_api and HAS_ENGINE:
+                action_prefab = QAction("📦  Create Prefab...", self)
+                action_prefab.triggered.connect(lambda: self._create_prefab_from_item(item))
+                menu.addAction(action_prefab)
+
             action_del = QAction("🗑️  Delete", self)
             action_del.triggered.connect(self.delete_selected_entity)
             menu.addAction(action_del)
 
         menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def _create_prefab_from_item(self, item: "EntityItem"):
+        """선택한 엔티티를 *.prefab.json으로 저장한다
+        (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 3, EditorAPI::CapturePrefab)."""
+        if not self.editor_api:
+            return
+
+        os.makedirs(_PREFAB_ASSETS_DIR, exist_ok=True)
+
+        # 트리 표시용 이모지/공백을 걷어내고 기본 저장 이름을 제안한다.
+        raw_name = item.entity_name.strip()
+        default_name = "".join(ch for ch in raw_name if ch.isalnum() or ch in ("_", "-")) or "Prefab"
+        default_path = os.path.join(_PREFAB_ASSETS_DIR, f"{default_name}.prefab.json")
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Create Prefab", default_path, "Prefab Files (*.prefab.json)"
+        )
+        if not path:
+            return
+        if not path.endswith(".prefab.json"):
+            path += ".prefab.json"
+
+        try:
+            entity = to_entity(item.entity_id)
+            self.editor_api.capture_prefab(entity, path)
+            self.prefab_capture_status.emit(f"프리팹 생성 완료: {os.path.basename(path)}")
+        except Exception as e:
+            print(f"[SceneHierarchy] 프리팹 생성 실패: {e}")
+            self.prefab_capture_status.emit(f"프리팹 생성 실패: {e}")
 
     def _duplicate_entity(self, item: EntityItem):
         """엔티티 복제"""

@@ -25,6 +25,18 @@
 
 namespace Engine
 {
+    // SetupInstanceVAO()가 실제로 활성화하는 vertex attribute 개수(location 0~12).
+    // 내역: mesh 3개(position/normal/texcoord) + instance 10개(mat4 model 4개 + color +
+    // roughness + metallic + entityId + isSelected + alpha).
+    //
+    // 예전에는 Initialize()/ValidateOpenGLCapabilities()가 이 값을 7("mesh 3 + mat4 4")로
+    // 알고 검사하고 있었다 -- 실제 사용량보다 5개나 낮은 값이라, attribute가 7~11개인
+    // 환경에서는 검사를 통과한 뒤 glEnableVertexAttribArray(8..12)가 조용히 실패해서
+    // "GL 에러 없이 화면만 이상하게 그려지는" 상태가 됐을 것이다. 실제 사용량과 같은
+    // 상수 하나를 세 곳이 공유하게 해서 다시 어긋나지 않도록 한다.
+    // (OpenGL이 보장하는 최소값은 16이므로 13은 안전한 요구치다.)
+    static constexpr uint32_t kRequiredVertexAttribs = 13;
+
     // ============================================================================
     // InstanceBatch Implementation
     // ============================================================================
@@ -117,12 +129,14 @@ namespace Engine
         maxVertexAttribs = GetMaxVertexAttributes();
         Logger::Log(LogLevel::Info, "InstancedBatchManager::Initialize - Max vertex attributes: {}", maxVertexAttribs);
         
-        // Check if we have enough attributes for instanced rendering
-        // We need: 3 for vertex data (position, normal, UV) + 4 for mat4 instance data = 7 minimum
-        if (maxVertexAttribs < 7)
+        // SetupInstanceVAO()가 실제로 쓰는 개수(kRequiredVertexAttribs)로 검사한다.
+        // 모자라면 조용히 잘못 그리지 말고, 어떤 가정이 왜 깨졌는지 메시지에 남긴다.
+        if (maxVertexAttribs < kRequiredVertexAttribs)
         {
-            return MakeUnexpected(EngineErrorCode::NotSupported, 
-                                  "Insufficient vertex attributes for instanced rendering", 
+            return MakeUnexpected(EngineErrorCode::NotSupported,
+                                  "Insufficient vertex attributes for instanced rendering (need " +
+                                      std::to_string(kRequiredVertexAttribs) + ", got " +
+                                      std::to_string(maxVertexAttribs) + ")",
                                   "InstancedBatchManager");
         }
         
@@ -221,7 +235,7 @@ namespace Engine
         InstanceBatch* batch = FindBatch(key);
         if (!batch)
         {
-            return MakeUnexpected(EngineErrorCode::NotFound, "Batch not found", "InstancedBatchManager");
+            return MakeUnexpected(EngineErrorCode::ResourceNotFound, "Batch not found", "InstancedBatchManager");
         }
         
         batch->instanceData.push_back(data);
@@ -229,10 +243,16 @@ namespace Engine
         batch->isDirty = true;
         batch->visibleCount = batch->instanceData.size();  // Initially all visible
         batchesNeedSorting = true;
-        
-        Logger::Log(LogLevel::Trace, "InstancedBatchManager::AddInstance - Added instance to batch, total instances: {}", 
-                    batch->instanceData.size());
-        
+
+        // 예전엔 여기서 인스턴스 하나마다 TRACE 로그를 남겼다("Added instance to batch,
+        // total instances: N"). RenderSystem처럼 엔티티가 몇 개뿐일 땐 티가 안 났지만,
+        // 파티클이 붙으면서 **프레임당 파티클 수만큼** 로그가 쏟아졌다 - 파티클 2048개
+        // 기준으로 프레임당 2048줄이고, 실측에서 16초 동안 12,194줄이 쌓이는 동안
+        // 6프레임밖에 못 돌았다(FPS 1). 로그 한 줄마다 문자열 포맷 + 파일 I/O가 붙는
+        // 매 프레임 핫 루프였던 것이다.
+        //
+        // 인스턴스 단위 추적은 이 로그 없이도 stats.totalInstances로 볼 수 있으므로
+        // (RendererStats), 로그를 되살리지 말 것.
         return {};
     }
     
@@ -246,12 +266,12 @@ namespace Engine
         InstanceBatch* batch = FindBatch(key);
         if (!batch)
         {
-            return MakeUnexpected(EngineErrorCode::NotFound, "Batch not found", "InstancedBatchManager");
+            return MakeUnexpected(EngineErrorCode::ResourceNotFound, "Batch not found", "InstancedBatchManager");
         }
         
         if (instanceIndex >= batch->instanceData.size())
         {
-            return MakeUnexpected(EngineErrorCode::OutOfRange, "Instance index out of range", "InstancedBatchManager");
+            return MakeUnexpected(EngineErrorCode::InvalidParameter, "Instance index out of range", "InstancedBatchManager");
         }
         
         batch->instanceData[instanceIndex] = data;
@@ -260,6 +280,20 @@ namespace Engine
         return {};
     }
     
+    void InstancedBatchManager::ClearInstances(const InstancedBatchKey& key)
+    {
+        InstanceBatch* batch = FindBatch(key);
+        if (!batch)
+        {
+            return;
+        }
+
+        batch->instanceData.clear();
+        batch->entityIds.clear();
+        batch->isDirty = true;
+        batch->visibleCount = 0;
+    }
+
     Result<void> InstancedBatchManager::RemoveBatch(const InstancedBatchKey& key)
     {
         if (!initialized)
@@ -270,7 +304,7 @@ namespace Engine
         auto it = batches.find(key);
         if (it == batches.end())
         {
-            return MakeUnexpected(EngineErrorCode::NotFound, "Batch not found", "InstancedBatchManager");
+            return MakeUnexpected(EngineErrorCode::ResourceNotFound, "Batch not found", "InstancedBatchManager");
         }
         
         ReleaseBatchResources(*it->second);
@@ -381,7 +415,23 @@ namespace Engine
         {
             return;
         }
-        
+
+        // 방어적 체크: instanceVAO는 CreateBatch()가 성공해야만 0이 아닌 값으로 채워진다.
+        // CreateBatch()의 Result가 무시되거나(GPU 자원 생성 실패) ReleaseBatchResources() 이후
+        // 재사용된 배치가 맵에 남아 있으면 여기서 instanceVAO == 0인 채로 들어올 수 있는데,
+        // 이걸 체크 없이 그냥 glBindVertexArray(0)(기본 VAO)으로 그렸다면 Mesh::drawInstanced()
+        // 버그(위 CLAUDE.md "코드 품질 관례" #3 참고)와 같은 종류의 "GL 에러 없이 화면에는
+        // 아무 것도(혹은 엉뚱하게) 그려지지 않는" 증상을 냈을 것이다 - 여기서 조기에 걸러서
+        // 원인을 로그로 남긴다.
+        if (batch->instanceVAO == 0)
+        {
+            Logger::Log(LogLevel::Error,
+                "InstancedBatchManager::RenderBatch - instanceVAO is 0 for mesh GUID: {} (CreateBatch "
+                "may have failed or this batch's GPU resources were already released) - skipping draw",
+                key.meshGuid);
+            return;
+        }
+
         // Bind instance VAO (which includes mesh vertex attributes)
         glBindVertexArray(batch->instanceVAO);
         
@@ -428,16 +478,16 @@ namespace Engine
         auto it = batches.begin();
         while (it != batches.end())
         {
-            if (it->second.instanceData.empty() || it->second.markedForDeletion)
+            if (it->second->instanceData.empty() || it->second->markedForDeletion)
             {
                 // Clean up OpenGL resources if any
-                if (it->second.instanceVAO != 0)
+                if (it->second->instanceVAO != 0)
                 {
-                    glDeleteVertexArrays(1, &it->second.instanceVAO);
+                    glDeleteVertexArrays(1, &it->second->instanceVAO);
                 }
-                if (it->second.instanceVBO != 0)
+                if (it->second->instanceVBO != 0)
                 {
-                    glDeleteBuffers(1, &it->second.instanceVBO);
+                    glDeleteBuffers(1, &it->second->instanceVBO);
                 }
                 
                 it = batches.erase(it);
@@ -470,7 +520,16 @@ namespace Engine
             return false;
         }
         
-        return maxVertexAttribs >= 7;  // Minimum required attributes
+        if (static_cast<uint32_t>(maxVertexAttribs) < kRequiredVertexAttribs)
+        {
+            Logger::Log(LogLevel::Error,
+                "InstancedBatchManager::ValidateOpenGLCapabilities - Need {} vertex attributes for the "
+                "instance VAO layout but this context only provides {}",
+                kRequiredVertexAttribs, maxVertexAttribs);
+            return false;
+        }
+
+        return true;
     }
     
     uint32_t InstancedBatchManager::GetMaxVertexAttributes()
@@ -600,12 +659,22 @@ namespace Engine
         glEnableVertexAttribArray(11);
         glVertexAttribIPointer(11, 1, GL_UNSIGNED_INT, stride, (void*)offsetof(InstanceData, isSelected));
         glVertexAttribDivisor(11, 1);
-        
+
+        // Alpha (attribute 12) -- docs/VFX_LITE_PLAN.md §7.2.
+        // 기존 셰이더(pbr_instanced.vert, SceneMeshRenderer.cpp의 인라인 셰이더)는 location
+        // 0~11만 선언하고 12는 선언하지 않는데, 활성화됐지만 셰이더가 선언하지 않은
+        // attribute는 GL이 그냥 무시하므로 그 셰이더들을 고칠 필요가 없다. 알파를 실제로
+        // 쓰는 파티클 셰이더만 `layout(location = 12) in float aAlpha;`를 선언하면 된다.
+        glEnableVertexAttribArray(12);
+        glVertexAttribPointer(12, 1, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(InstanceData, alpha));
+        glVertexAttribDivisor(12, 1);
+
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-        
-        Logger::Log(LogLevel::Info, "InstancedBatchManager::SetupInstanceVAO - Setup instance VAO with 12 attributes (3 mesh + 9 instance)");
+
+        Logger::Log(LogLevel::Info, "InstancedBatchManager::SetupInstanceVAO - Setup instance VAO with {} attributes (3 mesh + 10 instance)",
+                    kRequiredVertexAttribs);
         
         return {};
     }
@@ -646,7 +715,9 @@ namespace Engine
         
         for (auto& pair : batches)
         {
-            sortedBatches.emplace_back(pair.first, &pair.second);
+            // batches maps to unique_ptr<InstanceBatch>; sortedBatches wants the raw
+            // InstanceBatch* it owns, not a pointer to the unique_ptr itself (&pair.second).
+            sortedBatches.emplace_back(pair.first, pair.second.get());
         }
         
         // Sort by material ID first, then mesh GUID, then pass type

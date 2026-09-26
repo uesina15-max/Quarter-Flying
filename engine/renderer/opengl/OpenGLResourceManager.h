@@ -131,7 +131,12 @@ namespace Engine
         ~OpenGLResourceManager();
 
         // Texture management
-        GPUTextureHandle CreateTexture(const TextureDescriptor& descriptor);
+        // NOTE: header previously declared CreateTexture(const TextureDescriptor&), but
+        // OpenGLResourceManager.cpp defines and calls a 4-arg overload instead -- the
+        // TextureDescriptor version was never actually implemented or called anywhere in
+        // the codebase (confirmed via project-wide search, including engine/bindings/).
+        // Declaration updated to match the real implementation.
+        GPUTextureHandle CreateTexture(uint32_t width, uint32_t height, TextureFormat format, TextureUsage usage);
         void DestroyTexture(GPUTextureHandle handle);
         OpenGLTexture* GetTexture(GPUTextureHandle handle);
         const OpenGLTexture* GetTexture(GPUTextureHandle handle) const;

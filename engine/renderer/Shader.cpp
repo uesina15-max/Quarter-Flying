@@ -42,15 +42,20 @@ namespace Engine
     {
         std::string vert = readFile(vertexPath);
         std::string frag = readFile(fragmentPath);
-        
+
         if (vert.empty() || frag.empty())
         {
             std::cerr << "[Shader] Failed to read shader files: " << vertexPath << " / " << fragmentPath << std::endl;
             return false;
         }
 
-        unsigned int vs = compile(GL_VERTEX_SHADER, vert);
-        unsigned int fs = compile(GL_FRAGMENT_SHADER, frag);
+        return loadFromSource(vert, frag);
+    }
+
+    bool Shader::loadFromSource(const std::string& vertexSrc, const std::string& fragmentSrc)
+    {
+        unsigned int vs = compile(GL_VERTEX_SHADER, vertexSrc);
+        unsigned int fs = compile(GL_FRAGMENT_SHADER, fragmentSrc);
 
         m_program = glCreateProgram();
         glAttachShader(m_program, vs);

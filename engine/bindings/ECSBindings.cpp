@@ -219,9 +219,22 @@ void RegisterRegistryBindings(pybind11::module_& m) {
             try {
                 auto data = nlohmann::json::parse(jsonString);
                 if (info->deserialize) {
-                    nlohmann::json wrapper;
-                    wrapper[compName] = data;
-                    info->deserialize(reg, entity, wrapper);
+                    // 증상: SetComponentJson이 아무 예외도, 로그도 없이 "성공"하는데 값이
+                    // 하나도 반영되지 않았다. 에디터가 시작할 때 Main Camera에 넣는
+                    // {"fov":60, ..., "isMainCamera":true}도, 파티클 이펙트 설정도 전부
+                    // 조용히 무시되고 컴포넌트가 기본값 그대로 남았다. 크래시도 없고
+                    // 컴포넌트는 실제로 붙어 있어서(add_component는 따로 성공) 발견이
+                    // 매우 어려웠다 - Inspector에 기본값이 떠 있는 걸 보고서야 알았다.
+                    //
+                    // 원인: 여기서 `wrapper[compName] = data`로 한 겹 감싸서 넘기고
+                    // 있었는데, deserialize는 감싸지 않은 **컴포넌트 객체 자체**를
+                    // 기대한다. GE_BEGIN_COMPONENT가 만드는 람다는 `data.contains(f.name)`
+                    // 로 필드를 찾으므로, 감싼 JSON에서는 필드 이름이 하나도 매칭되지
+                    // 않아 for 루프가 전부 헛돌고 조용히 끝난다. 손으로 등록한
+                    // ScriptComponent/AIComponent의 람다도 같은 규약이고,
+                    // DeserializeRegistry()가 `compsJson`의 각 항목(=안쪽 객체)을
+                    // 넘기는 것도 같다 - 즉 이 호출부만 규약을 어기고 있었다.
+                    info->deserialize(reg, entity, data);
                 }
                 
                 if (compName == "ScriptComponent") {
@@ -244,7 +257,12 @@ void RegisterWorldBindings(pybind11::module_& m) {
     // ============================================================
     py::class_<World>(m, "World")
         .def("GetRegistry", static_cast<ECSRegistry* (World::*)()>(&World::GetRegistry),
-             py::return_value_policy::reference);
+             py::return_value_policy::reference)
+        // PIE(Play-In-Editor) 상태 제어 — C++에는 이미 구현되어 있었으나(World.h) 바인딩에서
+        // 누락되어 에디터의 Play/Pause/Stop이 항상 AttributeError로 실패하고 있었다.
+        .def("Play",  &World::Play)
+        .def("Pause", &World::Pause)
+        .def("Stop",  &World::Stop);
 }
 
 void RegisterECSBindings(pybind11::module_& m) {

@@ -84,8 +84,14 @@ void RegisterEngineBindings(pybind11::module_& m) {
         .def("PushInputEvent",&Engine::PushInputEvent)
         .def("GetActiveWorld",&Engine::GetActiveWorld,
              py::return_value_policy::reference)
+        .def("SetActiveWorld",&Engine::SetActiveWorld)
         .def("CreateWorld",   &Engine::CreateWorld,
-             py::return_value_policy::reference);
+             py::return_value_policy::reference)
+        // Motion Mixer 프리뷰 (Phase 4A, 착수 계약서 §C11)
+        .def("GetMotionPreviewState", &Engine::GetMotionPreviewState,
+             py::return_value_policy::reference)
+        .def("SetRenderMode", &Engine::SetRenderMode)
+        .def("GetRenderMode", &Engine::GetRenderMode);
 }
 
 } // namespace Bindings

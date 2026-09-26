@@ -43,17 +43,16 @@ namespace Engine
             // We continue but queries will be effectively disabled
         }
         
-        // Get OpenGL limits
-        GLint maxQueries = 0;
-        glGetIntegerv(GL_MAX_SAMPLES_PASSED, &maxQueries);
-        
-        if (maxQueries > 0)
-        {
-            maxConcurrentQueries = std::min(maxConcurrentQueries, static_cast<uint32_t>(maxQueries));
-            Logger::Log(LogLevel::Info, "OcclusionCullingSystem::Initialize - Max concurrent queries: {}", 
-                        maxConcurrentQueries);
-        }
-        
+        // NOTE: previously called glGetIntegerv(GL_MAX_SAMPLES_PASSED, &maxQueries) here to
+        // cap maxConcurrentQueries, but GL_MAX_SAMPLES_PASSED is not a real GL query-able
+        // limit (it doesn't exist as a glGetIntegerv pname) -- there is no standard GL
+        // constant for "max concurrent occlusion queries"; that's a driver/memory limit, not
+        // a queryable one. Removed rather than guessed at a replacement constant;
+        // maxConcurrentQueries keeps whatever value the caller set via SetMaxConcurrentQueries()
+        // (or its constructor default).
+        Logger::Log(LogLevel::Info, "OcclusionCullingSystem::Initialize - Max concurrent queries: {}",
+                    maxConcurrentQueries);
+
         initialized = true;
         Logger::Log(LogLevel::Info, "OcclusionCullingSystem::Initialize - Occlusion culling system initialized successfully");
         return {};
@@ -117,9 +116,10 @@ namespace Engine
         
         // Reset query state
         handle->isActive = true;
-        handle->resultAvailable = false;
+        handle->resultAvailable = 0;
         handle->result = 0;
-        
+        handle->queryType = queryType;  // remembered so EndOcclusionQuery() can match glEndQuery()'s target
+
         // Issue the occlusion query
         GLenum glQueryType = GL_ANY_SAMPLES_PASSED;
         if (queryType == OcclusionQueryType::AnySamplesPassedConservative)
@@ -130,7 +130,7 @@ namespace Engine
         {
             glQueryType = GL_SAMPLES_PASSED;
         }
-        
+
         glBeginQuery(glQueryType, handle->queryId);
         
         currentFrameQueries++;
@@ -158,7 +158,17 @@ namespace Engine
             return {};
         }
         
-        glEndQuery();
+        // glEndQuery() must be called with the same target glBeginQuery() used for this query.
+        GLenum glQueryType = GL_ANY_SAMPLES_PASSED;
+        if (handle->queryType == OcclusionQueryType::AnySamplesPassedConservative)
+        {
+            glQueryType = GL_ANY_SAMPLES_PASSED_CONSERVATIVE;
+        }
+        else if (handle->queryType == OcclusionQueryType::SamplesPassed)
+        {
+            glQueryType = GL_SAMPLES_PASSED;
+        }
+        glEndQuery(glQueryType);
         handle->isActive = false;
         stats.activeQueries--;
         

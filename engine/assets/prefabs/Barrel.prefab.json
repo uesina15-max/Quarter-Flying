@@ -1,0 +1,18 @@
+{
+    "version": 1,
+    "name": "Barrel",
+    "components": {
+        "TransformComponent": {
+            "_version": 1,
+            "position": [0.0, 0.0, 0.0],
+            "rotation": [0.0, 0.0, 0.0],
+            "scale": [1.0, 1.0, 1.0]
+        },
+        "RenderableComponent": {
+            "_version": 1,
+            "meshHandle": 0,
+            "materialHandle": 0,
+            "castShadows": true
+        }
+    }
+}

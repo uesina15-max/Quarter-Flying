@@ -1,0 +1,11 @@
+{
+    "format": "core.clip",
+    "version": 1,
+    "axis": "Y_UP_RH",
+    "unit": "meter",
+    "skeletonRef": "SampleBiped",
+    "name": "Idle",
+    "fps": 30,
+    "totalFrames": 60,
+    "tracks": []
+}

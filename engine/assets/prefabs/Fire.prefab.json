@@ -1,0 +1,35 @@
+{
+    "version": 1,
+    "name": "Fire",
+    "components": {
+        "TransformComponent": {
+            "_version": 1,
+            "position": [0.0, 0.0, 0.0],
+            "rotation": [0.0, 0.0, 0.0],
+            "scale": [1.0, 1.0, 1.0]
+        },
+        "ParticleEffectComponent": {
+            "_version": 1,
+            "spawnRate": 25.0,
+            "maxParticle": 96,
+            "lifetime": 1.6,
+            "burst": 0,
+            "initialSpeed": 1.8,
+            "directionBase": [0.0, 1.0, 0.0],
+            "directionSpread": 35.0,
+            "gravity": 0.4,
+            "drag": 0.2,
+            "startSize": 0.45,
+            "endSize": 0.05,
+            "startColor": [1.0, 0.75, 0.25],
+            "startAlpha": 1.0,
+            "endColor": [0.9, 0.15, 0.0],
+            "endAlpha": 0.0,
+            "startRotation": 0.0,
+            "rotationSpeed": 0.0,
+            "speedVariance": 0.35,
+            "sizeVariance": 0.25,
+            "rotationVariance": 0.0
+        }
+    }
+}

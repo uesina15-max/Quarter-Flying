@@ -6,6 +6,9 @@
 #include "commands/DestroyEntityCommand.h"
 #include "commands/AddComponentCommand.h"
 #include "commands/RemoveComponentCommand.h"
+#include "commands/InstantiatePrefabCommand.h"
+#include "commands/RevertPrefabInstanceCommand.h"
+#include "../prefab/PrefabAsset.h"
 #include "../core/CommandManager.h"
 #include "../ecs/ECSRegistry.h"
 
@@ -210,6 +213,63 @@ std::expected<void, EngineError> EditorAPI::DestroyEntity(Entity entity)
     }
 
     return Dispatch(std::make_unique<DestroyEntityCommand>(registry_, entity));
+}
+
+// ============================================================
+// Prefabs
+// ============================================================
+
+std::expected<Entity, EngineError> EditorAPI::InstantiatePrefab(const std::filesystem::path& prefabPath,
+                                                                  std::optional<Vec3> position)
+{
+    if (auto r = CheckRegistry(); !r)
+    {
+        return std::unexpected(r.error());
+    }
+
+    auto cmd    = std::make_unique<InstantiatePrefabCommand>(registry_, prefabPath, position);
+    auto rawPtr = cmd.get();  // observe result after ownership transfer
+
+    auto result = Dispatch(std::move(cmd));
+    if (!result)
+    {
+        return std::unexpected(result.error());
+    }
+
+    // Dispatch() always Apply()s the command (either directly via CommandManager
+    // or via the pre-apply path inside a transaction), so GetSpawnedEntity() is
+    // always valid here.
+    return rawPtr->GetSpawnedEntity();
+}
+
+std::expected<void, EngineError> EditorAPI::CapturePrefab(Entity entity, const std::filesystem::path& outputPath)
+{
+    if (auto r = CheckRegistry(); !r) return r;
+
+    if (!registry_->IsValid(entity))
+    {
+        return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "EditorAPI");
+    }
+
+    auto captured = PrefabAsset::CaptureFromEntity(*registry_, entity);
+    if (!captured)
+    {
+        return std::unexpected(captured.error());
+    }
+
+    return captured->SaveToFile(outputPath);
+}
+
+std::expected<void, EngineError> EditorAPI::RevertPrefabInstance(Entity entity)
+{
+    if (auto r = CheckRegistry(); !r) return r;
+
+    if (!registry_->IsValid(entity))
+    {
+        return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "EditorAPI");
+    }
+
+    return Dispatch(std::make_unique<RevertPrefabInstanceCommand>(registry_, entity));
 }
 
 // ============================================================

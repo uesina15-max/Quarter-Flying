@@ -19,6 +19,7 @@ from PySide6.QtCore import Qt, Signal, QRectF, QPointF
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QPainterPath, QFont, QLinearGradient
 
 from core.action_data import ActionData, SectionRole, SECTION_ROLE_COLORS
+from style.theme import COLORS
 
 
 class GraphCanvas(QWidget):
@@ -186,12 +187,12 @@ class MotionGraphPanel(QWidget):
         # 헤더
         header = QWidget()
         header.setFixedHeight(24)
-        header.setStyleSheet("background-color: #0d1b2a; border-bottom: 1px solid #1e3a5f;")
+        header.setStyleSheet(f"background-color: {COLORS['bg_header']}; border-bottom: 1px solid {COLORS['border']};")
         h_layout = QHBoxLayout(header)
         h_layout.setContentsMargins(6, 0, 6, 0)
         
         lbl = QLabel("MOTION ANALYSIS")
-        lbl.setStyleSheet("color: #00d4ff; font-size: 10px; font-weight: bold; letter-spacing: 1px;")
+        lbl.setStyleSheet(f"color: {COLORS['accent']}; font-size: 10px; font-weight: bold; letter-spacing: 1px;")
         h_layout.addWidget(lbl)
         h_layout.addStretch()
         

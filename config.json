@@ -1,0 +1,16 @@
+{
+    "window": {
+        "title": "Quarter Flying Editor",
+        "width": 1600,
+        "height": 900,
+        "vsync": true
+    },
+    "paths": {
+        "assetRoot": "./",
+        "shaderRoot": "./assets/shaders/"
+    },
+    "engine": {
+        "numWorkerThreads": 0,
+        "logFrameInterval": 60
+    }
+}

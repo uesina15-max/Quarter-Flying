@@ -1,0 +1,16 @@
+{
+    "format": "core.skeleton",
+    "version": 1,
+    "axis": "Y_UP_RH",
+    "unit": "meter",
+    "name": "SampleBiped",
+    "bones": [
+        { "name": "Hips",  "parent": -1, "bindPos": [0.0, 1.0, 0.0] },
+        { "name": "Spine", "parent": 0,  "bindPos": [0.0, 0.5, 0.0] },
+        { "name": "Head",  "parent": 1,  "bindPos": [0.0, 0.3, 0.0] },
+        { "name": "ArmL",  "parent": 1,  "bindPos": [-0.3, 0.1, 0.0] },
+        { "name": "ArmR",  "parent": 1,  "bindPos": [0.3, 0.1, 0.0] },
+        { "name": "LegL",  "parent": 0,  "bindPos": [-0.15, -1.0, 0.0] },
+        { "name": "LegR",  "parent": 0,  "bindPos": [0.15, -1.0, 0.0] }
+    ]
+}

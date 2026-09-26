@@ -29,6 +29,8 @@ from PySide6.QtGui import (
     QLinearGradient, QPainterPath
 )
 
+from style.theme import COLORS
+
 from core.action_data import (
     ActionData, ActionEvent, ActionSection,
     EventType, SectionRole,
@@ -450,13 +452,13 @@ class EventTimelinePanel(QWidget):
         # 컨트롤 바
         ctrl = QWidget()
         ctrl.setFixedHeight(30)
-        ctrl.setStyleSheet("background-color: #0d1b2a; border-bottom: 1px solid #1e3a5f;")
+        ctrl.setStyleSheet(f"background-color: {COLORS['bg_header']}; border-bottom: 1px solid {COLORS['border']};")
         ctrl_layout = QHBoxLayout(ctrl)
         ctrl_layout.setContentsMargins(6, 2, 6, 2)
         ctrl_layout.setSpacing(6)
 
         lbl = QLabel("EVENT TIMELINE")
-        lbl.setStyleSheet("color: #00d4ff; font-size: 10px; font-weight: bold; letter-spacing: 1px;")
+        lbl.setStyleSheet(f"color: {COLORS['accent']}; font-size: 10px; font-weight: bold; letter-spacing: 1px;")
         ctrl_layout.addWidget(lbl)
 
         ctrl_layout.addStretch()
@@ -473,7 +475,7 @@ class EventTimelinePanel(QWidget):
         btn_zoom_in.clicked.connect(lambda: self.canvas.zoom(0.2))
 
         self.lbl_frame = QLabel("Frame: 0")
-        self.lbl_frame.setStyleSheet("color: #8899aa; font-size: 11px; min-width: 70px;")
+        self.lbl_frame.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px; min-width: 70px;")
 
         ctrl_layout.addWidget(QLabel("Zoom"))
         ctrl_layout.addWidget(btn_zoom_out)

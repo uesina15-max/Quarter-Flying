@@ -29,6 +29,17 @@ public:
     void EndMergeSession();
     bool IsInMergeSession() const { return inMergeSession_; }
 
+    // Non-copyable, non-movable singleton (holds std::vector<std::unique_ptr<ICommand>>,
+    // which already makes the implicit copy ctor deleted -- but declaring it explicitly
+    // avoids an MSVC quirk where determining an *implicit* special member is deleted
+    // eagerly instantiates the member types involved (here vector<unique_ptr<ICommand>>'s
+    // copy ctor) instead of just noting it's deleted, which failed with C2672 when
+    // pybind11's class_<CommandManager> registration triggered that check).
+    CommandManager(const CommandManager&) = delete;
+    CommandManager& operator=(const CommandManager&) = delete;
+    CommandManager(CommandManager&&) = delete;
+    CommandManager& operator=(CommandManager&&) = delete;
+
 private:
     CommandManager() = default;
 

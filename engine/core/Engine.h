@@ -4,6 +4,9 @@
 #include "memory/FrameAllocator.h"
 #include "time/HighResolutionTimer.h"
 #include "../platform/IPlatform.h"
+#include "../renderer/Camera.h"
+#include "../renderer/RenderMode.h"
+#include "../animation/MotionPreviewState.h"
 #include "EngineError.h"
 #include "EngineConfig.h"
 #include <memory>
@@ -81,6 +84,11 @@ namespace Engine
         IPlatform* GetPlatform() const { return platform.get(); }
         WindowHandle GetMainWindow() const { return mainWindow; }
 
+        // Motion Mixer 프리뷰 (Phase 4A, 착수 계약서 §C11) - Renderer 서브시스템으로 그대로 위임.
+        MotionPreviewState* GetMotionPreviewState() const { return motionPreviewState.get(); }
+        void SetRenderMode(RenderMode mode);
+        RenderMode GetRenderMode();
+
         // Test-only method to access frame allocator state
         #ifdef ENABLE_TESTS
         FrameAllocator* GetFrameAllocatorForTesting() { return frameAllocator.get(); }
@@ -89,6 +97,9 @@ namespace Engine
     private:
         // 공통 초기화 헬퍼 (코드 중복 제거)
         std::expected<void, EngineError> InitializeCoreSystems();
+
+        // glViewport + 기본 카메라 종횡비 갱신 (WindowResize 이벤트 처리 공통 로직).
+        void HandleWindowResize(uint32_t width, uint32_t height);
 
     private:
         // Core systems
@@ -117,6 +128,20 @@ namespace Engine
 
         // Window handle
         WindowHandle mainWindow;
+
+        // TickFrame에서 GL 컨텍스트 전환 실패를 이미 로그로 남겼는지 (중복 로그 방지)
+        bool contextLossLogged = false;
+
+        // TickFrame 재진입 감지용 (TickFrame 첫 부분 주석 참고)
+        bool inTickFrame = false;
+
+        // 임시 기본 카메라: ECS CameraComponent -> 렌더러 Camera를 잇는 RenderSystem이
+        // 아직 없어서(ROADMAP.md 참고), 최소한 뷰포트에 뭔가 그려지도록 고정된 값으로
+        // 만들어 Renderer::SetMainCamera에 넘긴다. ECS 연동은 별도 작업.
+        std::unique_ptr<Camera> defaultCamera;
+
+        // Motion Mixer 프리뷰 상태 (Phase 4A). Renderer가 매 프레임 읽어서 그린다.
+        std::unique_ptr<MotionPreviewState> motionPreviewState;
 
         // Input queue (Thread-safe between external UI thread and internal TickFrame thread)
         std::mutex inputMutex;

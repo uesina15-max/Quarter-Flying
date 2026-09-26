@@ -88,7 +88,7 @@ namespace Engine
         auto it = lodConfigs.find(meshGuid);
         if (it == lodConfigs.end())
         {
-            return MakeUnexpected(EngineErrorCode::NotFound, "LOD config not found", "LODSystem");
+            return MakeUnexpected(EngineErrorCode::ResourceNotFound, "LOD config not found", "LODSystem");
         }
         
         lodConfigs.erase(it);
@@ -144,7 +144,7 @@ namespace Engine
         auto it = instances.find(entityId);
         if (it == instances.end())
         {
-            return MakeUnexpected(EngineErrorCode::NotFound, "Instance not found", "LODSystem");
+            return MakeUnexpected(EngineErrorCode::ResourceNotFound, "Instance not found", "LODSystem");
         }
         
         instances.erase(it);
@@ -165,7 +165,7 @@ namespace Engine
         LODInstance* instance = FindInstance(entityId);
         if (!instance)
         {
-            return MakeUnexpected(EngineErrorCode::NotFound, "Instance not found", "LODSystem");
+            return MakeUnexpected(EngineErrorCode::ResourceNotFound, "Instance not found", "LODSystem");
         }
         
         instance->position = position;
@@ -363,5 +363,11 @@ namespace Engine
         auto it = instances.find(entityId);
         return (it != instances.end()) ? &it->second : nullptr;
     }
-    
+
+    const LODInstance* LODSystem::FindInstance(uint32_t entityId) const
+    {
+        auto it = instances.find(entityId);
+        return (it != instances.end()) ? &it->second : nullptr;
+    }
+
 } // namespace Engine

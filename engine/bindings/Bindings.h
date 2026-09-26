@@ -8,6 +8,7 @@ void RegisterMathBindings(pybind11::module_& m);
 void RegisterECSBindings(pybind11::module_& m);
 void RegisterEngineBindings(pybind11::module_& m);
 void RegisterEditorBindings(pybind11::module_& m);
+void RegisterAnimationBindings(pybind11::module_& m);
 
 void RegisterEntityBindings(pybind11::module_& m);
 void RegisterComponentBindings(pybind11::module_& m);

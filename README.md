@@ -92,6 +92,7 @@ Quarter Flying/
 - [아키텍처](docs/ARCHITECTURE_KO.md)
 - [문제 분석 보고서](PROBLEM_ANALYSIS_REPORT.md)
 - [GUI 통합 계획](GUI_INTEGRATION_PLAN.md)
+- [Python 바인딩 구현 계획서](docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md)
 - [Phase 1 기술 검증](engine/editor/PHASE1_TECHNICAL_VERIFICATION.md)
 - [Phase 2 기능 이전](engine/editor/PHASE2_FUNCTIONAL_MIGRATION.md)
 - [Phase 3 레거시 제거](engine/editor/PHASE3_LEGACY_REMOVAL.md)

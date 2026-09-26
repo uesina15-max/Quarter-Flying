@@ -8,11 +8,7 @@ from PySide6.QtCore import QObject, Signal
 import json
 import os
 
-try:
-    import ge_python
-    HAS_ENGINE = True
-except ImportError:
-    HAS_ENGINE = False
+from engine_binding import binding as ge_python, HAS_ENGINE
 
 
 class DemoSceneIntegration(QObject):

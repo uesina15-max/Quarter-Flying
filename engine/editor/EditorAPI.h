@@ -5,7 +5,9 @@
 #include "../core/Types.h"
 #include "../ecs/Entity.h"
 #include <expected>
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace Engine
@@ -48,6 +50,28 @@ public:
 
     std::expected<Entity, EngineError> CreateEntity(const std::string& name = "");
     std::expected<void, EngineError>   DestroyEntity(Entity entity);
+
+    // ----------------------------------------
+    // Prefabs (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 2)
+    // ----------------------------------------
+
+    // Spawns a new entity from a *.prefab.json file. `position`, when given,
+    // overrides only the spawned entity's position (plan §2.8) — omit it to keep
+    // the prefab's own captured transform.
+    std::expected<Entity, EngineError> InstantiatePrefab(const std::filesystem::path& prefabPath,
+                                                           std::optional<Vec3> position = std::nullopt);
+
+    // Captures `entity`'s current components into a *.prefab.json file (plan §3
+    // Phase 3). Pure read + file write — does not mutate the registry, so unlike
+    // the methods above this does not go through Dispatch()/CommandManager
+    // (there is nothing ECS-side for Undo/Redo to act on).
+    std::expected<void, EngineError> CapturePrefab(Entity entity, const std::filesystem::path& outputPath);
+
+    // Reverts a prefab-instance entity back to its source file (Definition A,
+    // plan §2.5/§3 Phase 4). Unlike CapturePrefab, this *does* mutate the
+    // registry, so it goes through Dispatch()/CommandManager like the other
+    // methods below — Undo restores the entity to its pre-revert state.
+    std::expected<void, EngineError> RevertPrefabInstance(Entity entity);
 
     // ----------------------------------------
     // Component editing

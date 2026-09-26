@@ -34,6 +34,10 @@ namespace Engine
         void SetExternalWindowHandle(void* handle) override;
         void PushInputEvent(const InputEvent& event) override;
 
+        bool CreateGraphicsContext(WindowHandle handle) override;
+        bool MakeGraphicsContextCurrent(WindowHandle handle) override;
+        void PresentFrame(WindowHandle handle) override;
+
     private:
         struct WindowData
         {
@@ -41,6 +45,10 @@ namespace Engine
             uint32_t width;
             uint32_t height;
             bool isValid;
+
+            // OpenGL 렌더링 컨텍스트 (CreateGraphicsContext 호출 전에는 nullptr).
+            HDC hdc = nullptr;
+            HGLRC hglrc = nullptr;
         };
 
         static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -64,6 +72,10 @@ namespace Engine
         int32_t lastMouseY;
 
         bool initialized;
+
+        // SetExternalWindowHandle()로 호스트(Qt 에디터)의 HWND에 임베드된 경우 true.
+        // 이 스레드의 메시지 루프 주인은 호스트이므로 PollEvents()가 메시지를 펌프하면 안 된다.
+        bool hostOwnsMessageLoop = false;
     };
 
 } // namespace Engine

@@ -10,12 +10,63 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 import json
+import os
 
-try:
-    import ge_python
-    HAS_ENGINE = True
-except ImportError:
-    HAS_ENGINE = False
+from style.theme import COLORS
+
+from engine_binding import binding as ge_python, HAS_ENGINE, to_entity
+
+# Inspector가 PrefabInstanceComponent에 대해 일반 DynamicComponentWidget 대신
+# 전용 헤더를 그리기 위한 컴포넌트 이름 상수 (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4).
+_PREFAB_INSTANCE_COMPONENT_NAME = "PrefabInstanceComponent"
+
+
+def _prefab_display_name(prefab_path: str) -> str:
+    """"assets/prefabs/Barrel.prefab.json" -> "Barrel" (두 단계 확장자 제거)."""
+    base = os.path.basename(prefab_path)
+    stem, _ = os.path.splitext(base)   # "Barrel.prefab.json" -> "Barrel.prefab"
+    stem, _ = os.path.splitext(stem)   # "Barrel.prefab" -> "Barrel"
+    return stem or base
+
+
+class PrefabInstanceHeader(QWidget):
+    """선택한 엔티티가 프리팹 인스턴스일 때 표시하는 "Prefab: <name> [Revert] [Apply]" 헤더
+    (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4). 일반 컴포넌트 편집 위젯들 위에 얹힌다."""
+
+    revert_requested = Signal(int)  # entity_id
+
+    def __init__(self, entity_id: int, prefab_path: str, parent=None):
+        super().__init__(parent)
+        self.entity_id = entity_id
+        self._build_ui(prefab_path)
+
+    def _build_ui(self, prefab_path: str):
+        self.setStyleSheet(
+            f"background-color: {COLORS['bg_header']}; border: 1px solid {COLORS['border']}; border-radius: 3px;"
+        )
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+
+        lbl = QLabel(f"📦  Prefab: {_prefab_display_name(prefab_path)}")
+        lbl.setToolTip(prefab_path)
+        lbl.setStyleSheet(f"color: {COLORS['text_primary']}; font-weight: bold; border: none;")
+        layout.addWidget(lbl)
+        layout.addStretch()
+
+        btn_revert = QPushButton("Revert")
+        btn_revert.setFixedHeight(22)
+        btn_revert.setToolTip("이 인스턴스를 프리팹 원본 상태로 되돌립니다")
+        btn_revert.clicked.connect(lambda: self.revert_requested.emit(self.entity_id))
+        layout.addWidget(btn_revert)
+
+        # §2.5: v1은 인스턴스 -> 원본 역전파(Apply)를 지원하지 않는다 - 버튼은 두되
+        # 비활성화 + 안내 툴팁으로 "여기 있고, 아직 안 됨"을 명확히 한다(motion_editor.py의
+        # do_import_fbx() 자리표시자와 같은 관례).
+        btn_apply = QPushButton("Apply")
+        btn_apply.setFixedHeight(22)
+        btn_apply.setEnabled(False)
+        btn_apply.setToolTip("다음 단계에서 지원 예정 (인스턴스 → 원본 역전파)")
+        layout.addWidget(btn_apply)
 
 
 class ComponentWidget(QGroupBox):
@@ -30,7 +81,7 @@ class ComponentWidget(QGroupBox):
 
         header = QWidget()
         header.setFixedHeight(26)
-        header.setStyleSheet("background-color: #0d1b2a; border-left: 3px solid #00d4ff; border-bottom: 1px solid #1e3a5f;")
+        header.setStyleSheet(f"background-color: {COLORS['bg_header']}; border-left: 3px solid {COLORS['accent']}; border-bottom: 1px solid {COLORS['border']};")
         h_layout = QHBoxLayout(header)
         h_layout.setContentsMargins(8, 0, 8, 0)
 
@@ -148,10 +199,70 @@ class DynamicComponentWidget(ComponentWidget):
 
             self._fields[field['name']] = {'widget': widget, 'type': ftype}
             self.content_layout.addWidget(row)
-            
+
+        # VFX Lite Phase 4 (docs/VFX_LITE_PLAN.md §5.3/§5.10) — 파티클 이펙트에만
+        # "예상 파티클 수" 요약 줄을 덧붙인다. **잘못된 설정을 에디터 단계에서 막는 게
+        # 가장 싼 최적화**이기 때문이다: Rate x Lifetime이 Max Particle을 넘으면 파티클이
+        # 눈에 띄게 잘려나가고, 반대로 Max Particle만 크게 잡아두면 쓰지도 않을 메모리를
+        # 미리 예약한다. 둘 다 실행해보기 전에는 알아채기 어렵다.
+        self._estimate_label = None
+        if comp_name == "ParticleEffectComponent":
+            self._estimate_label = QLabel("")
+            self._estimate_label.setWordWrap(True)
+            self.content_layout.addWidget(self._estimate_label)
+
         self._building = False
         if HAS_ENGINE and self.registry:
             self.load_data()
+
+    # 엔진의 ParticleSystem::kPreviewMaxParticle과 같은 값이어야 한다. 여기서 경고만
+    # 띄우고 실제 상한은 엔진이 건다 - 에디터가 안 띄워도 Preview는 여전히 안전하다.
+    PREVIEW_MAX_PARTICLE = 2048
+
+    def _update_particle_estimate(self):
+        """Spawn Rate / Lifetime / Burst / Max Particle로 예상 파티클 수를 계산해 보여준다."""
+        if self._estimate_label is None:
+            return
+        try:
+            rate     = self._fields['spawnRate']['widget'].value()
+            lifetime = self._fields['lifetime']['widget'].value()
+            burst    = self._fields['burst']['widget'].value()
+            max_p    = self._fields['maxParticle']['widget'].value()
+        except (KeyError, AttributeError):
+            return
+
+        # §5.3의 어림 계산. Burst는 한 번 터지고 수명대로 사라지므로 정상상태 **평균**에는
+        # 기여하지 않는다 - 평균이 아니라 피크에만 더한다(외부 검토 보고서가 둘을 합쳐
+        # "평균"이라고 부른 것은 docs/VFX_LITE_PLAN.md §7.4에서 정정됐다).
+        average = rate * lifetime
+        peak    = average + burst
+
+        warnings = []
+        if max_p <= 0:
+            warnings.append("Max Particle이 0 이하라 파티클이 생성되지 않습니다")
+        elif peak > max_p:
+            warnings.append(
+                f"Peak({peak:.0f})이 Max Particle({max_p})을 넘습니다 — 초과분은 생성되지 않고 잘립니다"
+            )
+        elif max_p > 16 and max_p > peak * 4:
+            warnings.append(
+                f"Max Particle({max_p})이 Peak({peak:.0f}) 대비 과도합니다 — 쓰지 않을 메모리를 예약합니다"
+            )
+
+        if max_p > self.PREVIEW_MAX_PARTICLE:
+            warnings.append(
+                f"Preview 상한 {self.PREVIEW_MAX_PARTICLE}개가 적용됩니다 (엔진이 강제)"
+            )
+
+        text = f"Expected  Average: {average:.0f}   Peak: {peak:.0f}   /   Max: {max_p}"
+        if warnings:
+            color = COLORS['text_warning']
+            text += "\n⚠ " + "\n⚠ ".join(warnings)
+        else:
+            color = COLORS['text_dim']
+
+        self._estimate_label.setText(text)
+        self._estimate_label.setStyleSheet(f"color: {color}; font-size: 11px;")
 
     def _uses_editor_api(self, fname: str) -> bool:
         return (
@@ -175,7 +286,7 @@ class DynamicComponentWidget(ComponentWidget):
         if self._merge_active or not HAS_ENGINE:
             return
         try:
-            import ge_python
+            from engine_binding import binding as ge_python
             ge_python.CommandManager.get_instance().begin_merge_session()
             self._merge_active = True
         except Exception as e:
@@ -185,7 +296,7 @@ class DynamicComponentWidget(ComponentWidget):
         if not self._merge_active or not HAS_ENGINE:
             return
         try:
-            import ge_python
+            from engine_binding import binding as ge_python
             ge_python.CommandManager.get_instance().end_merge_session()
         except Exception as e:
             print(f"[Inspector] Merge session end failed: {e}")
@@ -202,8 +313,12 @@ class DynamicComponentWidget(ComponentWidget):
 
     def load_data(self):
         try:
-            from ge_python import Entity
-            json_str = self.registry.GetComponentJson(Entity(self.entity_id), self.comp_name)
+            # 모듈 최상단에서 이미 import된 ge_python(엔진 바인딩 별칭)을 그대로 쓴다 -
+            # 여기서 다시 "from ge_python import Entity"로 직접 import하면
+            # engine_binding.py 래퍼를 우회하게 되어, 실제 확장 모듈 이름이 바뀔 때마다
+            # (docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md Phase 6) 이런 지역 import들도
+            # 전부 찾아 고쳐야 하는 문제가 생긴다.
+            json_str = self.registry.GetComponentJson(to_entity(self.entity_id), self.comp_name)
             data = json.loads(json_str) if json_str != "{}" else {}
             
             self._building = True
@@ -226,12 +341,17 @@ class DynamicComponentWidget(ComponentWidget):
                         idx = w.findData(val)
                         if idx >= 0: w.setCurrentIndex(idx)
             self._building = False
+            self._update_particle_estimate()
         except Exception as e:
             print(f"[Inspector] Load Data Failed: {e}")
 
     def _on_field_change(self, fname: str):
         if self._building or not self.registry: return
-        
+
+        # 값이 엔진에 반영되든 아니든 예측치는 항상 최신으로 유지한다 - 아래 부분 갱신이
+        # 실패해도(예: 스키마 버전 불일치) 사용자가 지금 입력한 값 기준의 경고는 봐야 한다.
+        self._update_particle_estimate()
+
         fdata = self._fields.get(fname)
         if not fdata: return
         
@@ -246,18 +366,16 @@ class DynamicComponentWidget(ComponentWidget):
         elif ftype in (5, 6): val = w.currentData()
         
         try:
-            from ge_python import Entity, Vec3
-
             if self._uses_editor_api(fname):
                 self.editor_api.move_entity(
-                    Entity(self.entity_id),
-                    Vec3(val[0], val[1], val[2]),
+                    to_entity(self.entity_id),
+                    ge_python.Vec3(val[0], val[1], val[2]),
                 )
                 return
 
             # Partial Single-Field Update calling with schema version protection!
             self.registry.SetComponentFieldJson(
-                Entity(self.entity_id), 
+                to_entity(self.entity_id),
                 self.comp_name, 
                 fname, 
                 json.dumps(val), 
@@ -268,6 +386,8 @@ class DynamicComponentWidget(ComponentWidget):
 
 
 class InspectorPanel(QWidget):
+    prefab_revert_status = Signal(str)  # 상태 바 표시용 (성공/실패 메시지 텍스트)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.registry = None
@@ -338,15 +458,32 @@ class InspectorPanel(QWidget):
 
         if self.registry and HAS_ENGINE:
             try:
-                name = self.registry.GetEntityName(entity_id)
+                entity = to_entity(entity_id)
+                # 버그: entity_id(raw int)를 감싸지 않고 그대로 넘기면 pybind11이
+                # "incompatible function arguments"로 예외를 던져서, 아래 프리팹 헤더를
+                # 포함한 이 try 블록 전체가 항상 여기서 조용히 중단됐다(실제 엔진에
+                # 연결된 상태에서 인스펙터가 한 번도 제대로 그려진 적이 없었다는 뜻 -
+                # docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4 실측 검증 중 발견).
+                name = self.registry.GetEntityName(entity)
                 self.lbl_entity_name.setText(name)
-                
-                from ge_python import Entity
+
                 comps = self.registry.GetRegisteredComponents()
-                
+
+                # PrefabInstanceComponent가 있으면 일반 위젯 대신 전용 헤더를 맨 위에 얹는다
+                # (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4) - 아래 루프에서는
+                # 이 컴포넌트를 건너뛴다(같은 데이터를 두 번 보여주지 않도록).
+                prefab_json_str = self.registry.GetComponentJson(entity, _PREFAB_INSTANCE_COMPONENT_NAME)
+                if prefab_json_str and prefab_json_str != "{}":
+                    prefab_data = json.loads(prefab_json_str)
+                    header = PrefabInstanceHeader(entity_id, prefab_data.get("prefabPath", ""))
+                    header.revert_requested.connect(self._on_revert_requested)
+                    self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, header)
+
                 # 등록된 컴포넌트 스키마 중 데이터가 {} 가 아닌 것들만 UI 생성
                 for c in comps:
-                    json_str = self.registry.GetComponentJson(Entity(entity_id), c)
+                    if c == _PREFAB_INSTANCE_COMPONENT_NAME:
+                        continue
+                    json_str = self.registry.GetComponentJson(entity, c)
                     if json_str and json_str != "{}":
                         schema = self.registry.GetComponentSchema(c)
                         w = DynamicComponentWidget(c, schema, entity_id, self.registry, self.editor_api)
@@ -354,3 +491,20 @@ class InspectorPanel(QWidget):
                         self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, w)
             except Exception as e:
                 print(f"Inspect Error: {e}")
+
+    def _on_revert_requested(self, entity_id: int):
+        """Revert 버튼 클릭 -> EditorAPI::RevertPrefabInstance 호출 후 인스펙터 갱신
+        (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4)."""
+        if not self.editor_api:
+            return
+        try:
+            self.editor_api.revert_prefab_instance(to_entity(entity_id))
+            self.prefab_revert_status.emit("프리팹 되돌리기 완료")
+        except Exception as e:
+            print(f"[Inspector] 프리팹 되돌리기 실패: {e}")
+            self.prefab_revert_status.emit(f"프리팹 되돌리기 실패: {e}")
+        finally:
+            # 성공/실패 여부와 무관하게 최신 값으로 다시 그린다 - 성공했으면 되돌려진
+            # 값을, 실패했으면(예: 원본 파일 삭제) §2.9에 따라 바뀌지 않은 기존 값을 보여준다.
+            if entity_id == self._current_entity_id:
+                self._refresh_inspector(entity_id)

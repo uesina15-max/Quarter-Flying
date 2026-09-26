@@ -1,0 +1,36 @@
+{
+  "name": "SoundTest",
+  "fps": 30,
+  "total_frames": 30,
+  "sections": [],
+  "events": [
+    {
+      "frame": 5,
+      "type": "Sound",
+      "params": {
+        "clip": "../sfx/Blip.wav",
+        "volume": 0.8,
+        "volumeVar": 0.15
+      }
+    },
+    {
+      "frame": 15,
+      "type": "Sound",
+      "params": {
+        "clip": "../sfx/Blip.wav",
+        "volume": 0.8,
+        "volumeVar": 0.15
+      }
+    },
+    {
+      "frame": 25,
+      "type": "Sound",
+      "params": {
+        "clip": "../sfx/Blip.wav",
+        "volume": 0.8,
+        "volumeVar": 0.15
+      }
+    }
+  ],
+  "layers": []
+}

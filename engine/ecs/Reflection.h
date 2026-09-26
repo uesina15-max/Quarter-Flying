@@ -108,6 +108,11 @@ namespace Engine {
     void RegisterPODComponentsReflection();
     void RegisterScriptComponentReflection();
     void RegisterAIComponentReflection();
+    void RegisterPrefabComponentsReflection(); // engine/ecs/Reflection.cpp — registers
+                                                // PrefabInstanceComponent (engine/prefab/).
+                                                // Declared here, not in engine/prefab/, so
+                                                // Reflection.h stays the one place all
+                                                // component registration is announced.
 
     // ========================================
     // Component Registration Macros

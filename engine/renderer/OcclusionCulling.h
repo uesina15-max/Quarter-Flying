@@ -32,10 +32,19 @@ namespace Engine
     {
         uint32_t queryId;
         bool isActive;
-        bool resultAvailable;
+        // GL's glGetQueryObjectuiv(..., GL_QUERY_RESULT_AVAILABLE, GLuint*) writes into this
+        // as a GLuint (0/1), not a bool -- kept as uint32_t so &resultAvailable is a valid
+        // GLuint* without a reinterpret_cast. Still works fine in boolean contexts (if (handle->resultAvailable)).
+        uint32_t resultAvailable;
         uint64_t result;
-        
-        OcclusionQueryHandle() : queryId(0), isActive(false), resultAvailable(false), result(0) {}
+        // Query target this handle was opened with (engine-level enum, not the raw GLenum,
+        // to keep this header free of a <GL/glew.h> dependency). EndOcclusionQuery() must
+        // call glEndQuery() with the same target glBeginQuery() used, so this needs to be
+        // remembered per-handle rather than recomputed from a caller-supplied parameter that
+        // EndOcclusionQuery() doesn't receive.
+        OcclusionQueryType queryType;
+
+        OcclusionQueryHandle() : queryId(0), isActive(false), resultAvailable(0), result(0), queryType(OcclusionQueryType::AnySamplesPassed) {}
     };
 
     // ============================================================================

@@ -44,6 +44,13 @@ namespace Engine
         PipelineCreationFailed,
         RenderPassFailed,
         InvalidBatchKey,
+        // NOTE: added back 2026-08-10 -- renderer/InstancedBatchManager.cpp and
+        // renderer/OcclusionCulling.cpp both referenced these two exact names (identical
+        // spelling in two independent files), which does not compile against an enum that
+        // never declared them. Treated as previously-existing values that were dropped
+        // rather than as typos to rename away.
+        NotSupported,
+        GPUResourceCreationFailed,
         
         // Asset errors
         AssetNotFound,

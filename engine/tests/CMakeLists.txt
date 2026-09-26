@@ -33,6 +33,16 @@ file(GLOB_RECURSE RENDERER_SOURCES
     "../renderer/*.cpp"
 )
 
+file(GLOB_RECURSE ANIMATION_SOURCES
+    "../animation/*.h"
+    "../animation/*.cpp"
+)
+
+file(GLOB_RECURSE PREFAB_SOURCES
+    "../prefab/*.h"
+    "../prefab/*.cpp"
+)
+
 # =============================================================================
 # Test executable — Active Unit & Property Tests
 # =============================================================================
@@ -83,6 +93,8 @@ add_executable(SimpleEngineTests
     ../editor/commands/DestroyEntityCommand.cpp
     ../editor/commands/AddComponentCommand.cpp
     ../editor/commands/RemoveComponentCommand.cpp
+    ../editor/commands/InstantiatePrefabCommand.cpp
+    ../editor/commands/RevertPrefabInstanceCommand.cpp
 
     # --- RenderGraph Tests ---
     HandleTypeContractTests.cpp
@@ -96,15 +108,45 @@ add_executable(SimpleEngineTests
     RenderGraphPropertyTests.cpp
     RenderGraphUnitTests.cpp
 
+    # --- Motion Mixer / Animation Tests ---
+    SkeletonTests.cpp
+    AnimationSamplerTests.cpp
+    AnimationJsonIOTests.cpp
+    LayerMixerTests.cpp
+    MotionPreviewStateTests.cpp
+
+    # --- RenderSystem Tests (P0-2) ---
+    RenderSystemTests.cpp
+
+    # --- Sound Lite Tests (Phase 5) ---
+    ActionPlayerComponentTests.cpp
+
+    # --- VFX Lite Tests (Phase 1 / Phase 2 / Phase 5) ---
+    ParticleEffectComponentTests.cpp
+    ParticleSystemTests.cpp
+    ParticlePrefabTests.cpp
+
+    # --- Prefab Tests (P1.6, Phase 1 / Phase 2) ---
+    PrefabAssetTests.cpp
+    InstantiatePrefabCommandTests.cpp
+    RevertPrefabInstanceCommandTests.cpp
+
     ${CORE_SOURCES}
     ${PLATFORM_SOURCES}
     ${JOB_SOURCES}
     ${ECS_SOURCES}
     ${RENDERER_SOURCES}
+    ${ANIMATION_SOURCES}
+    ${PREFAB_SOURCES}
 )
 
 # Link Google Test, RapidCheck, and engine dependencies
-target_link_libraries(SimpleEngineTests PRIVATE gtest rapidcheck fmt::fmt glm::glm nlohmann_json::nlohmann_json glew_s glfw)
+# tinyobjloader: RENDERER_SOURCES(glob)에 Mesh.cpp가 포함되고 tiny_obj_loader.h를 참조하는데,
+# 이 타겟은 그동안 tinyobjloader를 링크하지 않아 include 디렉터리가 전파되지 않고 있었다
+# (quarterflying_engine은 BASE_LIBRARIES를 통해 링크하므로 문제없이 빌드됨 - 이 테스트 타겟만 누락).
+# glfw: 프로젝트 전체에서 이미 제거된 의존성인데("GLFW dependency excluded" - Dependencies.cmake)
+# 이 링크 목록에만 죽은 참조로 남아 있어서 링크 단계에서 LNK1181로 실패하고 있었다. 제거.
+target_link_libraries(SimpleEngineTests PRIVATE gtest rapidcheck fmt::fmt glm::glm nlohmann_json::nlohmann_json glew_s tinyobjloader)
 target_include_directories(SimpleEngineTests PRIVATE ${GLEW_TRUE_INCLUDE_DIR})
 
 # Definitions
