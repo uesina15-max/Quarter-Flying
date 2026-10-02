@@ -96,11 +96,13 @@ namespace Engine
     struct Barrier
     {
         RGTextureHandle resource;
-        uint32_t passIndex;
-        // TODO: Add barrier type and state information when GPU abstraction is implemented
+        uint32_t passIndex;          // passOrder 상의 위치(이 패스 직전에 실행)
+        ResourceState srcState;
+        ResourceState dstState;
 
-        Barrier() : resource(RGTextureHandle()), passIndex(0) {}
-        Barrier(RGTextureHandle res, uint32_t pass) : resource(res), passIndex(pass) {}
+        Barrier() : resource(RGTextureHandle()), passIndex(0), srcState(ResourceState::Undefined), dstState(ResourceState::Undefined) {}
+        Barrier(RGTextureHandle res, uint32_t pass, ResourceState src, ResourceState dst)
+            : resource(res), passIndex(pass), srcState(src), dstState(dst) {}
     };
 
     struct ExecutionPlan
@@ -148,6 +150,9 @@ namespace Engine
         
         // Parallel execution with JobSystem integration
         void ExecuteParallel(CommandList& cmdList, JobSystem* jobSystem);
+
+        // 컴파일 결과 배리어 목록(테스트/진단용, 읽기 전용).
+        const std::vector<Barrier>& GetBarriers() const { return executionPlan.barriers; }
 
         // Resource lifecycle management
         void ReleaseTransientResources();
@@ -210,9 +215,9 @@ namespace Engine
 
         void ComputeResourceLifetimes();
         void ComputeAliasing();
+        std::vector<std::vector<Barrier>> parallelBarriersByPass;   // ExecuteParallel 동안 패스별 배리어
         void InsertBarriers();
-        void ResolveReadAfterWriteBarriersForPass(const RGPass& pass, size_t passOrderIndex, const std::unordered_map<RGTextureHandle, uint32_t>& lastWritePass);
-        void ResolveWriteAfterAccessBarriersForPass(const RGPass& pass, size_t passOrderIndex, std::unordered_map<RGTextureHandle, uint32_t>& lastWritePass);
+        static ResourceState DesiredState(const RGTexture& texture, bool isWrite);
 
         void CreatePhysicalResources();
         bool DetectCycles();

@@ -16,7 +16,9 @@ from PySide6.QtGui import QIcon, QColor, QBrush, QFont, QAction
 from style.theme import COLORS
 
 # 엔진 모듈이 없는 경우에도 더미 모드로 동작
-from engine_binding import HAS_ENGINE, to_entity
+from engine_binding import binding as ge_python, HAS_ENGINE, to_entity
+from hierarchy_model import (ABOVE_ITEM, BELOW_ITEM, ON_ITEM, ON_VIEWPORT,
+                             order_for_tree, resolve_drop_parent)
 
 # engine/editor/panels/scene_hierarchy.py 기준 engine/assets/prefabs/
 # (panels/prefab_browser.py도 같은 경로를 독립적으로 계산한다 - 패널 사이에
@@ -46,6 +48,41 @@ class EntityItem(QTreeWidgetItem):
         self.setFont(0, font)
 
 
+class EntityTree(QTreeWidget):
+    """드래그로 부모를 바꾸는 트리(프리팹 Phase 5).
+
+    Qt의 기본 InternalMove는 항목만 옮기고 엔진은 모른다 - 다음 500ms 갱신 때 원래 자리로 튀어
+    돌아가서 "드래그가 안 먹는다"로 보인다. 그래서 Qt가 직접 옮기지 않게 하고(드롭 무시), 새 부모를
+    reparent_requested로 알린다. 패널이 EditorAPI.set_parent(Undo 가능, 순환은 엔진이 거절)를 부른
+    뒤 엔진 기준으로 트리를 다시 그린다.
+    """
+
+    reparent_requested = Signal(int, int)   # (child_id, new_parent_id; 0 = 루트)
+
+    _INDICATORS = {
+        QAbstractItemView.OnItem: ON_ITEM,
+        QAbstractItemView.AboveItem: ABOVE_ITEM,
+        QAbstractItemView.BelowItem: BELOW_ITEM,
+        QAbstractItemView.OnViewport: ON_VIEWPORT,
+    }
+
+    def dropEvent(self, event):
+        dragged = self.currentItem()
+        target = self.itemAt(event.position().toPoint())
+        indicator = self._INDICATORS.get(self.dropIndicatorPosition(), ON_VIEWPORT)
+        event.setDropAction(Qt.IgnoreAction)
+        event.accept()
+        if not isinstance(dragged, EntityItem):
+            return
+        target_id = target.entity_id if isinstance(target, EntityItem) else None
+        target_parent = target.parent() if target is not None else None
+        target_parent_id = target_parent.entity_id if isinstance(target_parent, EntityItem) else 0
+        new_parent = resolve_drop_parent(indicator, target_id, target_parent_id)
+        if new_parent == dragged.entity_id:
+            return
+        self.reparent_requested.emit(dragged.entity_id, new_parent)
+
+
 class SceneHierarchyPanel(QWidget):
     """
     씬 계층 뷰 패널
@@ -58,6 +95,7 @@ class SceneHierarchyPanel(QWidget):
     entity_selected = Signal(int)    # entity_id
     entity_deselected = Signal()
     prefab_capture_status = Signal(str)  # 상태 바 표시용 (성공/실패 메시지 텍스트)
+    hierarchy_status = Signal(str)       # 부모 변경/삭제 결과 (상태 바 표시용)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -65,6 +103,10 @@ class SceneHierarchyPanel(QWidget):
         self.editor_api = None        # ge_python EditorAPI 참조 (Create Prefab 등에 필요)
         self._selected_entity_id = -1
         self._dummy_counter = 0       # 더미 엔티티 카운터
+        # 마지막으로 그린 트리 구조(id, 이름, 부모, 활성 카메라). 같으면 다시 그리지 않는다 - 500ms마다
+        # clear()하면 진행 중인 드래그가 끊기고 접어 둔 항목이 다시 펼쳐졌다.
+        self._last_structure = None
+        self._collapsed_ids = set()
 
         self._build_ui()
         self._connect_signals()
@@ -97,13 +139,15 @@ class SceneHierarchyPanel(QWidget):
         layout.addWidget(toolbar)
 
         # 트리 위젯
-        self.tree = QTreeWidget()
+        self.tree = EntityTree()
         self.tree.setHeaderHidden(True)
         self.tree.setAnimated(True)
         self.tree.setExpandsOnDoubleClick(True)
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.tree.setDragDropMode(QAbstractItemView.NoDragDrop)
+        # 드롭은 EntityTree.dropEvent가 엔진 쪽 부모 변경으로 바꾼다(Qt가 항목을 직접 옮기지 않음).
+        self.tree.setDragDropMode(QAbstractItemView.InternalMove)
+        self.tree.setDefaultDropAction(Qt.MoveAction)
         self.tree.setAlternatingRowColors(True)
         layout.addWidget(self.tree)
 
@@ -139,6 +183,9 @@ class SceneHierarchyPanel(QWidget):
     def _connect_signals(self):
         self.tree.currentItemChanged.connect(self._on_item_changed)
         self.tree.customContextMenuRequested.connect(self._on_context_menu)
+        self.tree.reparent_requested.connect(self._on_reparent_requested)
+        self.tree.itemCollapsed.connect(lambda item: self._collapsed_ids.add(getattr(item, "entity_id", None)))
+        self.tree.itemExpanded.connect(lambda item: self._collapsed_ids.discard(getattr(item, "entity_id", None)))
         self.btn_create.clicked.connect(self.create_entity)
         self.btn_delete.clicked.connect(self.delete_selected_entity)
 
@@ -222,19 +269,53 @@ class SceneHierarchyPanel(QWidget):
             previously_selected = self._selected_entity_id
 
             entities = self.registry.GetAllEntities()
-            self.tree.clear()
-            item_to_reselect = None
+            # 활성 카메라 표시. 선택 규칙은 엔진의 SelectActiveCamera 하나뿐이다(CameraSystem.h) -
+            # 여기서 isMainCamera/priority를 직접 비교하지 않는다.
+            active_camera_id = self._active_camera_id()
+            # 부모도 엔진 규칙(ecs/Hierarchy.h GetParent: 무효 parent = 루트)을 그대로 쓴다.
+            get_parent = getattr(ge_python, "GetParent", None)
+            nodes = []
             for eid in entities:
                 name = self.registry.GetEntityName(eid) if hasattr(self.registry, 'GetEntityName') else f"Entity_{eid.id}"
-                item = EntityItem(eid.id, name)
-                self.tree.addTopLevelItem(item)
-                if eid.id == previously_selected:
+                parent_id = get_parent(self.registry, eid).id if get_parent else 0
+                nodes.append((eid.id, name, parent_id))
+            ordered = order_for_tree(nodes)
+
+            structure = (tuple(ordered), active_camera_id)
+            if structure == self._last_structure:
+                return
+            self._last_structure = structure
+
+            self.tree.clear()
+            items = {}
+            item_to_reselect = None
+            for node in ordered:
+                name = f"{node.name}  🎥" if node.entity_id == active_camera_id else node.name
+                parent_item = items.get(node.parent_id)
+                item = EntityItem(node.entity_id, name, parent_item)
+                if parent_item is None:
+                    self.tree.addTopLevelItem(item)
+                items[node.entity_id] = item
+                if node.entity_id == active_camera_id:
+                    item.setToolTip(0, "활성 카메라: isMainCamera 후보 중 priority가 가장 높음 (동점이면 id가 작은 것)")
+                if node.entity_id == previously_selected:
                     item_to_reselect = item
+            # 기본은 펼침. 사용자가 접은 항목만 접힌 채로 둔다.
+            for entity_id, item in items.items():
+                if item.childCount() and entity_id not in self._collapsed_ids:
+                    item.setExpanded(True)
 
             if item_to_reselect is not None:
                 self.tree.setCurrentItem(item_to_reselect)
         except Exception as e:
             print(f"[SceneHierarchy] 엔진 동기화 실패: {e}")
+
+    def _active_camera_id(self) -> int:
+        """활성 카메라 엔티티 id. 없거나 엔진 바인딩이 이 함수를 모르면 0."""
+        select = getattr(ge_python, "SelectActiveCamera", None) if HAS_ENGINE else None
+        if select is None:
+            return 0
+        return select(self.registry).entity.id
 
     def _on_refresh_tick(self):
         """타이머 콜백 — 엔진과 씬 동기화"""
@@ -339,9 +420,20 @@ class SceneHierarchyPanel(QWidget):
 
         if self.registry and HAS_ENGINE:
             try:
-                self.registry.DestroyEntity(to_entity(entity_id))
+                if self.editor_api is not None:
+                    # 예전에는 registry.DestroyEntity를 직접 불러서 Undo가 안 됐고, 계층이 생긴 뒤로는
+                    # 자식이 부모 없이 남아 월드 원점 기준으로 튀어나왔다. EditorAPI 경로는 자손까지
+                    # 함께 지우고 Ctrl+Z로 전부 되살린다(DestroyEntityCommand).
+                    self.editor_api.destroy_entity(to_entity(entity_id))
+                    if item.childCount():
+                        self.hierarchy_status.emit(
+                            f"'{item.entity_name}'와 자식 {self._count_descendants(item)}개를 삭제했습니다 (Ctrl+Z로 되돌리기)")
+                else:
+                    self.registry.DestroyEntity(to_entity(entity_id))
             except Exception as e:
                 print(f"[SceneHierarchy] 엔티티 삭제 실패: {e}")
+                self.hierarchy_status.emit(f"삭제 실패: {e}")
+            self._last_structure = None
 
         # 트리에서 제거
         parent = item.parent()
@@ -387,6 +479,11 @@ class SceneHierarchyPanel(QWidget):
                 action_prefab.triggered.connect(lambda: self._create_prefab_from_item(item))
                 menu.addAction(action_prefab)
 
+            if self.registry and self.editor_api and HAS_ENGINE and isinstance(item.parent(), EntityItem):
+                action_unparent = QAction("⤴  Unparent (Make Root)", self)
+                action_unparent.triggered.connect(lambda: self._on_reparent_requested(item.entity_id, 0))
+                menu.addAction(action_unparent)
+
             action_del = QAction("🗑️  Delete", self)
             action_del.triggered.connect(self.delete_selected_entity)
             menu.addAction(action_del)
@@ -417,10 +514,32 @@ class SceneHierarchyPanel(QWidget):
         try:
             entity = to_entity(item.entity_id)
             self.editor_api.capture_prefab(entity, path)
-            self.prefab_capture_status.emit(f"프리팹 생성 완료: {os.path.basename(path)}")
+            children = self._count_descendants(item)
+            suffix = f" (자식 {children}개 포함)" if children else ""
+            self.prefab_capture_status.emit(f"프리팹 생성 완료: {os.path.basename(path)}{suffix}")
         except Exception as e:
             print(f"[SceneHierarchy] 프리팹 생성 실패: {e}")
             self.prefab_capture_status.emit(f"프리팹 생성 실패: {e}")
+
+    def _on_reparent_requested(self, child_id: int, new_parent_id: int):
+        """드래그/메뉴로 요청된 부모 변경을 엔진에 반영한다. 순환 등 거절 사유는 엔진 메시지 그대로 보여준다."""
+        if not (self.registry and self.editor_api and HAS_ENGINE):
+            self.hierarchy_status.emit("엔진에 연결돼 있어야 부모를 바꿀 수 있습니다")
+            return
+        try:
+            parent = to_entity(new_parent_id) if new_parent_id else None
+            self.editor_api.set_parent(to_entity(child_id), parent)
+            target = "루트" if not new_parent_id else f"엔티티 {new_parent_id} 아래"
+            self.hierarchy_status.emit(f"엔티티 {child_id}를 {target}로 옮겼습니다 (Ctrl+Z로 되돌리기)")
+        except Exception as e:
+            print(f"[SceneHierarchy] 부모 변경 실패: {e}")
+            self.hierarchy_status.emit(f"부모 변경 실패: {e}")
+        self._last_structure = None
+        self.refresh_from_engine()
+
+    @staticmethod
+    def _count_descendants(item) -> int:
+        return sum(1 + SceneHierarchyPanel._count_descendants(item.child(i)) for i in range(item.childCount()))
 
     def _duplicate_entity(self, item: EntityItem):
         """엔티티 복제"""

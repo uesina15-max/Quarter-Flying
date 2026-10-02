@@ -30,8 +30,7 @@ static Entity CreateEntityWithTransform(ECSRegistry& registry,
 TEST(RotateEntityCommand, ApplyThenUndo_RestoresOriginalRotation)
 {
     ECSRegistry registry;
-    // SetTransformRotation stores Quaternion(x, y, z, 1.0f) internally
-    // so we use values that survive that round-trip
+    // RotateEntityCommand는 쿼터니언을 그대로 저장한다(예전에는 SetTransformRotation을 거쳐 w가 버려졌다).
     Quaternion initial(0.0f, 0.0f, 0.0f, 1.0f);
     Quaternion target (0.0f, 0.7071f, 0.0f, 1.0f);
 
@@ -39,7 +38,7 @@ TEST(RotateEntityCommand, ApplyThenUndo_RestoresOriginalRotation)
 
     RotateEntityCommand cmd(&registry, e, target);
 
-    // Apply → rotation becomes target (w stored as 1.0f by SetTransformRotation)
+    // Apply → rotation becomes target (쿼터니언 그대로)
     ASSERT_TRUE(cmd.Apply().has_value());
     {
         const TransformComponent* t = registry.GetTransformComponent(e);
@@ -64,7 +63,7 @@ TEST(RotateEntityCommand, ApplyThenUndo_RestoresOriginalRotation)
 TEST(RotateEntityCommand, MergeSession_OldRotationRemainsFirstValue)
 {
     ECSRegistry registry;
-    // Use w=1.0f for all since SetTransformRotation always writes w=1.0f
+    // (예전 SetTransformRotation 경유 시절의 w=1 제약은 더 이상 없다 - 값은 그대로 유지)
     Quaternion initial(0.0f, 0.0f, 0.0f, 1.0f);
     Quaternion mid    (0.0f, 0.5f, 0.0f, 1.0f);
     Quaternion final_ (0.0f, 1.0f, 0.0f, 1.0f);

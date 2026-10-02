@@ -134,18 +134,39 @@ namespace Engine
             return;
         }
 
+        GLint boundElementBuffer = 0;  // DrawIndexedInstanced 주석 참고 - 같은 크래시 경로
+        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &boundElementBuffer);
+        if (boundElementBuffer == 0)
+        {
+            Logger::Log(LogLevel::Error, "OpenGLCommandList::DrawIndexed - no element (index) buffer bound to the current VAO; skipping draw");
+            return;
+        }
+
         glDrawElementsBaseVertex(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, (void*)(startIndex * sizeof(uint32_t)), baseVertex);
     }
 
-    void OpenGLCommandList::DrawIndexedInstanced(uint32_t indexCount, uint32_t instanceCount, uint32_t startIndex, uint32_t baseVertex, uint32_t baseInstance)
+    bool OpenGLCommandList::DrawIndexedInstanced(uint32_t indexCount, uint32_t instanceCount, uint32_t startIndex, uint32_t baseVertex, uint32_t baseInstance)
     {
         if (!isOpen)
         {
             Logger::Log(LogLevel::Warning, "OpenGLCommandList::DrawIndexedInstanced - Command list is not open");
-            return;
+            return false;
+        }
+
+        // 인덱스 draw는 현재 VAO에 인덱스 버퍼(EBO)가 바인딩돼 있어야 한다. 없으면 GL은 마지막 인자를
+        // 클라이언트 메모리 포인터로 해석해서 (void*)(startIndex*4) 주소를 읽고 access violation으로 죽는다.
+        // RendererInstancingTest.SubmitIndexedInstancedBatchSucceeds가 바로 이 경로에서
+        // "SEH exception with code 0xc0000005 thrown in the test body"로 실패하고 있었다.
+        GLint boundElementBuffer = 0;
+        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &boundElementBuffer);
+        if (boundElementBuffer == 0)
+        {
+            Logger::Log(LogLevel::Error, "OpenGLCommandList::DrawIndexedInstanced - no element (index) buffer bound to the current VAO; skipping draw");
+            return false;
         }
 
         glDrawElementsInstancedBaseVertexBaseInstance(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, (void*)(startIndex * sizeof(uint32_t)), instanceCount, baseVertex, baseInstance);
+        return true;
     }
 
     void OpenGLCommandList::Draw(uint32_t vertexCount, uint32_t startVertex)
@@ -159,7 +180,7 @@ namespace Engine
         glDrawArrays(GL_TRIANGLES, startVertex, vertexCount);
     }
 
-    void OpenGLCommandList::ResourceBarrier(GPUTextureHandle resource)
+    void OpenGLCommandList::ResourceBarrier(GPUTextureHandle resource, ResourceState /*srcState*/, ResourceState /*dstState*/)
     {
         if (!isOpen)
         {
@@ -270,12 +291,12 @@ namespace Engine
         glViewport(0, 0, width, height);
     }
     
-    void OpenGLCommandList::SetShader(uint32_t shaderId)
+    bool OpenGLCommandList::SetShader(uint32_t shaderId)
     {
         if (!isOpen)
         {
             Logger::Log(LogLevel::Warning, "OpenGLCommandList::SetShader - Command list is not open");
-            return;
+            return false;
         }
 
         currentShader = shaderId;
@@ -283,6 +304,7 @@ namespace Engine
         if (shaderId == 0)
         {
             glUseProgram(0);
+            return true;
         }
         else
         {
@@ -291,11 +313,16 @@ namespace Engine
             {
                 glUseProgram(shader->glId);
                 Logger::Log(LogLevel::Trace, ("OpenGLCommandList::SetShader - Bound shader program " + std::to_string(shaderId)).c_str());
+                return true;
             }
             else
             {
+                // 예전에는 여기서 로그만 남기고 호출자에게 알릴 방법이 없어서, Renderer::Submit*가 그대로
+                // draw를 발행했다(프로그램 0 상태로 그려짐 - 아무 것도 안 보이거나, 인덱스 draw면 크래시).
                 Logger::Log(LogLevel::Error, ("OpenGLCommandList::SetShader - Invalid shader ID: " + std::to_string(shaderId)).c_str());
                 glUseProgram(0);
+                currentShader = 0;
+                return false;
             }
         }
     }

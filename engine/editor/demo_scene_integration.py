@@ -60,6 +60,10 @@ class DemoSceneIntegration(QObject):
             scene_object = {
                 'name': obj_data.get('name', 'unnamed'),
                 'model': obj_data.get('model', ''),
+                # 여기는 필드를 골라 담는 화이트리스트라, 없는 키는 조용히 버려진다. scene.json에
+                # "texture"를 넣었는데 이 줄이 없어서 엔티티의 texturePath가 비어 있었다(에러도 경고도 없음).
+                # scene.json에 필드를 추가하면 여기도 같이 추가할 것.
+                'texture': obj_data.get('texture', ''),
                 'material': obj_data.get('material', {}),
                 'transform': obj_data.get('transform', {}),
                 'instances': obj_data.get('instances', []),

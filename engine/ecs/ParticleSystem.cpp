@@ -1,5 +1,6 @@
 #include "ParticleSystem.h"
 #include "ECSRegistry.h"
+#include "Hierarchy.h"
 #include "../renderer/InstancedBatchManager.h"
 #include "../renderer/Camera.h"
 #include "../renderer/Mesh.h"
@@ -308,10 +309,11 @@ namespace Engine
         auto* transforms = registry.GetComponentArray<TransformComponent>();
         for (auto& pair : effects_)
         {
-            const TransformComponent* tc = transforms ? transforms->Get(pair.first) : nullptr;
-            if (tc)
+            if (transforms && transforms->Get(pair.first))
             {
-                pair.second.emitterWorldPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
+                // 부모 아래 이미터(예: 횃불 프리팹의 불꽃 자식)는 월드 위치에서 뿜는다(Hierarchy.h).
+                const Vec3 p = ComputeWorldTransform(registry, Entity(pair.first)).position;
+                pair.second.emitterWorldPos = glm::vec3(p.x, p.y, p.z);
             }
             // TransformComponent가 없으면 직전 값을 유지한다(기본값 원점). 이미터에
             // Transform이 없는 것은 설정 실수에 가깝지만, 여기서 파티클을 원점으로
@@ -351,9 +353,10 @@ namespace Engine
 
             // 새 이펙트는 스폰 전에 이미터 위치를 한 번 맞춰둔다 - 안 그러면 생성된 첫
             // 프레임의 파티클만 원점에서 튀어나온다.
-            if (const TransformComponent* tc = transforms ? transforms->Get(id) : nullptr)
+            if (transforms && transforms->Get(id))
             {
-                effect.emitterWorldPos = glm::vec3(tc->position.x, tc->position.y, tc->position.z);
+                const Vec3 p = ComputeWorldTransform(registry, Entity(id)).position;
+                effect.emitterWorldPos = glm::vec3(p.x, p.y, p.z);
             }
 
             effects_.emplace(id, std::move(effect));

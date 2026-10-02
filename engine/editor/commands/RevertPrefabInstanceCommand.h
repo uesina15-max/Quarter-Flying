@@ -3,9 +3,11 @@
 #include "../../core/ICommand.h"
 #include "../../ecs/Entity.h"
 #include "../../prefab/PrefabAsset.h"
+#include "EntitySnapshot.h"
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <vector>
 
 // See docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4 for the design this
 // implements.
@@ -41,9 +43,18 @@ private:
     bool         applied_ = false;
 
     nlohmann::json              preRevertSnapshot_; // captured once, on first Apply — Undo target
+    std::string                 preRevertName_;
     std::optional<PrefabAsset>  loadedAsset_;        // cached once, on first Apply; reused on Redo
                                                       // (same "don't depend on the file between
                                                       // Undo/Redo" reasoning as InstantiatePrefabCommand)
+
+    // Phase 5 (multi-entity prefab only): Revert makes the instance's children
+    // exactly the prefab's children — the current descendants are destroyed and the
+    // prefab's children are spawned fresh under the root. For a single-entity
+    // prefab descendants are left alone (they were attached by the user, not by
+    // the prefab — e.g. a camera parented under an instance).
+    std::vector<EntitySnapshot> preRevertDescendants_; // Undo restores these (original UUIDs)
+    std::vector<UUID>           spawnedChildUUIDs_;     // Redo recreates children with these
 };
 
 } // namespace Engine

@@ -88,6 +88,30 @@ namespace Engine
             if (metadataResult.has_value())
             {
                 AssetMetadata* metadata = metadataResult.value();
+                if (!metadata->isLoaded)
+                {
+                    // 전부 언로드된 뒤 다시 요청된 경우. 예전에는 참조 카운트만 올리고 핸들을 돌려줘서
+                    // 호출자는 "로드 성공"을 받는데 GetAsset은 AssetNotFound였다(레지스트리엔 남고 데이터만
+                    // 지워진 상태). 이미 등록된 경로라 ImportAsset은 중복 등록으로 실패하므로 데이터만 다시 읽는다.
+                    AssetImporter* importer = FindImporter(std::filesystem::path(metadata->sourcePath).extension().string());
+                    if (!importer)
+                    {
+                        return MakeError<AssetHandle>(EngineErrorCode::UnsupportedAssetType,
+                            "No importer found for: " + metadata->sourcePath, "AssetManager");
+                    }
+                    auto imported = importer->Import(metadata->sourcePath, metadata->importOptions);
+                    if (!imported.has_value())
+                    {
+                        return std::unexpected(imported.error());
+                    }
+                    {
+                        std::unique_lock<std::shared_mutex> dataLock(dataMutex);
+                        assetDataMap[existingHandle.value()] = imported.value().runtimeData;
+                    }
+                    metadata->isLoaded = true;
+                    metadata->referenceCount = 1;
+                    return existingHandle.value();
+                }
                 metadata->referenceCount++;
                 ENGINE_LOG_INFO("Asset loaded from cache: {} (RefCount: {})", 
                     normalizedPath, metadata->referenceCount);
@@ -125,13 +149,20 @@ namespace Engine
         }
 
         AssetMetadata* metadata = metadataResult.value();
+        // referenceCount는 uint32_t라 0에서 빼면 4294967295가 되고, 아래 "<= 0" 해제 조건이 영영 참이
+        // 되지 않아 데이터가 해제되지 않았다(예전 ImportAsset 버그로 등록 직후 카운트가 0이었으므로 첫
+        // UnloadAsset부터 이 경로였다). 이미 0이면(해제됨) 아무 것도 하지 않는다.
+        if (metadata->referenceCount == 0)
+        {
+            return;
+        }
         metadata->referenceCount--;
 
-        ENGINE_LOG_INFO("Asset unloaded: {} (RefCount: {})", 
+        ENGINE_LOG_INFO("Asset unloaded: {} (RefCount: {})",
             metadata->name, metadata->referenceCount);
 
         // Free data if reference count is 0
-        if (metadata->referenceCount <= 0)
+        if (metadata->referenceCount == 0)
         {
             assetDataMap.erase(handle);
             metadata->isLoaded = false;
@@ -196,6 +227,11 @@ namespace Engine
         metadata.importOptions = options;
         metadata.sourceHash = sourceHash;
         metadata.importTime = std::chrono::system_clock::now().time_since_epoch().count();
+        // 로드 상태는 레지스트리에 넣기 전에 정한다. 예전에는 RegisterAsset(복사) 뒤에 지역 사본에만
+        // isLoaded/referenceCount = 1을 써서 레지스트리 쪽은 참조 0으로 남았다. 그 결과 두 번째
+        // LoadAsset이 1로 올리고, 한 번의 UnloadAsset으로 0이 되어 아직 쓰는 쪽이 있는데 데이터가 해제됐다.
+        metadata.isLoaded = true;
+        metadata.referenceCount = 1;
 
         // Execute import
         auto importResult = importer->Import(sourcePath, options);
@@ -222,8 +258,6 @@ namespace Engine
         {
             std::unique_lock<std::shared_mutex> dataLock(dataMutex);
             assetDataMap[handle] = importedData.runtimeData;
-            metadata.isLoaded = true;
-            metadata.referenceCount = 1;
         }
 
         ENGINE_LOG_INFO("Asset imported successfully: {} (UUID: {})", 

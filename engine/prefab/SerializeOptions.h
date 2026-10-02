@@ -20,5 +20,12 @@ namespace Engine
         // entity reference becomes meaningless once a prefab is instantiated into a
         // different scene/session, so v1 refuses to capture it silently.
         bool rejectEntityRefs = false;
+
+        // Skip HierarchyComponent. Prefab capture records the parent as an index
+        // into the prefab's own entity list ("parent" in the v2 format) instead of
+        // as an entity reference, so the component itself is left out. Checked
+        // before rejectEntityRefs — otherwise its EntityRef field would make every
+        // child entity uncapturable.
+        bool excludeHierarchy = false;
     };
 }

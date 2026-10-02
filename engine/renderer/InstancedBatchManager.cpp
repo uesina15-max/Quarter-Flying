@@ -57,6 +57,9 @@ namespace Engine
         , isVisible(other.isVisible)
         , markedForDeletion(other.markedForDeletion)
         , visibleCount(other.visibleCount)
+        , visibleInstanceData(std::move(other.visibleInstanceData))
+        , cullingApplied(other.cullingApplied)
+        , texture(other.texture)
         , mesh(std::move(other.mesh))
     {
         // Reset moved-from object
@@ -82,6 +85,9 @@ namespace Engine
             isVisible = other.isVisible;
             markedForDeletion = other.markedForDeletion;
             visibleCount = other.visibleCount;
+            visibleInstanceData = std::move(other.visibleInstanceData);
+            cullingApplied = other.cullingApplied;
+            texture = other.texture;
             mesh = std::move(other.mesh);
             
             // Reset moved-from object
@@ -242,6 +248,7 @@ namespace Engine
         batch->entityIds.push_back(entityId);
         batch->isDirty = true;
         batch->visibleCount = batch->instanceData.size();  // Initially all visible
+        batch->cullingApplied = false;                      // 다음 UpdateVisibility까지는 전체 목록을 올린다
         batchesNeedSorting = true;
 
         // 예전엔 여기서 인스턴스 하나마다 TRACE 로그를 남겼다("Added instance to batch,
@@ -292,6 +299,8 @@ namespace Engine
         batch->entityIds.clear();
         batch->isDirty = true;
         batch->visibleCount = 0;
+        batch->cullingApplied = false;
+        batch->visibleInstanceData.clear();
     }
 
     Result<void> InstancedBatchManager::RemoveBatch(const InstancedBatchKey& key)
@@ -316,6 +325,14 @@ namespace Engine
         return {};
     }
     
+    void InstancedBatchManager::SetBatchTexture(const InstancedBatchKey& key, uint32_t glTexture)
+    {
+        if (InstanceBatch* batch = FindBatch(key))
+        {
+            batch->texture = glTexture;
+        }
+    }
+
     void InstancedBatchManager::SetBatchVisibility(const InstancedBatchKey& key, bool visible)
     {
         InstanceBatch* batch = FindBatch(key);
@@ -345,7 +362,16 @@ namespace Engine
                 continue;
             }
 
+            // 증상: 에디터에서 Main Camera의 fov를 60 -> 25로 줄이면(화면이 좁아져 일부 인스턴스가
+            // 컬링되면) 큐브 그리드의 가운데와 오른쪽이 통째로 사라지고 왼쪽 몇 개만 그려졌다. GL 에러는 없었다.
+            // 원인: 여기서는 보이는 인스턴스 "개수"만 셌고, GPU 버퍼에는 여전히 전체 instanceData가
+            // 원래 순서대로 올라가 있었다. RenderBatch는 drawInstanced(visibleCount)로 버퍼 앞쪽
+            // N개를 그리므로, "보이는 N개"가 아니라 "처음 추가된 N개"(그리드의 왼쪽 끝)가 그려졌다.
+            // 넓은 기본 화각에서는 거의 컬링되지 않아 드러나지 않았다.
+            // 수정: 보이는 인스턴스를 visibleInstanceData로 모으고, 일부라도 컬링됐으면 그 목록을
+            // 업로드한다. instanceData 자체는 재정렬하지 않는다(UpdateInstance가 인덱스로 접근).
             uint32_t visibleCount = 0;
+            batch.visibleInstanceData.clear();
             
             // Frustum culling per instance
             for (size_t i = 0; i < batch.instanceData.size(); ++i)
@@ -364,6 +390,7 @@ namespace Engine
                 if (frustum.IsSphereVisible(position, radius))
                 {
                     visibleCount++;
+                    batch.visibleInstanceData.push_back(instance);
                 }
                 else
                 {
@@ -373,6 +400,19 @@ namespace Engine
             
             batch.visibleCount = visibleCount;
             stats.culledInstances += (batch.instanceData.size() - visibleCount);
+
+            // 일부가 컬링됐거나, 직전 프레임에 컬링된 목록을 올려 둔 상태라면 다시 올려야 한다
+            // (카메라가 움직이면 보이는 집합이 바뀐다). 전부 보이면 원래 instanceData 경로를 쓴다.
+            const bool culledNow = visibleCount < batch.instanceData.size();
+            if (culledNow || batch.cullingApplied)
+            {
+                batch.isDirty = true;
+            }
+            batch.cullingApplied = culledNow;
+            if (!culledNow)
+            {
+                batch.visibleInstanceData.clear();
+            }
         }
     }
     
@@ -434,9 +474,19 @@ namespace Engine
 
         // Bind instance VAO (which includes mesh vertex attributes)
         glBindVertexArray(batch->instanceVAO);
-        
+
         // Use shader
         shader->use();
+
+        // 텍스처: 있으면 unit 0에 바인딩하고 셰이더가 샘플링하게 한다. 이 uniform이 없는 셰이더(파티클 등)에서는
+        // 위치가 -1이라 GL이 무시한다.
+        shader->setInt("uHasTexture", batch->texture != 0 ? 1 : 0);
+        if (batch->texture != 0)
+        {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, batch->texture);
+            shader->setInt("uTexture", 0);
+        }
         
         // Draw instanced using Mesh method
         batch->mesh->drawInstanced(batch->visibleCount);
@@ -558,16 +608,20 @@ namespace Engine
             return {};
         }
         
+        // 컬링이 적용됐으면 보이는 인스턴스만 올린다. drawInstanced(visibleCount)는 버퍼 앞쪽 N개를
+        // 그리므로, 버퍼 내용과 visibleCount가 같은 목록을 가리켜야 한다(UpdateVisibility 주석 참고).
+        const std::vector<InstanceData>& source = batch.cullingApplied ? batch.visibleInstanceData : batch.instanceData;
+
         glBindBuffer(GL_ARRAY_BUFFER, batch.instanceVBO);
         
         GLenum usage = (batch.type == BatchType::Static) ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW;
-        glBufferData(GL_ARRAY_BUFFER, batch.instanceData.size() * sizeof(InstanceData), 
-                     batch.instanceData.data(), usage);
+        glBufferData(GL_ARRAY_BUFFER, source.size() * sizeof(InstanceData), 
+                     source.empty() ? nullptr : source.data(), usage);
         
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         
         Logger::Log(LogLevel::Trace, "InstancedBatchManager::UploadInstanceBuffer - Uploaded {} instances", 
-                    batch.instanceData.size());
+                    source.size());
         
         return {};
     }

@@ -495,10 +495,11 @@ TEST_F(SystemConcurrencyPropertyTest, ReadOnlySystemsRunInParallelIntegration)
     EXPECT_GT(windowA.end.time_since_epoch().count(), 0);
     EXPECT_GT(windowB.end.time_since_epoch().count(), 0);
 
-    // If truly parallel, total wall time should be < 2 * delay (with some slack)
-    // Sequential would take >= 2 * delay = 40ms
-    EXPECT_LT(totalMs, 35) << "Read-only systems should run in parallel (total time was "
-                            << totalMs << "ms, expected < 35ms for parallel execution)";
+    // 병렬이면 두 실행 구간이 겹친다. 예전에는 "전체 벽시계 시간 < 35ms"로 판정했는데, 실제 소요가
+    // 28~34ms라 여유가 몇 ms뿐이었고, 부하가 조금만 걸려도 실패했다(플레이크). 구간 겹침은 시간 여유와
+    // 무관하게 병렬 여부 자체를 본다.
+    EXPECT_TRUE(WindowsOverlap(windowA, windowB))
+        << "Read-only systems should run in parallel (total time was " << totalMs << "ms)";
 
     world->Shutdown();
 }
@@ -529,9 +530,9 @@ TEST_F(SystemConcurrencyPropertyTest, WriteConflictForcesSequentialIntegration)
     EXPECT_GT(windowReader.end.time_since_epoch().count(), 0);
     EXPECT_GT(windowWriter.end.time_since_epoch().count(), 0);
 
-    // Sequential execution: total time should be >= 2 * delay (with some slack)
-    EXPECT_GE(totalMs, 35) << "Writer + reader on same component should run sequentially "
-                            << "(total time was " << totalMs << "ms, expected >= 35ms)";
+    // 순차 실행이면 두 실행 구간이 겹치지 않는다(시간 임계값 대신 구간으로 판정 - 위 테스트 주석 참고).
+    EXPECT_FALSE(WindowsOverlap(windowReader, windowWriter))
+        << "Writer + reader on same component should run sequentially (total time was " << totalMs << "ms)";
 
     world->Shutdown();
 }

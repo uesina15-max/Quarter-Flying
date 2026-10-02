@@ -8,6 +8,7 @@
 #include "commands/RemoveComponentCommand.h"
 #include "commands/InstantiatePrefabCommand.h"
 #include "commands/RevertPrefabInstanceCommand.h"
+#include "commands/SetParentCommand.h"
 #include "../prefab/PrefabAsset.h"
 #include "../core/CommandManager.h"
 #include "../ecs/ECSRegistry.h"
@@ -213,6 +214,18 @@ std::expected<void, EngineError> EditorAPI::DestroyEntity(Entity entity)
     }
 
     return Dispatch(std::make_unique<DestroyEntityCommand>(registry_, entity));
+}
+
+std::expected<void, EngineError> EditorAPI::SetParent(Entity child, Entity parent)
+{
+    if (auto r = CheckRegistry(); !r) return r;
+
+    if (!registry_->IsValid(child))
+    {
+        return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "EditorAPI");
+    }
+
+    return Dispatch(std::make_unique<SetParentCommand>(registry_, child, parent));
 }
 
 // ============================================================

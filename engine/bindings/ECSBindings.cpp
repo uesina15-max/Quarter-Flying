@@ -5,6 +5,8 @@
 #include "../ecs/Components.h"
 #include "../ecs/ScriptComponent.h"
 #include "../ecs/Reflection.h"
+#include "../ecs/CameraSystem.h"
+#include "../ecs/Hierarchy.h"
 #include "../core/logging/Logger.h"
 #include <pybind11/stl.h>
 #include <nlohmann/json.hpp>
@@ -94,6 +96,8 @@ void RegisterComponentBindings(pybind11::module_& m) {
     py::class_<RenderableComponent>(m, "RenderableComponent")
         .def(py::init<>())
         .def_readwrite("mesh_handle",     &RenderableComponent::meshHandle)
+        .def_readwrite("mesh_path",       &RenderableComponent::meshPath)
+        .def_readwrite("texture_path",    &RenderableComponent::texturePath)
         .def_readwrite("material_handle", &RenderableComponent::materialHandle)
         .def_readwrite("cast_shadows",    &RenderableComponent::castShadows);
 
@@ -103,7 +107,9 @@ void RegisterComponentBindings(pybind11::module_& m) {
         .def_readwrite("fov",            &CameraComponent::fov)
         .def_readwrite("near_plane",     &CameraComponent::nearPlane)
         .def_readwrite("far_plane",      &CameraComponent::farPlane)
-        .def_readwrite("is_main_camera", &CameraComponent::isMainCamera);
+        .def_readwrite("is_main_camera", &CameraComponent::isMainCamera)
+        .def_readwrite("priority",       &CameraComponent::priority)
+        .def_readwrite("blend_in_seconds", &CameraComponent::blendInSeconds);
 
     // ScriptComponent
     py::class_<ScriptComponent>(m, "ScriptComponent")
@@ -212,6 +218,10 @@ void RegisterRegistryBindings(pybind11::module_& m) {
                 Logger::Error("Failed to patch component field JSON for {}.{}: {}", compName, fieldName, e.what());
             }
         })
+        // EntityRef 필드는 UUID로 직렬화된다(Reflection.h). 에디터가 EntityRef를 편집하려면 runtime id가 아니라
+        // UUID를 주고받아야 한다(inspector.py EntityRef 위젯 주석 참고).
+        .def("GetEntityUUID", [](ECSRegistry& reg, Entity entity) { return reg.GetUUID(entity).GetValue(); })
+        .def("GetEntityByUUID", [](ECSRegistry& reg, uint64_t uuid) { return reg.GetEntityByUUID(UUID(uuid)); })
         .def("SetComponentJson", [](ECSRegistry& reg, Entity entity, const std::string& compName, const std::string& jsonString) {
             auto info = ComponentRegistry::GetComponentInfo(compName);
             if (!info) return;
@@ -249,6 +259,24 @@ void RegisterRegistryBindings(pybind11::module_& m) {
         });
 }
 
+void RegisterActiveCameraBindings(pybind11::module_& m) {
+    namespace py = pybind11;
+    // 활성 카메라 선택 규칙(CameraSystem.h SelectActiveCamera)을 에디터에서 그대로 쓴다 - 파이썬에서
+    // 규칙을 다시 구현하지 않기 위함.
+    py::class_<ActiveCameraSelection>(m, "ActiveCameraSelection")
+        .def_readonly("entity",          &ActiveCameraSelection::entity)
+        .def_readonly("candidate_count", &ActiveCameraSelection::candidateCount)
+        .def_readonly("tie",             &ActiveCameraSelection::tie);
+    m.def("SelectActiveCamera", &SelectActiveCamera, py::arg("registry"));
+
+    // 계층 조회(ecs/Hierarchy.h, 프리팹 Phase 5). Scene Hierarchy 트리가 이 규칙(무효 parent = 루트)을
+    // 그대로 쓰게 한다. 변경은 Undo가 되는 EditorAPI.set_parent로 한다.
+    m.def("GetParent", [](ECSRegistry& registry, Entity entity) { return GetParent(registry, entity); },
+          py::arg("registry"), py::arg("entity"));
+    m.def("GetChildren", [](ECSRegistry& registry, Entity entity) { return GetChildren(registry, entity); },
+          py::arg("registry"), py::arg("entity"));
+}
+
 void RegisterWorldBindings(pybind11::module_& m) {
     namespace py = pybind11;
 
@@ -272,6 +300,7 @@ void RegisterECSBindings(pybind11::module_& m) {
     RegisterEntityBindings(m);     // 1. Entity (기본 ID 타입)
     RegisterComponentBindings(m);  // 2. Components (Transform, Renderable 등)
     RegisterRegistryBindings(m);   // 3. ECSRegistry (Entity 및 Component 의존)
+    RegisterActiveCameraBindings(m); // 3-1. 활성 카메라 선택 (ECSRegistry, Entity 의존)
     RegisterWorldBindings(m);      // 4. World (ECSRegistry 의존)
 }
 

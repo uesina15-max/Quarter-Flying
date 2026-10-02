@@ -123,7 +123,8 @@ namespace Engine
         std::vector<Entity> GetAllEntities() const;
 
         void SetEntityName(Entity entity, const std::string& name);
-        std::string GetEntityName(Entity entity) const;
+        std::string GetEntityName(Entity entity) const;   // 이름이 없으면 "Entity_<id>"를 만들어 돌려준다
+        bool HasEntityName(Entity entity) const;           // SetEntityName으로 명시적으로 설정된 이름이 있는가
 
         bool HasTransformComponent(Entity entity) const;
         TransformComponent* GetTransformComponent(Entity entity);

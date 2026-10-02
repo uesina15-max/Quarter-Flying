@@ -14,8 +14,9 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 include(cmake/CompilerFlags.cmake)
 include(cmake/Dependencies.cmake)
 
-# Include directories
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
+# Include directories: 전역 include_directories(${CMAKE_CURRENT_SOURCE_DIR}) 대신 엔진 타깃에만 붙인다
+# (아래 target_include_directories). 전역으로 두면 이 디렉터리에서 FetchContent로 추가되는 서드파티
+# 타깃(googletest, rapidcheck 등)까지 엔진 헤더 경로를 물려받는다(docs/REVIEW_BASED_IMPROVEMENT_PLAN.md P2-3).
 
 # Source lists
 set(PLATFORM_SOURCES
@@ -45,6 +46,8 @@ set(EDITOR_SOURCES
     editor/commands/RemoveComponentCommand.cpp
     editor/commands/InstantiatePrefabCommand.cpp
     editor/commands/RevertPrefabInstanceCommand.cpp
+    editor/commands/EntitySnapshot.cpp
+    editor/commands/SetParentCommand.cpp
 )
 
 set(JOB_SOURCES
@@ -63,7 +66,8 @@ set(RENDERER_SOURCES
     renderer/opengl/OpenGLCommandList.cpp
     renderer/opengl/OpenGLResourceManager.cpp
     renderer/Mesh.cpp
-    renderer/Shader.cpp
+    renderer/Texture2D.cpp
+renderer/Shader.cpp
     renderer/Camera.cpp
     renderer/Frustum.cpp
     renderer/InstancedBatchManager.cpp
@@ -80,8 +84,14 @@ set(ECS_SOURCES
     ecs/World.cpp
     ecs/WorldManager.cpp
     ecs/Reflection.cpp
+    ecs/RotationConversion.cpp
     ecs/ScriptSystem.cpp
     ecs/RenderSystem.cpp
+    ecs/CameraSystem.cpp
+    ecs/CameraRigSystem.cpp
+    ecs/CameraGizmoSystem.cpp
+    ecs/Hierarchy.cpp
+    input/InputState.cpp
     ecs/ParticleSystem.cpp
     ecs/ComponentManager.cpp
     ecs/ComponentTypeRegistry.cpp
@@ -131,9 +141,12 @@ message(STATUS "GLEW_TRUE_INCLUDE_DIR: ${GLEW_TRUE_INCLUDE_DIR}")
 get_filename_component(STB_INCLUDE_DIR "${stb_SOURCE_DIR}" ABSOLUTE)
 message(STATUS "STB_INCLUDE_DIR: ${STB_INCLUDE_DIR}")
 
-target_include_directories(quarterflying_engine PUBLIC ${GLEW_TRUE_INCLUDE_DIR} ${STB_INCLUDE_DIR})
+target_include_directories(quarterflying_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${GLEW_TRUE_INCLUDE_DIR} ${STB_INCLUDE_DIR})
 
 # Base libraries (always required - GLEW needed for OpenGL in Qt editor too)
+# pybind11::embed: ecs/ScriptSystem.cpp가 이미 실행 중인 인터프리터 안에서 pybind11 API(py::module_::import,
+# py::object, GIL)를 쓰므로 엔진 DLL이 Python 라이브러리에 링크돼야 한다. "쓰지 않는 링크"가 아니다
+# (개선안 P2-4 정정).
 set(BASE_LIBRARIES pybind11::embed nlohmann_json::nlohmann_json fmt::fmt glm::glm glew_s tinyobjloader)
 
 # GLFW removed (using Qt-based editor with native window handles)

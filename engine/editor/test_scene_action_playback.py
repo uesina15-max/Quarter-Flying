@@ -103,6 +103,40 @@ def write_action(name: str, fps: int, total_frames: int, event_frames, clip: str
     return path
 
 
+class CameraFakeRegistry(FakeRegistry):
+    """Camera 이벤트용: 이름과 부분 SetComponentJson(엔진 deserialize처럼 준 필드만 덮어씀)을 흉내낸다."""
+
+    def __init__(self, components: dict, names: dict):
+        super().__init__(components)
+        self._names = names
+
+    def GetEntityName(self, entity):
+        return self._names.get(getattr(entity, "id", entity), f"Entity_{entity}")
+
+    def SetComponentJson(self, entity, name, js):
+        eid = getattr(entity, "id", entity)
+        self._components.setdefault(eid, {}).setdefault(name, {}).update(json.loads(js))
+
+
+class StrictFakeSound(FakeSound):
+    """실제 SoundPlayer와 같은 계약: preload한 경로로만 play가 성공한다.
+
+    FakeSound는 아무 경로나 받아서, preload 키와 play 키가 달라 실제로는 무음이던 버그
+    (sound_player.resolve_clip_path 주석)를 잡지 못했다.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.rejected = []
+
+    def play(self, clip, volume=1.0, volume_var=0.0):
+        if clip not in self.preloaded:
+            self.rejected.append(clip)
+            return False
+        self.played.append(clip)
+        return True
+
+
 def controller_with(components, sound=None):
     return ScenePlaybackController(sound_player=sound or FakeSound()), FakeRegistry(components)
 
@@ -290,7 +324,68 @@ def test_zero_dt_does_nothing():
     check(len(sound.played) == 0, f"재생도 없어야 함: {sound.played}")
 
 
+
+def test_relative_clip_is_played_with_the_same_key_it_was_preloaded_with():
+    """파일에서 불러온 액션(clip이 상대 경로)이 실제로 재생돼야 한다 - preload 키와 play 키 일치."""
+    wav = make_wav(os.path.join("sfx", "strict.wav"))
+    path = write_action("Strict", 30, 10, [2], wav)   # 저장 시 clip이 상대 경로가 된다
+
+    comps = {1: {"ActionPlayerComponent": {"action": path, "playOnStart": True}}}
+    sound = StrictFakeSound()
+    ctrl, reg = controller_with(comps, sound)
+    ctrl.start(reg)
+    ctrl.tick(0.2)   # 30fps에서 6프레임 -> frame 2 이벤트 발화
+
+    check(not sound.rejected, f"preload 안 된 키로 재생 시도됨(무음 버그): {sound.rejected}")
+    check(len(sound.played) >= 1, f"소리가 한 번 이상 재생돼야 함: {sound.played}")
+
+
+def _camera_action(name: str, target_camera: str) -> str:
+    action = ActionData(
+        name=name, fps=30, total_frames=10, sections=[],
+        events=[ActionEvent(frame=3, type=EventType.CAMERA, params={"camera": target_camera})],
+        layers=[],
+    )
+    path = os.path.join(_tmpdir, "actions", f"{name}.action.json")
+    save_action(action, path)
+    return path
+
+
+def test_camera_event_makes_named_camera_highest_priority():
+    """Camera 이벤트가 발화하면 그 카메라가 최고 priority + isMainCamera가 된다(엔진 규칙이 고른다)."""
+    path = _camera_action("CamSwitch", "Cam B")
+    comps = {
+        1: {"ActionPlayerComponent": {"action": path, "playOnStart": True}},
+        2: {"CameraComponent": {"isMainCamera": True, "priority": 4}},    # Main Camera
+        3: {"CameraComponent": {"isMainCamera": False, "priority": 0}},   # Cam B
+    }
+    reg = CameraFakeRegistry(comps, {2: "Main Camera", 3: "Cam B"})
+    ctrl = ScenePlaybackController(sound_player=FakeSound())
+    ctrl.start(reg)
+    ctrl.tick(0.2)   # 30fps에서 6프레임 -> frame 3 발화
+
+    cam_b = comps[3]["CameraComponent"]
+    check(cam_b["isMainCamera"] is True, f"Cam B가 후보가 돼야 함: {cam_b}")
+    check(cam_b["priority"] == 5, f"Cam B priority는 기존 최고(4)+1이어야 함: {cam_b}")
+
+
+def test_camera_event_with_unknown_name_is_ignored():
+    path = _camera_action("CamMissing", "Nope")
+    comps = {
+        1: {"ActionPlayerComponent": {"action": path, "playOnStart": True}},
+        2: {"CameraComponent": {"isMainCamera": True, "priority": 0}},
+    }
+    reg = CameraFakeRegistry(comps, {2: "Main Camera"})
+    ctrl = ScenePlaybackController(sound_player=FakeSound())
+    ctrl.start(reg)
+    ctrl.tick(0.2)
+    check(comps[2]["CameraComponent"] == {"isMainCamera": True, "priority": 0},
+          f"없는 카메라 이름이면 아무것도 바꾸지 않아야 함: {comps[2]}")
+
 TESTS = [
+    test_camera_event_makes_named_camera_highest_priority,
+    test_camera_event_with_unknown_name_is_ignored,
+    test_relative_clip_is_played_with_the_same_key_it_was_preloaded_with,
     test_start_only_picks_up_action_players_with_play_on_start,
     test_action_fps_is_respected_not_tick_count,
     test_fractional_frames_accumulate_instead_of_stalling,

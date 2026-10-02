@@ -7,6 +7,7 @@
 #include "../renderer/Camera.h"
 #include "../renderer/RenderMode.h"
 #include "../animation/MotionPreviewState.h"
+#include "../input/InputState.h"
 #include "EngineError.h"
 #include "EngineConfig.h"
 #include <memory>
@@ -40,6 +41,13 @@ namespace Engine
     // 서브시스템 관리:
     // - RegisterSubsystem<T>() - 서브시스템 등록
     // - GetSubsystem<T>() - 서브시스템 조회
+
+    // 뷰포트를 어느 카메라로 그릴지.
+    //  - Game:   ECS의 isMainCamera 엔티티를 따라가는 카메라(RenderSystem이 매 프레임 갱신). 게임에서 보이는 화면.
+    //  - Editor: 에디터가 마우스로 조작하는 카메라. ECS와 무관하며 RenderSystem이 덮어쓰지 않는다.
+    // 두 카메라를 따로 두는 이유: 예전에는 카메라가 하나뿐이었고 RenderSystem이 매 프레임 Main Camera
+    // 엔티티 값으로 덮어써서, 에디터 뷰포트를 마우스로 움직일 방법이 없었다.
+    enum class ViewCamera : uint8_t { Game, Editor };
 
     class Engine
     {
@@ -88,6 +96,11 @@ namespace Engine
         MotionPreviewState* GetMotionPreviewState() const { return motionPreviewState.get(); }
         void SetRenderMode(RenderMode mode);
         RenderMode GetRenderMode();
+
+        // 뷰포트 카메라 선택 / 에디터 카메라 조작 (ViewCamera 주석 참고)
+        void SetViewCamera(ViewCamera which);
+        ViewCamera GetViewCamera() const { return viewCamera; }
+        void SetEditorCameraView(float eyeX, float eyeY, float eyeZ, float targetX, float targetY, float targetZ);
 
         // Test-only method to access frame allocator state
         #ifdef ENABLE_TESTS
@@ -140,8 +153,15 @@ namespace Engine
         // 만들어 Renderer::SetMainCamera에 넘긴다. ECS 연동은 별도 작업.
         std::unique_ptr<Camera> defaultCamera;
 
+        // 에디터 전용 카메라(ViewCamera::Editor). 투영은 defaultCamera와 같게 유지한다(HandleWindowResize).
+        std::unique_ptr<Camera> editorCamera;
+        ViewCamera viewCamera = ViewCamera::Game;
+
         // Motion Mixer 프리뷰 상태 (Phase 4A). Renderer가 매 프레임 읽어서 그린다.
         std::unique_ptr<MotionPreviewState> motionPreviewState;
+
+        // 이번 프레임 입력 상태. 게임 System(CameraRigSystem 등)이 포인터로 읽는다(InputState.h).
+        InputState inputState;
 
         // Input queue (Thread-safe between external UI thread and internal TickFrame thread)
         std::mutex inputMutex;

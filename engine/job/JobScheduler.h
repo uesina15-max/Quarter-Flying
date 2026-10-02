@@ -6,6 +6,7 @@
 #include <vector>
 #include <atomic>
 #include <mutex>
+#include <deque>
 #include <condition_variable>
 #include <functional>
 
@@ -103,6 +104,11 @@ namespace Engine
         // 각 워커 스레드의 로컬 큐
         // Requirement 3.3: Work Stealing을 위한 큐 관리
         std::vector<WorkStealingDeque> localQueues;
+
+        // 워커가 아닌 스레드(메인 스레드의 Dispatch 등)가 넣는 잡. WorkStealingDeque(Chase-Lev)는 소유 워커만
+        // Push/Pop할 수 있어서, 다른 스레드의 제출은 여기로 받는다(EnqueueJob 주석 참고).
+        std::mutex injectMutex;
+        std::deque<Job*> injectQueue;
 
         // 시스템 상태
         std::atomic<bool> running;

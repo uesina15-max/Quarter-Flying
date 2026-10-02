@@ -352,6 +352,8 @@ private:
 
 **우선순위**: 최상위 (P1.6 → P1.6-Phase 5)
 
+> **2026-10-01 구현됨(Phase 5A)** — 아래 초안과 다른 점: `children` 배열은 두지 않고 `parent`만 저장한다(자식은 `GetChildren()`으로 조회). v2 포맷의 `parent`는 UUID가 아니라 `entities` 배열 인덱스다. `rejectEntityRefs`는 유지하고 계층만 `excludeHierarchy`로 따로 처리한다. 상세: `PREFAB_IMPLEMENTATION_PLAN.md` "Phase 5A 구현 기록". §4.2(컴포넌트 중복 허용)와 §4.3(UI 전용 옵션)은 아직 안 했다.
+
 **작업 내용**:
 
 1. **HierarchyComponent 추가**

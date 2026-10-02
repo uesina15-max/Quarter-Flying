@@ -135,7 +135,8 @@ void main()
         initialized = false;
     }
 
-    void BoneLineRenderer::Render(const glm::mat4& viewProjection, const std::vector<std::pair<glm::vec3, glm::vec3>>& lines)
+    void BoneLineRenderer::Render(const glm::mat4& viewProjection, const std::vector<std::pair<glm::vec3, glm::vec3>>& lines,
+                                  const glm::vec3& color)
     {
         if (!initialized || lines.empty())
         {
@@ -158,7 +159,7 @@ void main()
 
         glUseProgram(shaderProgram);
         glUniformMatrix4fv(uniformLocViewProjection, 1, GL_FALSE, glm::value_ptr(viewProjection));
-        glUniform3f(uniformLocColor, 1.0f, 0.85f, 0.2f);  // 밝은 노랑 - 그리드/배경과 잘 구분되도록
+        glUniform3f(uniformLocColor, color.x, color.y, color.z);
 
         glBindVertexArray(vao);
         glBindBuffer(GL_ARRAY_BUFFER, vbo);

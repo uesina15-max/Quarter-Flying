@@ -10,23 +10,38 @@ namespace Engine
     {
     }
 
-    bool DependencyResolver::SetupDependencies(Job* job, const JobHandle* dependencies, uint32_t numDependencies)
+    bool DependencyResolver::SetupDependencies(Job* job, const JobHandle* dependencies, uint32_t numDependencies, bool& outReady)
     {
+        outReady = false;
         if (!job)
         {
             Logger::Log(LogLevel::Error, "DependencyResolver: Cannot setup dependencies for null job");
             return false;
         }
-        
+
         if (!dependencies || numDependencies == 0)
         {
+            outReady = true;
             return true; // No dependencies to setup
         }
+
+        std::lock_guard<std::mutex> lock(graphMutex);
+
+        // 설정 가드: 등록하는 동안 카운터가 0이 되어 ResolveDependents가 먼저 큐에 넣는 일을 막는다.
+        // 끝에서 가드를 내리며 0이 되면(= 기다릴 것 없음) 호출자가 큐에 넣는다. 0으로 만든 쪽만 넣으므로
+        // 같은 잡이 두 번 실행되지 않는다.
+        job->unfinishedDependencies.fetch_add(1, std::memory_order_acq_rel);
 
         // 의존성 설정
         for (uint32_t i = 0; i < numDependencies; ++i)
         {
             Job* dependency = lifecycleManager->FindJob(dependencies[i]);
+            if (!dependency && dependencies[i].IsValid())
+            {
+                // 유효한 핸들인데 활성 목록에 없으면 이미 끝나서 회수된 잡이다 - 충족된 의존성으로 본다.
+                // 예전에는 여기서 에러를 내고 디스패치 자체를 실패시켰다(RenderGraph는 그 패스를 조용히 건너뜀).
+                continue;
+            }
             if (!dependency)
             {
                 // Requirement 6.2: Log error with context
@@ -35,26 +50,24 @@ namespace Engine
                 return false;
             }
 
-            // 의존성이 이미 완료되었는지 확인
+            // 의존성이 이미 완료되었는지 확인. graphMutex 안이라 ResolveDependents의 순회와 겹치지 않는다.
+            // 완료 플래그는 완료 콜백보다 먼저 설정되므로, 여기서 "미완료"로 보고 등록하면 반드시 순회에 잡힌다.
             if (!dependency->IsComplete())
             {
-                // 의존성 카운터 증가
-                job->unfinishedDependencies.fetch_add(1, std::memory_order_relaxed);
-                
-                // 의존성의 dependents 목록에 추가
+                job->unfinishedDependencies.fetch_add(1, std::memory_order_acq_rel);
                 dependency->dependents.push_back(job);
             }
         }
 
-        // 순환 의존성 검사
-        if (HasCircularDependency(lifecycleManager->GetActiveJobs()))
-        {
-            // Requirement 6.3: Report circular dependency with context
-            Logger::Log(LogLevel::Fatal, "DependencyResolver: Circular dependency detected for job (id=%u, gen=%u)", 
-                       job->handle.id, job->handle.generation);
-            return false;
-        }
+        // 순환 의존성 검사는 하지 않는다. 디스패치 시점의 새 잡은 "이미 존재하는 잡"에만 의존할 수 있고, 아직
+        // 없는 잡에 누가 의존할 수는 없으므로 순환이 구조적으로 생기지 않는다.
+        // 증상(예전): 의존성 잡을 많이 디스패치하면 가끔 "Circular dependency detected in Job graph!"가 나며 디스패치가
+        // 실패했다. 무효 핸들을 받은 다음 잡도 "Invalid dependency handle"로 연쇄 실패해서 잡이 조용히 사라졌다.
+        // 원인: 이 검사가 lifecycleManager->GetActiveJobs()(활성 잡 벡터 참조)를 락 없이 순회했고, 그동안 워커가
+        // 그 벡터에서 잡을 지워(RetireJob) 깨진 상태를 읽어서 순환을 오탐했다.
 
+        // 가드를 내린다. 이 감소로 0이 됐으면 기다릴 의존성이 없다.
+        outReady = DecrementDependencyCounter(job);
         return true;
     }
 
@@ -68,6 +81,8 @@ namespace Engine
             return readyJobs;
         }
 
+        std::lock_guard<std::mutex> lock(graphMutex);
+
         // 이 Job에 의존하는 모든 Job의 카운터 감소
         for (Job* dependent : completedJob->dependents)
         {
@@ -78,10 +93,9 @@ namespace Engine
                 continue;
             }
             
-            DecrementDependencyCounter(dependent);
-
-            // 의존성이 모두 해결되었으면 실행 준비 완료
-            if (dependent->unfinishedDependencies.load(std::memory_order_acquire) == 0)
+            // 이 감소로 0이 됐을 때만 실행 준비 완료. 감소 후 따로 load하면, 선행 잡 둘이 동시에 끝났을 때
+            // 양쪽 다 0을 보고 같은 잡을 두 번 큐에 넣을 수 있다.
+            if (DecrementDependencyCounter(dependent))
             {
                 readyJobs.push_back(dependent);
             }
@@ -181,14 +195,15 @@ namespace Engine
         return false;
     }
 
-    void DependencyResolver::DecrementDependencyCounter(Job* job)
+    bool DependencyResolver::DecrementDependencyCounter(Job* job)
     {
         if (!job)
         {
-            return;
+            return false;
         }
 
-        job->unfinishedDependencies.fetch_sub(1, std::memory_order_release);
+        // 반환값: 이 감소로 카운터가 0이 됐으면 true (0을 만든 쪽은 정확히 하나)
+        return job->unfinishedDependencies.fetch_sub(1, std::memory_order_acq_rel) == 1;
     }
 
 } // namespace Engine

@@ -49,7 +49,11 @@ public:
     // ----------------------------------------
 
     std::expected<Entity, EngineError> CreateEntity(const std::string& name = "");
-    std::expected<void, EngineError>   DestroyEntity(Entity entity);
+    std::expected<void, EngineError>   DestroyEntity(Entity entity);   // 자손까지 함께 파괴(Undo로 전부 복원)
+
+    // 부모 변경(프리팹 Phase 5, ecs/Hierarchy.h). parent가 Entity()면 루트로. 자기 자신/자손을 부모로
+    // 지정하면(순환) 에러. 월드 위치는 유지된다(화면에서 제자리) - SetParentCommand 참고.
+    std::expected<void, EngineError>   SetParent(Entity child, Entity parent);
 
     // ----------------------------------------
     // Prefabs (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 2)

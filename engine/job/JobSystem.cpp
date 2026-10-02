@@ -130,9 +130,10 @@ namespace Engine
         
         // Setup dependencies if provided
         // This builds the dependency graph and checks for circular dependencies
+        bool ready = true;
         if (numDependencies > 0 && dependencies != nullptr)
         {
-            if (!dependencyResolver->SetupDependencies(job, dependencies, numDependencies))
+            if (!dependencyResolver->SetupDependencies(job, dependencies, numDependencies, ready))
             {
                 // Requirement 12.2: Clean up failed job on circular dependency
                 lifecycleManager->CleanupFailedJob(job);
@@ -143,9 +144,9 @@ namespace Engine
             }
         }
 
-        // If no unfinished dependencies, enqueue immediately for execution
-        // Otherwise, the job will be enqueued when its dependencies complete
-        if (!dependencyResolver->HasUnfinishedDependencies(job))
+        // 기다릴 의존성이 없으면 지금 큐에 넣는다. 아니면 마지막 선행 잡을 끝낸 쪽(OnJobComplete)이 넣는다.
+        // 예전에는 여기서 카운터를 따로 읽어 판단해서, 그 사이 선행 잡이 끝나면 양쪽이 모두 큐에 넣을 수 있었다.
+        if (ready)
         {
             scheduler->EnqueueJob(job);
         }

@@ -5,6 +5,7 @@
 #include "../core/memory/FrameAllocator.h"
 #include <atomic>
 #include <thread>
+#include <mutex>
 #include <chrono>
 #include <vector>
 #include <memory>
@@ -16,6 +17,22 @@ using namespace Engine;
 // ReadOnlySystemA가 있어서 ODR 위반으로 그쪽 테스트가 조용히 틀리게 동작했다(그 파일 주석 참고).
 namespace
 {
+
+// 병렬/순차 판정용 실행 구간. 벽시계 총시간 임계값(예: "< 40ms")은 부하가 조금만 걸려도 깨졌다
+// (실제로 53ms로 실패). 구간이 겹쳤는지로 병렬 여부 자체를 본다.
+struct ExecWindow
+{
+    std::chrono::steady_clock::time_point start{};
+    std::chrono::steady_clock::time_point end{};
+};
+
+bool Overlap(const ExecWindow& a, const ExecWindow& b)
+{
+    return a.start < b.end && b.start < a.end;
+}
+
+// executionOrder는 여러 워커 스레드가 동시에 push_back하므로 보호가 필요하다(예전에는 보호 없음 - 데이터 경쟁).
+std::mutex g_executionOrderMutex;
 
 // 테스트용 Component 타입
 struct TestComponentA
@@ -38,7 +55,9 @@ public:
         updateCount++;
         
         // 실행 시간 시뮬레이션
+        window.start = std::chrono::steady_clock::now();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        window.end = std::chrono::steady_clock::now();
     }
 
     const char* GetName() const override { return "TestSystemA"; }
@@ -55,6 +74,7 @@ public:
     }
 
     std::atomic<int> updateCount{0};
+    ExecWindow window;
 };
 
 class TestSystemB : public System
@@ -66,7 +86,9 @@ public:
         updateCount++;
         
         // 실행 시간 시뮬레이션
+        window.start = std::chrono::steady_clock::now();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        window.end = std::chrono::steady_clock::now();
     }
 
     const char* GetName() const override { return "TestSystemB"; }
@@ -83,6 +105,7 @@ public:
     }
 
     std::atomic<int> updateCount{0};
+    ExecWindow window;
 };
 
 // 테스트용 청크 기반 System 클래스
@@ -132,8 +155,13 @@ public:
     void Update(ECSRegistry& registry, float deltaTime) override
     {
         updateCount++;
-        executionOrder.push_back(1);
+        {
+            std::lock_guard<std::mutex> lock(g_executionOrderMutex);
+            executionOrder.push_back(1);
+        }
+        window.start = std::chrono::steady_clock::now();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        window.end = std::chrono::steady_clock::now();
     }
 
     const char* GetName() const override { return "ReadOnlySystemA"; }
@@ -150,6 +178,7 @@ public:
     }
 
     std::atomic<int> updateCount{0};
+    ExecWindow window;
     static std::vector<int> executionOrder;
 };
 
@@ -161,8 +190,13 @@ public:
     void Update(ECSRegistry& registry, float deltaTime) override
     {
         updateCount++;
-        ReadOnlySystemA::executionOrder.push_back(2);
+        {
+            std::lock_guard<std::mutex> lock(g_executionOrderMutex);
+            ReadOnlySystemA::executionOrder.push_back(2);
+        }
+        window.start = std::chrono::steady_clock::now();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        window.end = std::chrono::steady_clock::now();
     }
 
     const char* GetName() const override { return "ReadOnlySystemB"; }
@@ -179,6 +213,7 @@ public:
     }
 
     std::atomic<int> updateCount{0};
+    ExecWindow window;
 };
 
 class TestSystemC : public System
@@ -190,7 +225,9 @@ public:
         updateCount++;
         
         // 실행 시간 시뮬레이션
+        window.start = std::chrono::steady_clock::now();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        window.end = std::chrono::steady_clock::now();
     }
 
     const char* GetName() const override { return "TestSystemC"; }
@@ -207,6 +244,7 @@ public:
     }
 
     std::atomic<int> updateCount{0};
+    ExecWindow window;
 };
 } // namespace (anonymous)
 
@@ -272,7 +310,8 @@ TEST_F(SystemParallelExecutionTest, ParallelSystemsExecuteInParallel)
 
     // 병렬 실행으로 인해 총 시간이 단일 System 실행 시간보다 크지만
     // 순차 실행 시간(20ms)보다는 작아야 함
-    EXPECT_LT(duration.count(), 40) << "Parallel execution should be faster than sequential execution (took " << duration.count() << "ms)";
+    EXPECT_TRUE(Overlap(systemAPtr->window, systemBPtr->window))
+        << "Parallel systems should overlap in time (total " << duration.count() << "ms)";
 }
 
 TEST_F(SystemParallelExecutionTest, ConflictingSystemsExecuteSequentially)
@@ -377,7 +416,8 @@ TEST_F(SystemParallelExecutionTest, ReadOnlySystemsExecuteInParallel)
     EXPECT_EQ(systemBPtr->updateCount.load(), 1);
 
     // 읽기 전용 System들은 병렬 실행되어야 하므로 총 시간이 단일 System 시간에 가까워야 함
-    EXPECT_LT(duration.count(), 40); // 약간의 여유를 둠 (10ms + 오버헤드)
+    EXPECT_TRUE(Overlap(systemAPtr->window, systemBPtr->window))
+        << "Read-only systems should overlap in time (total " << duration.count() << "ms)";
     
     // 실행 순서가 동시에 시작되었는지 확인 (정확한 순서는 보장되지 않음)
     EXPECT_EQ(ReadOnlySystemA::executionOrder.size(), 2);
@@ -449,5 +489,5 @@ TEST_F(SystemParallelExecutionTest, MixedReadWriteSystemScheduling)
     // ReadOnlyA와 ReadOnlyB는 병렬 실행 가능, WriteSystemC는 ReadOnlyA와 충돌하여 순차 실행
     // 예상 시간: max(ReadOnlyA, ReadOnlyB) + WriteSystemC = 10ms + 10ms = 20ms
     EXPECT_GE(duration.count(), 18); // 최소 18ms
-    EXPECT_LT(duration.count(), 50); // 최대 50ms (오버헤드 포함)
+    // 상한("< 50ms")은 두지 않는다 - 부하에 따라 깨지는 플레이크였다. 하한(순차 부분의 합)만 본다.
 }

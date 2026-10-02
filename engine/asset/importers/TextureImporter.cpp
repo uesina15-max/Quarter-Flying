@@ -54,15 +54,14 @@ namespace Engine
         importedData.metadata["channels"] = textureData.channels;
         importedData.metadata["format"] = static_cast<uint32_t>(DetermineTextureFormat(textureData.channels));
 
-        // 원본 데이터 저장
-        importedData.rawData = std::move(textureData.pixels);
-
-        // 런타임 데이터 (추후 Texture 클래스로 대체)
-        // 현재는 rawData만 사용
-        importedData.runtimeData = nullptr;
-
         ENGINE_LOG_INFO("Texture imported successfully: {}x{} ({} channels)",
             textureData.width, textureData.height, textureData.channels);
+
+        // 런타임 데이터 = TextureData(크기 + 픽셀). AssetManager는 runtimeData만 보관하고
+        // GetAsset<TextureData>(handle)로 돌려준다.
+        // 예전에는 픽셀을 rawData로 옮기고 runtimeData = nullptr로 두었다. AssetManager는 runtimeData만 저장하므로
+        // 로드는 "성공"하는데 꺼낼 픽셀이 없었다. 이 모듈이 어디에도 연결되지 않아 드러나지 않았다.
+        importedData.runtimeData = std::make_shared<TextureData>(std::move(textureData));
 
         return importedData;
     }

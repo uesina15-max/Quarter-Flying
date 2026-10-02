@@ -2,7 +2,7 @@
 editor/demo_scene_seed.py
 
 에디터가 엔진에 처음 연결될 때 빈 World에 넣는 검증용 기본 엔티티들.
-(Main Camera, Test Cube, Barrel 프리팹, VFX Test, Fire 프리팹, Sound Test)
+(Main Camera, Test Cube, Barrel 프리팹, Lamp 계층 프리팹, VFX Test, Fire 프리팹, Sound Test)
 
 main.py에서 분리한 이유: 원래 이 코드는 EditorMainWindow._connect_engine_later() 안에서
 World 활성화, 패널 연결과 함께 바깥 try 하나로 묶여 있었다. 그래서 Main Camera나
@@ -56,8 +56,15 @@ def _seed_test_cube(editor_api, registry) -> str:
     # 없음(RenderSystem.h 주석 참고).
     cube_entity = editor_api.create_entity("Test Cube")
     editor_api.add_component(cube_entity, "TransformComponent")
+    # 원점에 두면 scene.json 큐브 그리드의 (0,0,0) 칸(2x2x2 큐브) 안에 완전히 묻혀서 보이지 않았다.
+    # 크래시도 로그도 없이 "Test Cube가 안 그려진다"로 보이던 원인. 그리드 (0,0,5) 칸 윗면(y=1) 위에 올린다.
+    registry.SetTransformPosition(cube_entity, 0.0, 1.5, 5.0)
     editor_api.add_component(cube_entity, "RenderableComponent")
-    return "RenderSystem 검증용"
+    # 텍스처 경로 검증용(asset/ TextureImporter -> Texture2D -> 셰이더). 체커가 보이면 전체 경로가
+    # 동작한 것이고, 회색 큐브면 엔진 로그의 "failed to load texture"를 볼 것.
+    registry.SetComponentJson(cube_entity, "RenderableComponent",
+                              '{"texturePath": "assets/textures/checker.png"}')
+    return "RenderSystem/텍스처 검증용"
 
 
 def _seed_barrel_prefab(editor_api, registry) -> str:
@@ -66,6 +73,15 @@ def _seed_barrel_prefab(editor_api, registry) -> str:
     # RenderSystem 경로로 똑같이 그려지는지 한 화면에서 비교 확인한다.
     prefab_path = os.path.join(_ASSETS_DIR, "prefabs", "Barrel.prefab.json")
     entity = editor_api.instantiate_prefab(prefab_path, ge_python.Vec3(3.0, 0.0, 0.0))
+    return f"entity id={entity.id}"
+
+
+def _seed_lamp_prefab(editor_api, registry) -> str:
+    # 프리팹 Phase 5(계층) 검증용: 엔티티 4개(Lamp -> Pole, Lamp -> Head -> Bulb)짜리 v2 프리팹.
+    # Scene Hierarchy에 트리로 보이고, Lamp를 움직이면 Pole/Head/Bulb가 같이 움직여야 한다.
+    # 그리드 윗면(y=1) 위, Test Cube(0,1.5,5) 왼쪽에 둔다.
+    prefab_path = os.path.join(_ASSETS_DIR, "prefabs", "Lamp.prefab.json")
+    entity = editor_api.instantiate_prefab(prefab_path, ge_python.Vec3(-4.0, 1.5, 5.0))
     return f"entity id={entity.id}"
 
 
@@ -127,6 +143,7 @@ SEED_STEPS = [
     ("Main Camera", _seed_main_camera),
     ("Test Cube",   _seed_test_cube),
     ("Barrel",      _seed_barrel_prefab),
+    ("Lamp",        _seed_lamp_prefab),
     ("VFX Test",    _seed_vfx_test),
     ("Fire",        _seed_fire_prefab),
     ("Sound Test",  _seed_sound_test),

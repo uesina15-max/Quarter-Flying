@@ -176,6 +176,14 @@ namespace Engine
         bool isVisible{true};
         bool markedForDeletion{false};
         uint32_t visibleCount{0};
+
+        // frustum 컬링 결과 보이는 인스턴스만 모은 목록. cullingApplied가 true면 GPU에는 이것을 올린다
+        // (UpdateVisibility / UploadInstanceBuffer 주석 참고).
+        std::vector<InstanceData> visibleInstanceData;
+        bool cullingApplied{false};
+
+        // 이 배치를 그릴 때 바인딩할 GL 텍스처(0 = 텍스처 없음, 인스턴스 색만). SetBatchTexture로 설정한다.
+        uint32_t texture{0};
         
         // Mesh reference (shared_ptr for dedup)
         std::shared_ptr<Mesh> mesh;
@@ -250,6 +258,9 @@ namespace Engine
         
         // Visibility and culling
         void SetBatchVisibility(const InstancedBatchKey& key, bool visible);
+
+        // 배치의 텍스처(GL id, 0 = 없음). RenderBatch가 unit 0에 바인딩하고 셰이더에 uHasTexture/uTexture로 알린다.
+        void SetBatchTexture(const InstancedBatchKey& key, uint32_t glTexture);
         void UpdateVisibility(const class Frustum& frustum);
         
         // Rendering
@@ -261,6 +272,9 @@ namespace Engine
         void CleanupStaleBatches();
         void SortBatchesForRendering();  // Sort batches for optimal rendering order
         
+        // 읽기 전용 조회(테스트/진단용). 없으면 nullptr.
+        const InstanceBatch* GetBatch(const InstancedBatchKey& key) const { return FindBatch(key); }
+
         // Statistics
         const RendererStats& GetStats() const { return stats; }
         void ResetStats() { stats.Reset(); }

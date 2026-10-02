@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/Types.h"
+#include "Entity.h"
 #include <string>  // AIComponent가 std::string을 쓰는데 이 헤더 자체는 그동안 <string>을
                    // 직접 include하지 않고 있었다 - 이걸 포함하는 다른 헤더가 항상 먼저
                    // <string>을 끌어와 준 덕에 우연히 컴파일됐던 것으로 보인다(RenderSystem.h가
@@ -35,6 +36,12 @@ namespace Engine
         uint32_t meshHandle;
         uint32_t materialHandle;
         bool castShadows;
+        // 에셋 루트(EngineConfig::assetRoot) 기준 메시 파일 경로(예: "assets/models/cube.obj").
+        // 비어 있지 않으면 meshHandle보다 우선한다 - RenderSystem::ResolveMeshHandle 참고.
+        std::string meshPath;
+        // 에셋 루트 기준 텍스처 파일 경로(예: "assets/textures/checker.png"). 비어 있으면 텍스처 없이
+        // 인스턴스 색만으로 그린다. 로드/업로드는 RenderSystem::ResolveTexture가 처음 볼 때 한 번 한다.
+        std::string texturePath;
 
         RenderableComponent()
             : meshHandle(0)
@@ -49,7 +56,9 @@ namespace Engine
         float fov;
         float nearPlane;
         float farPlane;
-        bool isMainCamera;
+        bool isMainCamera;   // 활성 카메라 후보인가
+        int priority;        // 후보 중 가장 높은 값이 활성 카메라가 된다(SelectActiveCamera, CameraSystem.h)
+        float blendInSeconds; // 이 카메라가 활성이 될 때 이전 시점에서 넘어오는 시간(0 = 즉시 전환)
 
         // Cached matrices (flat array to avoid glm dependency in headers)
         float viewMatrix[16];
@@ -60,6 +69,8 @@ namespace Engine
             , nearPlane(0.1f)
             , farPlane(100.0f)
             , isMainCamera(false)
+            , priority(0)
+            , blendInSeconds(0.0f)
         {
             for(int i=0; i<16; ++i) {
                 viewMatrix[i] = (i % 5 == 0) ? 1.0f : 0.0f;
@@ -132,6 +143,64 @@ namespace Engine
             , playOnStart(true)
             , loop(true)
         {}
+    };
+
+    // ========================================
+    // 카메라 리그 (docs/INGAME_CAMERA_PLAN.md C5, C6) - CameraRigSystem이 처리한다.
+    // 셋 다 카메라 엔티티(CameraComponent + TransformComponent)에 붙여서 그 Transform을 계산한다.
+    // Play(PIE)에서만 동작한다(CameraRigSystem::RunsInEditMode() == false).
+    // target은 EntityRef라 UUID로 직렬화되어 프리팹/PIE 스냅샷을 통과한다.
+    // ========================================
+
+    // ========================================
+    // 계층(부모-자식) - 프리팹 Phase 5 (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 5)
+    // 부모만 저장한다. 자식 목록은 GetChildren()이 조회 시 계산한다(ecs/Hierarchy.h). 자식 배열까지
+    // 들고 있으면 두 쪽이 어긋날 수 있고(부모 쪽만 갱신 등), 리플렉션이 배열 필드를 직렬화하지도 못한다.
+    // TransformComponent는 부모 기준 로컬 값이 된다. 월드 값은 ComputeWorldMatrix/ComputeWorldTransform.
+    // 부모 설정은 순환 검사를 하는 SetParent()로 한다. 이 컴포넌트가 없거나 parent가 무효면 루트다.
+    // ========================================
+    struct HierarchyComponent
+    {
+        Entity parent;
+    };
+
+    // C5: 대상 위치 + offset으로 따라간다. damping은 시간 상수(초)로 0이면 즉시 붙는다.
+    struct CameraFollowComponent
+    {
+        Entity target;
+        Vec3 offset;
+        float damping;
+
+        CameraFollowComponent() : target(), offset(0.0f, 3.0f, 8.0f), damping(0.2f) {}
+    };
+
+    // C5: 대상(+targetOffset)을 바라보도록 회전만 정한다. Follow와 같이 쓰면 "따라가며 바라보기"가 된다.
+    struct CameraLookAtComponent
+    {
+        Entity target;
+        Vec3 targetOffset;
+
+        CameraLookAtComponent() : target(), targetOffset(0.0f, 1.0f, 0.0f) {}
+    };
+
+    // C6: 플레이어가 마우스로 대상 주위를 돌리는 카메라(3인칭 궤도). 입력은 Engine의 InputState.
+    // 이 컴포넌트가 있으면 같은 엔티티의 Follow/LookAt보다 우선한다(위치와 회전을 모두 정함).
+    struct CameraOrbitControlComponent
+    {
+        Entity target;
+        Vec3 targetOffset;
+        float distance;
+        float minDistance;
+        float maxDistance;
+        float yaw;              // 도. 0이면 대상의 +Z 쪽에서 바라본다
+        float pitch;            // 도. +면 위에서 내려다본다
+        float sensitivity;      // 마우스 1픽셀당 회전(도)
+        float zoomPerStep;      // 휠 한 칸당 거리 배율(1보다 작으면 가까워짐)
+        bool requireRightMouse; // true면 우클릭을 누른 동안만 회전
+
+        CameraOrbitControlComponent()
+            : target(), targetOffset(0.0f, 1.0f, 0.0f), distance(10.0f), minDistance(2.0f), maxDistance(50.0f)
+            , yaw(0.0f), pitch(20.0f), sensitivity(0.3f), zoomPerStep(0.85f), requireRightMouse(true) {}
     };
 
     // ========================================

@@ -55,6 +55,10 @@ void RegisterEditorBindings(pybind11::module_& m)
         .def("destroy_entity", [](Editor::EditorAPI& self, Entity entity) {
             UnwrapOrThrow(self.DestroyEntity(entity));
         })
+        // parent=None이면 루트로 만든다.
+        .def("set_parent", [](Editor::EditorAPI& self, Entity child, std::optional<Entity> parent) {
+            UnwrapOrThrow(self.SetParent(child, parent.value_or(Entity())));
+        }, py::arg("child"), py::arg("parent") = std::nullopt)
 
         // ---- Prefabs ----
         .def("instantiate_prefab", [](Editor::EditorAPI& self, const std::filesystem::path& prefabPath,

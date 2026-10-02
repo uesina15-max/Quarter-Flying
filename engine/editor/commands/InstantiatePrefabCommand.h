@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 // See docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 2 for the design this
 // implements.
@@ -45,8 +46,11 @@ private:
     std::filesystem::path  prefabPath_;
     std::optional<Vec3>    position_;
 
-    Entity                      spawnedEntity_;
-    UUID                        savedUUID_;
+    Entity                      spawnedEntity_;   // root
+    // Phase 5: every spawned entity's UUID, [0] = root, same order as
+    // PrefabAsset::SpawnHierarchyInto. Redo recreates all of them with these UUIDs
+    // so anything referring to a child (e.g. a camera rig target) stays valid.
+    std::vector<UUID>           savedUUIDs_;
     bool                        applied_ = false;
     std::optional<PrefabAsset>  loadedAsset_; // cached from the first Apply(); reused on Redo
 };

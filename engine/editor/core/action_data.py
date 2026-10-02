@@ -23,11 +23,19 @@ from typing import List, Optional
 # ─────────────────────────────────────────────────────────────────────────────
 
 class EventType(str, Enum):
-    """이벤트 종류. 여기 있는 것만 쓴다. 무한 확장하지 않는다."""
+    """이벤트 종류. 여기 있는 것만 쓴다. 무한 확장하지 않는다.
+
+    타입을 추가할 때는 아래에 근거를 남긴다(무엇이 이 타입 없이는 불가능했는가).
+      - CAMERA (2026-09-30): 액션 재생 중 카메라 전환. params = {"camera": 카메라 엔티티 이름}.
+        Scene Play에서 그 카메라를 최고 priority로 올린다(ScenePlaybackController). 전환 연출은
+        그 카메라의 CameraComponent.blendInSeconds를 따른다(docs/INGAME_CAMERA_PLAN.md C4).
+        기존 타입으로는 대상 카메라를 지정할 방법이 없었다.
+    """
     HIT          = "Hit"
     EFFECT       = "Effect"
     SOUND        = "Sound"
     CAMERA_SHAKE = "CameraShake"
+    CAMERA       = "Camera"
 
 
 class SectionRole(str, Enum):
@@ -54,6 +62,7 @@ EVENT_TYPE_COLORS: dict[EventType, str] = {
     EventType.EFFECT:       "#aa44ff",
     EventType.SOUND:        "#44aaff",
     EventType.CAMERA_SHAKE: "#ffcc00",
+    EventType.CAMERA:       "#44ffaa",
 }
 
 

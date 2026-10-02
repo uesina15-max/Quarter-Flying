@@ -8,6 +8,7 @@
 #include <functional>
 #include <unordered_map>
 #include <mutex>
+#include <shared_mutex>
 #include <future>
 
 namespace Engine
@@ -103,5 +104,21 @@ namespace Engine
         
         bool initialized;
     };
+
+    // 예전에는 선언만 있고 정의가 없어서, 쓰는 순간 링크 에러가 났다(이 모듈이 어디에도 연결되지 않아 드러나지 않음).
+    // T는 해당 에셋 타입의 runtimeData 타입이어야 한다(텍스처는 TextureData). 타입을 검사할 수 없으므로 호출자가 맞춘다.
+    template<typename T>
+    Result<T*> AssetManager::GetAsset(AssetHandle handle)
+    {
+        std::shared_lock<std::shared_mutex> lock(dataMutex);
+        auto it = assetDataMap.find(handle);
+        if (it == assetDataMap.end() || !it->second)
+        {
+            return MakeError(EngineErrorCode::AssetNotFound,
+                             "No runtime data for asset handle (not loaded, or the importer produced none)",
+                             "AssetManager");
+        }
+        return static_cast<T*>(it->second.get());
+    }
 
 } // namespace Engine

@@ -74,17 +74,15 @@ namespace Engine
         glDrawElementsInstanced(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, 0, instanceCount);
     }
 
-    static std::unordered_map<std::string, std::shared_ptr<Mesh>> s_meshCache;
-
+    // 캐시는 여기 두지 않는다. 예전에는 프로세스 전역 static 캐시(s_meshCache)가 있었는데, GL VAO는
+    // 컨텍스트끼리 공유되지 않는다. 에디터에는 Engine이 둘(Scene 뷰포트 + Play 뷰포트, 각자 GL
+    // 컨텍스트)이라, 두 번째 Engine이 같은 경로를 요청하면 첫 번째 컨텍스트에서 만든 VAO를 받아 엉뚱하게
+    // 그렸을 것이다(GL 에러 없이 틀리게 그려지는 종류). 또 static 소멸 시점에는 컨텍스트가 이미 없다.
+    // 호출자가 한 번도 없어서 드러나지 않았다. 캐시는 컨텍스트 단위로 소유하는 쪽이 맡는다
+    // (RenderSystem::ResolveMeshHandle - World마다, 즉 Engine과 컨텍스트마다 하나).
     std::shared_ptr<Mesh> Mesh::loadFromFile(const std::string& path)
     {
-        if (s_meshCache.find(path) != s_meshCache.end())
-        {
-            Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Cache HIT for: {} (returning shared_ptr)", path);
-            return s_meshCache[path];
-        }
-
-        Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Cache MISS for: {} (loading new mesh)", path);
+        Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Loading: {}", path);
 
         tinyobj::attrib_t attrib;
         std::vector<tinyobj::shape_t> shapes;
@@ -102,13 +100,17 @@ namespace Engine
 
         ObjLoaderHelper::ProcessAndInterleave(attrib, shapes, vertices, indices);
 
+        if (vertices.empty() || indices.empty())
+        {
+            Logger::Error("Mesh::loadFromFile - '{}' parsed but contains no triangles", path);
+            return nullptr;
+        }
+
         auto mesh = std::make_shared<Mesh>();
         mesh->create(vertices, indices);
-        s_meshCache[path] = mesh;
 
-        Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Successfully loaded and cached mesh: {} (vertices: {}, indices: {})",
+        Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Loaded mesh: {} (vertices: {}, indices: {})",
                     path, vertices.size(), indices.size());
-        Logger::Log(LogLevel::Info, "Mesh::loadFromFile - Current cache size: {} meshes", s_meshCache.size());
 
         return mesh;
     }

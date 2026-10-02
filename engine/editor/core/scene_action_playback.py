@@ -23,7 +23,7 @@ from typing import Callable, List, Optional
 
 from core.action_data import ActionData, EventType, load_action
 from core.action_playback import ActionPlaybackCursor, events_of_type
-from core.sound_player import SoundPlayer, collect_clip_paths
+from core.sound_player import SoundPlayer, collect_clip_paths, resolve_clip_path
 
 COMPONENT_NAME = "ActionPlayerComponent"
 
@@ -31,11 +31,14 @@ COMPONENT_NAME = "ActionPlayerComponent"
 class _Entry:
     """재생 중인 엔티티 하나."""
 
-    __slots__ = ("entity_id", "cursor", "fps", "accumulator")
+    __slots__ = ("entity_id", "cursor", "fps", "accumulator", "clip_base")
 
-    def __init__(self, entity_id: int, cursor: ActionPlaybackCursor, fps: int):
+    def __init__(self, entity_id: int, cursor: ActionPlaybackCursor, fps: int,
+                 clip_base: Optional[str] = None):
         self.entity_id = entity_id
         self.cursor = cursor
+        # params.clip의 기준 폴더(액션 파일 위치). preload와 play가 같은 기준을 쓰게 한다.
+        self.clip_base = clip_base
         # 액션마다 fps가 다르다. 틱 수가 아니라 경과 시간으로 프레임을 전진시키는 데 쓴다.
         self.fps = fps if fps > 0 else 30
         # 프레임의 소수부 누적기. dt가 작을 때 매번 버림하면 재생이 아예 멈춘다
@@ -52,6 +55,8 @@ class ScenePlaybackController:
         self._sound = sound_player if sound_player is not None else SoundPlayer()
         self._load_action = action_loader
         self._entries: List[_Entry] = []
+        self._registry = None                  # start()에서 받은 registry (Camera 이벤트 처리용)
+        self._missing_cameras_warned = set()   # 없는 카메라 이름은 한 번만 경고
 
     # ── 상태 ─────────────────────────────────────────────────────────────────
 
@@ -73,6 +78,7 @@ class ScenePlaybackController:
         두 기준을 섞지 않는다.
         """
         self.stop()
+        self._registry = registry
 
         for entity_id, comp in self._iter_action_players(registry):
             if not comp.get("playOnStart", True):
@@ -92,10 +98,9 @@ class ScenePlaybackController:
                 continue
 
             cursor = ActionPlaybackCursor(action, loop=bool(comp.get("loop", True)))
-            self._entries.append(_Entry(entity_id, cursor, action.fps))
-
             # §5.3 - 재생 시작 전에 한 번만 로드한다.
             clip_base = os.path.dirname(action.source_path) if getattr(action, "source_path", None) else None
+            self._entries.append(_Entry(entity_id, cursor, action.fps, clip_base))
             clips = collect_clip_paths(action, clip_base)
             if clips:
                 self._sound.preload(clips)
@@ -128,11 +133,12 @@ class ScenePlaybackController:
             entry.accumulator -= frames
 
             fired = entry.cursor.advance(frames)
-            played += self._play_sounds(fired)
+            played += self._play_sounds(fired, entry.clip_base)
+            self._switch_cameras(fired)
 
         return played
 
-    def _play_sounds(self, fired_events) -> int:
+    def _play_sounds(self, fired_events, clip_base: Optional[str] = None) -> int:
         """발화된 이벤트 중 Sound만 재생한다.
 
         커서는 EventType을 모른다 - v1이 Sound만 소비한다는 결정(범위 정의서 §3)은
@@ -146,11 +152,51 @@ class ScenePlaybackController:
             clip = params.get("clip")
             if not clip:
                 continue
-            if self._sound.play(clip,
+            if self._sound.play(resolve_clip_path(clip, clip_base),
                                 volume=float(params.get("volume", 1.0)),
                                 volume_var=float(params.get("volumeVar", 0.0))):
                 count += 1
         return count
+
+    def _switch_cameras(self, fired_events) -> None:
+        """Camera 이벤트: params.camera 이름의 카메라를 활성 카메라로 만든다.
+
+        활성 카메라 규칙은 엔진에 있다(CameraSystem.h SelectActiveCamera: isMainCamera 후보 중 최고
+        priority). 여기서는 그 규칙을 따르도록 대상의 priority를 "현재 최고 + 1"로 올리고 isMainCamera를
+        켤 뿐, 규칙을 다시 구현하지 않는다. Play 중 바뀐 값은 Stop 시 PIE 스냅샷 복원으로 되돌아간다.
+        """
+        if not fired_events or self._registry is None:
+            return
+        for e in events_of_type(fired_events, EventType.CAMERA.value):
+            name = ((e.params or {}).get("camera") or "").strip()
+            if name:
+                self._activate_camera(name)
+
+    def _activate_camera(self, name: str) -> bool:
+        registry = self._registry
+        target = None
+        max_priority = None
+        try:
+            for entity in registry.GetAllEntities():
+                raw = registry.GetComponentJson(entity, "CameraComponent")
+                if not raw or raw == "{}":
+                    continue
+                comp = json.loads(raw)
+                p = int(comp.get("priority", 0))
+                max_priority = p if max_priority is None else max(max_priority, p)
+                if target is None and registry.GetEntityName(entity) == name:
+                    target = entity
+        except Exception as ex:
+            print(f"[ScenePlayback] Camera 이벤트 처리 실패({name}): {ex}")
+            return False
+        if target is None:
+            if name not in self._missing_cameras_warned:
+                self._missing_cameras_warned.add(name)
+                print(f"[ScenePlayback] Camera 이벤트: 이름이 '{name}'인 카메라 엔티티가 없습니다(무시)")
+            return False
+        registry.SetComponentJson(target, "CameraComponent",
+                                  json.dumps({"isMainCamera": True, "priority": (max_priority or 0) + 1}))
+        return True
 
     # ── 내부 ─────────────────────────────────────────────────────────────────
 
