@@ -1,0 +1,78 @@
+{
+    "version": 2,
+    "name": "Lamp",
+    "entities": [
+        {
+            "name": "Lamp",
+            "components": {
+                "TransformComponent": {
+                    "_version": 1,
+                    "position": [0.0, 0.0, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0]
+                },
+                "RenderableComponent": {
+                    "_version": 1,
+                    "meshHandle": 0,
+                    "materialHandle": 0,
+                    "castShadows": true
+                }
+            }
+        },
+        {
+            "name": "Pole",
+            "parent": 0,
+            "components": {
+                "TransformComponent": {
+                    "_version": 1,
+                    "position": [0.0, 1.5, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [0.2, 2.0, 0.2]
+                },
+                "RenderableComponent": {
+                    "_version": 1,
+                    "meshHandle": 0,
+                    "materialHandle": 0,
+                    "castShadows": true
+                }
+            }
+        },
+        {
+            "name": "Head",
+            "parent": 0,
+            "components": {
+                "TransformComponent": {
+                    "_version": 1,
+                    "position": [0.0, 3.0, 0.0],
+                    "rotation": [0.0, 45.0, 0.0],
+                    "scale": [0.8, 0.8, 0.8]
+                },
+                "RenderableComponent": {
+                    "_version": 1,
+                    "meshHandle": 0,
+                    "materialHandle": 0,
+                    "castShadows": true,
+                    "texturePath": "assets/textures/checker.png"
+                }
+            }
+        },
+        {
+            "name": "Bulb",
+            "parent": 2,
+            "components": {
+                "TransformComponent": {
+                    "_version": 1,
+                    "position": [0.0, 0.9, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [0.5, 0.5, 0.5]
+                },
+                "RenderableComponent": {
+                    "_version": 1,
+                    "meshHandle": 0,
+                    "materialHandle": 0,
+                    "castShadows": true
+                }
+            }
+        }
+    ]
+}

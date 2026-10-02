@@ -73,8 +73,14 @@ namespace Engine
         }
 
         if (m_EditorState == EditorState::Edit) {
-            // Edit 모드 업데이트 구현 (UI 조작/렌더링 등)
-            UpdateSystemsSequential(deltaTime);
+            // Edit 모드: RunsInEditMode()가 false인 System(게임 로직)은 건너뛴다(System.h 주석 참고).
+            for (const auto& system : systems)
+            {
+                if (system->RunsInEditMode())
+                {
+                    system->Update(*registry, deltaTime);
+                }
+            }
             return;
         }
 

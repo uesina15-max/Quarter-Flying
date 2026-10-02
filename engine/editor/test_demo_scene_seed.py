@@ -103,7 +103,7 @@ def test_one_failure_does_not_stop_others():
     assert not by_name["Main Camera"].ok
     assert "RuntimeError" in by_name["Main Camera"].detail
     assert "boom:Main Camera" in by_name["Main Camera"].detail
-    for name in ("Test Cube", "Barrel", "VFX Test", "Fire", "Sound Test"):
+    for name in ("Test Cube", "Barrel", "Lamp", "VFX Test", "Fire", "Sound Test"):
         assert by_name[name].ok, (name, by_name[name])
     fail_logs = [l for l in logs if "실패" in l]
     assert len(fail_logs) == 1 and "Main Camera" in fail_logs[0], fail_logs

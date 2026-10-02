@@ -2,8 +2,11 @@
 
 #include "System.h"
 #include "Components.h"
+#include "Hierarchy.h"   // ComposeWorldMatrix / ComputeWorldMatrix (예전엔 여기 선언돼 있었다)
 #include <glm/mat4x4.hpp>
+#include <functional>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -15,14 +18,11 @@ namespace Engine
     class Camera;
     struct InstancedBatchKey;
 
-    // TransformComponent(TRS) -> world 행렬. GL/ECSRegistry에 의존하지 않는 순수 함수라서
-    // 유닛테스트로 직접 검증 가능하다.
-    glm::mat4 ComposeWorldMatrix(const TransformComponent& transform);
-
-    // RenderableComponent::meshHandle -> InstancedBatchManager가 쓰는 InstancedBatchKey.
-    // materialId/shaderId/passType/materialLayout/features는 아직 머티리얼 시스템이 없어서
-    // 전부 기본값으로 둔다 - 지금은 "메시가 같으면 같은 배치" 수준의 최소 분류만 한다.
-    InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle);
+// (meshHandle, GL 텍스처) -> InstancedBatchManager가 쓰는 InstancedBatchKey.
+    // 텍스처는 배치 단위로 바인딩되므로(InstancedBatchManager::RenderBatch) 메시가 같아도 텍스처가
+    // 다르면 다른 배치여야 한다. 텍스처 id를 materialId 자리에 넣는다(머티리얼 시스템이 아직 없음).
+    // shaderId/passType/materialLayout/features는 기본값.
+    InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture = 0);
 
     /// <summary>
     /// ROADMAP.md P0-2("Scene Editor 3D 뷰포트가 실제로 그리는지 확인")의 핵심 - ECS의
@@ -33,17 +33,22 @@ namespace Engine
     /// 실제로 호출하는 코드가 없었다(CLAUDE.md의 "InstanceData GPU 레이아웃 미검증" 항목이
     /// 바로 이것 - 실행된 적이 없으니 검증도 안 된 상태였다). 이 System이 그 둘을 잇는다.
     ///
-    /// 메시 핸들 해석 정책(1차, 의도적으로 단순화): meshHandle에 명시적으로 RegisterMesh()된
-    /// 메시가 없으면 절차적으로 생성한 유닛 큐브로 대체한다. 즉 RenderableComponent를 붙인
-    /// 엔티티는 (아직 실제 메시를 못 구해도) 항상 뭔가 보인다 - "파이프라인 자체가 살아있는가"
-    /// 를 눈으로 확인하는 데 필요한 최소한이다. scene.json의 objects[].model 경로를 실제
-    /// meshHandle로 매핑하는 브리지는 별도 후속 작업(ROADMAP.md 참고).
+    /// 메시 해석 정책(ResolveMeshHandle):
+    ///  1. RenderableComponent.meshPath가 있으면 그 파일(에셋 루트 기준 상대경로)을 이 System이
+    ///     처음 볼 때 한 번 로드하고, 내부 핸들(kPathHandleBase 이상)에 캐시한다. 경로는 직렬화에
+    ///     안전해서 프리팹/PIE 스냅샷/Inspector 편집이 그대로 동작한다. 런타임에 배정되는
+    ///     meshHandle 정수는 다음 세션에 의미가 없다.
+    ///  2. meshPath가 비어 있으면 meshHandle을 쓴다. RegisterMesh()된 메시가 없으면 절차적 유닛
+    ///     큐브로 대체한다("파이프라인이 살아있는가"를 보기 위한 기존 동작).
+    ///  3. 경로 로드에 실패하면 경고를 한 번 남기고(경로 포함) 큐브로 대체한다.
     ///
-    /// 카메라 동기화: CameraComponent.isMainCamera == true인 엔티티의 TransformComponent를
-    /// 읽어 Camera*(position/lookAt)에 반영한다 - 지금까지 Engine::defaultCamera는 ECS와
-    /// 완전히 분리된 고정값이었다(Engine.h 주석 참고). projection(fov/aspect/near/far)은
-    /// 건드리지 않는다 - 그건 이미 Engine::HandleWindowResize가 종횡비 기준으로 관리하고
-    /// 있어서, 여기서 같이 손대면 두 갱신 경로가 서로 덮어쓸 위험이 있다.
+    /// 텍스처(ResolveTexture): RenderableComponent.texturePath가 있으면 TextureLoader로 경로당 한 번
+    /// 로드한다. 실패하면 경고를 한 번 남기고 텍스처 없이 그린다(흰색 대신 원래 색 - "텍스처가 안 붙었다"는
+    /// 것을 로그와 화면 양쪽에서 알 수 있다). 파일 해석(asset/ 모듈)과 GL 업로드(Texture2D)는 로더를
+    /// 만드는 Engine이 잇는다 - 이 System은 asset/에 의존하지 않는다.
+    /// 캐시가 System(=World=Engine=GL 컨텍스트) 단위인 이유는 Mesh::loadFromFile 주석 참고.
+    ///
+    /// 카메라 동기화는 여기 없다. CameraSystem으로 분리했다(docs/INGAME_CAMERA_PLAN.md C1).
     ///
     /// System.h의 설계 원칙("System은 상태를 가지면 안 됨 - Thread-safe 하지 않음")과
     /// 정면으로는 안 맞지만(meshRegistry_/activeBatchKeys_ 등 내부 상태를 가짐), 그 원칙은
@@ -54,9 +59,25 @@ namespace Engine
     class RenderSystem : public System
     {
     public:
-        // batchManager/camera는 nullptr일 수 있다(예: GL 컨텍스트 없는 유닛테스트 환경) -
+        // batchManager는 nullptr일 수 있다(예: GL 컨텍스트 없는 유닛테스트 환경) -
         // 그 경우 Update()는 아무 것도 하지 않고 조용히 리턴한다.
-        RenderSystem(InstancedBatchManager* batchManager, Camera* camera);
+        // meshLoader: 전체 경로를 받아 메시를 만든다(실패 시 nullptr). 비워 두면 Mesh::loadFromFile.
+        // 유닛테스트는 GL 없이 가짜 로더를 넣는다.
+        using MeshLoader = std::function<std::shared_ptr<Mesh>(const std::string& fullPath)>;
+
+        // 텍스처 로더의 결과: GL 텍스처 id(0 = 실패)와 그 수명을 쥐는 소유자(보통 Texture2D).
+        // 소유자를 void로 지운 이유: 유닛테스트가 GL 없이 가짜 id만 돌려줄 수 있게 하려고.
+        struct LoadedTexture
+        {
+            uint32_t glId = 0;
+            std::shared_ptr<void> owner;
+        };
+        // 전체 경로를 받아 텍스처를 만든다. 비워 두면 텍스처를 쓰지 않는다(texturePath는 경고 후 무시).
+        using TextureLoader = std::function<LoadedTexture(const std::string& fullPath)>;
+
+        explicit RenderSystem(InstancedBatchManager* batchManager,
+                              std::string assetRoot = {}, MeshLoader meshLoader = {},
+                              TextureLoader textureLoader = {});
 
         void Update(ECSRegistry& registry, float deltaTime) override;
 
@@ -69,18 +90,41 @@ namespace Engine
         // 대체된다.
         void RegisterMesh(uint32_t meshHandle, std::shared_ptr<Mesh> mesh);
 
+        // 이 컴포넌트를 그릴 때 쓸 meshHandle (클래스 주석의 해석 정책). 경로 메시는 첫 호출 때
+        // 로드되므로 GL 컨텍스트가 current인 상태(Update 안)에서 불러야 한다.
+        uint32_t ResolveMeshHandle(const RenderableComponent& renderable);
+
+        // 이 컴포넌트를 그릴 때 바인딩할 GL 텍스처(0 = 없음/실패). 경로당 한 번 로드하고 캐시한다.
+        // 텍스처도 GL 자원이라 ResolveMeshHandle과 같이 Update 안에서 불러야 한다.
+        uint32_t ResolveTexture(const RenderableComponent& renderable);
+
+        // 경로 기반 메시에 배정하는 내부 핸들의 시작값. 명시적 RegisterMesh 핸들은 이보다 작아야 한다.
+        static constexpr uint32_t kPathHandleBase = 0x40000000u;
+
     private:
         std::shared_ptr<Mesh> GetOrCreateMesh(uint32_t meshHandle);
         std::shared_ptr<Mesh> CreateUnitCubeMesh();
 
         InstancedBatchManager* batchManager_;
-        Camera* camera_;
 
         std::unordered_map<uint32_t, std::shared_ptr<Mesh>> meshRegistry_;
-        std::shared_ptr<Mesh> defaultCubeMesh_;  // 지연 생성 - 실제로 필요해지기 전엔 GL 호출 없음
+        std::shared_ptr<Mesh> defaultCubeMesh_;
 
-        // 이번 프레임 이전까지 배치가 존재했던 meshHandle 집합. 다음 프레임에 더 이상 아무
-        // 엔티티도 그 handle을 쓰지 않으면 배치를 정리한다(엔티티 삭제/컴포넌트 제거 대응).
-        std::unordered_set<uint32_t> activeMeshHandles_;
+        std::string assetRoot_;
+        MeshLoader meshLoader_;
+        std::unordered_map<std::string, uint32_t> pathHandles_;  // meshPath -> 핸들 (실패는 0)
+
+        TextureLoader textureLoader_;
+        std::unordered_map<std::string, LoadedTexture> textures_;  // texturePath -> 텍스처 (실패는 glId 0)
+        uint32_t nextPathHandle_ = kPathHandleBase;  // 지연 생성 - 실제로 필요해지기 전엔 GL 호출 없음
+
+        // 이번 프레임 이전까지 배치가 존재했던 (meshHandle, 텍스처) 집합(BatchId로 묶음). 다음
+        // 프레임에 더 이상 아무 엔티티도 그 조합을 쓰지 않으면 배치를 정리한다(엔티티 삭제/컴포넌트
+        // 제거/Inspector에서 texturePath 변경 대응).
+        static uint64_t BatchId(uint32_t meshHandle, uint32_t glTexture)
+        {
+            return (static_cast<uint64_t>(glTexture) << 32) | meshHandle;
+        }
+        std::unordered_set<uint64_t> activeBatches_;
     };
 }

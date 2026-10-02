@@ -5,6 +5,10 @@
 
 namespace Engine
 {
+    // 현재 스레드가 어느 스케줄러의 몇 번 워커인지(워커가 아니면 nullptr). EnqueueJob 주석 참고.
+    thread_local const JobScheduler* tl_currentScheduler = nullptr;
+    thread_local uint32_t tl_currentWorkerIndex = 0;
+
     // ========================================
     // Constructor / Destructor
     // ========================================
@@ -135,12 +139,23 @@ namespace Engine
             return;
         }
         
-        // 첫 번째 워커의 큐에 추가 (간단한 전략)
-        // 더 복잡한 로드 밸런싱은 나중에 추가 가능
+        // 예전에는 어느 스레드에서든 localQueues[0].Push(job)를 했다. 당시 WorkStealingDeque는 락 없는 Chase-Lev
+        // deque라 Push/Pop은 소유 워커만 해야 했다. 메인 스레드(Dispatch)와 워커(완료 콜백의 후행 잡 제출)가 동시에
+        // Push하면 같은 칸에 써서 잡 하나가 사라질 수 있었고, 메인 스레드 Push와 워커 0의 Pop도 경쟁했다(코드 검토로
+        // 확인한 경쟁). 지금은 이 스케줄러의 워커 스레드에서 제출하면 자기 deque에, 그 외 스레드는 주입 큐에 넣는다.
+        // deque 자체도 락으로 보호한다(WorkStealingDeque.h).
         if (!localQueues.empty())
         {
-            localQueues[0].Push(job);
-            
+            if (tl_currentScheduler == this && tl_currentWorkerIndex < localQueues.size())
+            {
+                localQueues[tl_currentWorkerIndex].Push(job);
+            }
+            else
+            {
+                std::lock_guard<std::mutex> lock(injectMutex);
+                injectQueue.push_back(job);
+            }
+
             // 워커 스레드 깨우기
             wakeCondition.notify_one();
         }
@@ -168,8 +183,11 @@ namespace Engine
             return;
         }
         
-        // Busy-wait with yielding
-        while (!job->IsComplete())
+        // Busy-wait with yielding.
+        // Job 객체는 풀에서 재사용된다. 끝나서 회수된 뒤 다른 잡으로 재사용되면 completed가 다시 false가 되므로,
+        // 핸들이 바뀌었으면 원래 잡은 이미 끝난 것으로 본다(예전에는 재사용된 다른 잡을 기다릴 수 있었다).
+        const JobHandle waitedHandle = job->handle;
+        while (job->handle == waitedHandle && !job->IsComplete())
         {
             std::this_thread::yield();
         }
@@ -196,6 +214,11 @@ namespace Engine
     
     void JobScheduler::WorkerThreadMain(uint32_t threadIndex)
     {
+        // 이 스레드가 이 스케줄러의 몇 번 워커인지 기억한다(EnqueueJob이 소유자 Push를 판단하는 데 씀).
+        // 스케줄러 포인터도 저장하는 이유: 한 프로세스에 Engine(JobSystem)이 여럿일 수 있다.
+        tl_currentScheduler = this;
+        tl_currentWorkerIndex = threadIndex;
+
         while (running.load(std::memory_order_acquire))
         {
             // Job 획득 시도
@@ -267,6 +290,17 @@ namespace Engine
             }
         }
         
+        // 워커가 아닌 스레드가 넣은 잡
+        {
+            std::lock_guard<std::mutex> lock(injectMutex);
+            if (!injectQueue.empty())
+            {
+                Job* job = injectQueue.front();
+                injectQueue.pop_front();
+                return job;
+            }
+        }
+
         // 로컬 큐가 비었으면 다른 스레드에서 Steal 시도
         return StealJob(threadIndex);
     }

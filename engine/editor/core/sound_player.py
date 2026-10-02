@@ -146,6 +146,23 @@ class SoundPlayer:
         self._effects.clear()
 
 
+def resolve_clip_path(clip: str, base_dir: Optional[str] = None) -> str:
+    """params.clip(액션 파일 기준 상대 경로일 수 있음)을 SoundPlayer의 키로 쓸 경로로 푼다.
+
+    preload와 play는 **반드시 같은 함수로 푼 경로**를 써야 한다. SoundPlayer는 preload한 키로만
+    play하기 때문이다.
+    증상: Scene Play의 Sound Test가 무음이었고 로그에
+    "[SoundPlayer] 프리로드되지 않은 클립(재생 건너뜀): ../sfx/Blip.wav"가 반복됐다.
+    원인: preload는 액션 파일 위치 기준 절대 경로로 등록했는데, 재생은 원본 상대 경로로 찾았다.
+    save_action()이 메모리의 clip도 상대 경로로 바꾸므로, 파일에서 불러오거나 저장한 액션은
+    Motion Editor 미리듣기도 같은 이유로 무음이었다. 유닛 테스트의 가짜 SoundPlayer가 preload
+    여부를 따지지 않아 잡히지 않았다.
+    """
+    if base_dir and clip and not os.path.isabs(clip):
+        return os.path.normpath(os.path.join(base_dir, clip))
+    return clip
+
+
 def collect_clip_paths(action, base_dir: Optional[str] = None) -> list:
     """액션의 Sound 이벤트들이 참조하는 클립 경로를 모은다(프리로드용).
 
@@ -161,7 +178,5 @@ def collect_clip_paths(action, base_dir: Optional[str] = None) -> list:
         clip = (e.params or {}).get("clip")
         if not clip:
             continue
-        if base_dir and not os.path.isabs(clip):
-            clip = os.path.normpath(os.path.join(base_dir, clip))
-        paths.append(clip)
+        paths.append(resolve_clip_path(clip, base_dir))
     return list(dict.fromkeys(paths))

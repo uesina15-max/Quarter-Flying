@@ -52,9 +52,9 @@ namespace Engine
         };
 
         static LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-        static std::optional<LRESULT> HandleWindowLifecycleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-        static std::optional<LRESULT> HandleKeyboardMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-        static std::optional<LRESULT> HandleMouseMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+        static std::optional<LRESULT> HandleWindowLifecycleMessage(Win32Platform* self, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+        static std::optional<LRESULT> HandleKeyboardMessage(Win32Platform* self, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+        static std::optional<LRESULT> HandleMouseMessage(Win32Platform* self, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
         KeyCode TranslateKeyCode(WPARAM wParam, LPARAM lParam);
 

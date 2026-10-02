@@ -1,4 +1,5 @@
 #include "ECSRegistry.h"
+#include "RotationConversion.h"
 #include <vector>
 #include <algorithm>
 #include <string>
@@ -113,6 +114,11 @@ namespace Engine
         return "Entity_" + std::to_string(entity.id);
     }
 
+    bool ECSRegistry::HasEntityName(Entity entity) const
+    {
+        return entityNames.find(entity.id) != entityNames.end();
+    }
+
     // --- TransformComponent ---
     bool ECSRegistry::HasTransformComponent(Entity entity) const
     {
@@ -132,9 +138,11 @@ namespace Engine
 
     void ECSRegistry::SetTransformRotation(Entity entity, float x, float y, float z)
     {
-        // Euler angles stored as XYZ in rotation field (simplified)
+        // x, y, z = 오일러 각(도). 예전에는 이 값을 쿼터니언의 x,y,z에 그대로 넣고 w=1로 저장했다.
+        // 그런데 렌더링(ComposeWorldMatrix)은 이를 쿼터니언으로 해석하므로, 예를 들어 (0, 90, 0)은
+        // 90도 회전이 아니라 정규화도 안 된 엉뚱한 쿼터니언이 됐다(0이 아닌 회전을 쓴 적이 없어 드러나지 않음).
         auto* tc = componentManager->GetComponent<TransformComponent>(entity);
-        if (tc) { tc->rotation = Quaternion(x, y, z, 1.0f); }
+        if (tc) { tc->rotation = QuaternionFromEulerDegrees(Vec3(x, y, z)); }
     }
 
     void ECSRegistry::SetTransformScale(Entity entity, float x, float y, float z)

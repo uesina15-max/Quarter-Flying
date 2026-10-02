@@ -38,7 +38,10 @@ std::expected<void, EngineError> RotateEntityCommand::Apply()
         return MakeError(EngineErrorCode::ComponentNotFound, "Entity has no TransformComponent", "RotateEntityCommand");
     }
 
-    registry_->SetTransformRotation(entity_, newRotation_.x, newRotation_.y, newRotation_.z);
+    // 쿼터니언을 그대로 대입한다. 예전에는 SetTransformRotation(x, y, z)로 적용해서 w가 버려졌다
+    // (당시 그 함수는 w=1로 저장). 그래서 Apply/Undo가 회전을 정확히 복원하지 못했다. 지금
+    // SetTransformRotation은 오일러 각(도)을 받으므로 쿼터니언 성분을 넘기면 더더욱 틀린다.
+    registry_->GetTransformComponent(entity_)->rotation = newRotation_;
     return {};
 }
 
@@ -61,7 +64,7 @@ std::expected<void, EngineError> RotateEntityCommand::Undo()
         return MakeError(EngineErrorCode::ComponentNotFound, "Entity has no TransformComponent", "RotateEntityCommand");
     }
 
-    registry_->SetTransformRotation(entity_, oldRotation_.x, oldRotation_.y, oldRotation_.z);
+    registry_->GetTransformComponent(entity_)->rotation = oldRotation_;  // Apply() 주석 참고
     return {};
 }
 

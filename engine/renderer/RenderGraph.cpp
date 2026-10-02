@@ -236,7 +236,7 @@ namespace Engine
                 // Execute the barrier on the command list
                 // For now, we'll use a placeholder GPU handle since we don't have actual GPU resource management
                 GPUTextureHandle gpuHandle(barrier.resource.id, barrier.resource.generation);
-                cmdList.ResourceBarrier(gpuHandle);
+                cmdList.ResourceBarrier(gpuHandle, barrier.srcState, barrier.dstState);
 
                 barrierIndex++;
             }
@@ -302,7 +302,7 @@ namespace Engine
 
             // Execute the barrier on the command list
             GPUTextureHandle gpuHandle(barrier.resource.id, barrier.resource.generation);
-            cmdList.ResourceBarrier(gpuHandle);
+            cmdList.ResourceBarrier(gpuHandle, barrier.srcState, barrier.dstState);
 
             barrierIndex++;
         }
@@ -316,9 +316,13 @@ namespace Engine
         const RGPass* pass;
         CommandList* cmdList;
         uint32_t passId;
-        
-        PassJobData(RenderGraph* rg, const RGPass* p, CommandList* cl, uint32_t id)
-            : renderGraph(rg), pass(p), cmdList(cl), passId(id) {}
+        // 이 패스 직전에 실행할 배리어(RenderGraph::parallelBarriersByPass 소유). 포인터로 두는 이유:
+        // AllocateJobData는 프레임 할당자에 placement new만 하고 소멸자를 부르지 않으므로, 여기에 vector를
+        // 넣으면 그 힙 버퍼가 매 프레임 샌다.
+        const std::vector<Barrier>* barriers;
+
+        PassJobData(RenderGraph* rg, const RGPass* p, CommandList* cl, uint32_t id, const std::vector<Barrier>* b)
+            : renderGraph(rg), pass(p), cmdList(cl), passId(id), barriers(b) {}
     };
 
     std::vector<std::vector<uint32_t>> RenderGraph::BuildExecutionDependencyList() const
@@ -364,6 +368,14 @@ namespace Engine
         CommandList& cmdList = *jobData->cmdList;
         
         Logger::Log(LogLevel::Info, ("RenderGraph::ExecuteParallel - Executing pass job: " + pass.name).c_str());
+
+        // 이 패스의 배리어는 패스 실행 직전에 기록한다. 예전에는 모든 패스 잡이 끝난 뒤 한꺼번에
+        // 기록해서(ExecuteParallel 끝부분), 병렬 경로의 배리어는 아무것도 보호하지 못했다(개선안 P2-2).
+        for (const Barrier& barrier : *jobData->barriers)
+        {
+            GPUTextureHandle gpuHandle(barrier.resource.id, barrier.resource.generation);
+            cmdList.ResourceBarrier(gpuHandle, barrier.srcState, barrier.dstState);
+        }
 
         cmdList.BeginEvent(pass.name.c_str());
 
@@ -411,7 +423,8 @@ namespace Engine
             }
         }
 
-        PassJobData* jobData = jobSystem->AllocateJobData<PassJobData>(this, &pass, &cmdList, passId);
+        PassJobData* jobData = jobSystem->AllocateJobData<PassJobData>(this, &pass, &cmdList, passId,
+                                                                       &parallelBarriersByPass[passId]);
 
         JobHandle jobHandle;
         if (dependencyHandles.empty())
@@ -455,6 +468,17 @@ namespace Engine
         Logger::Log(LogLevel::Info, ("RenderGraph::ExecuteParallel - Executing " + std::to_string(executionPlan.passOrder.size()) + " passes with parallel Job dispatch").c_str());
 
         std::vector<std::vector<uint32_t>> passDependencies = BuildExecutionDependencyList();
+
+        // 패스별 배리어 목록(잡이 포인터로 참조한다 - PassJobData 주석 참고). 잡이 끝날 때까지 유지돼야 하므로
+        // 멤버로 둔다(아래에서 모든 잡을 Wait한 뒤 이 함수가 끝난다).
+        parallelBarriersByPass.assign(passes.size(), {});
+        for (const Barrier& barrier : executionPlan.barriers)
+        {
+            if (barrier.passIndex < executionPlan.passOrder.size())
+            {
+                parallelBarriersByPass[executionPlan.passOrder[barrier.passIndex]].push_back(barrier);
+            }
+        }
         std::vector<JobHandle> passJobs(passes.size());
         std::vector<bool> passDispatched(passes.size(), false);
 
@@ -472,24 +496,6 @@ namespace Engine
             }
         }
 
-        Logger::Log(LogLevel::Info, "RenderGraph::ExecuteParallel - Inserting barriers after parallel execution");
-        for (const Barrier& barrier : executionPlan.barriers)
-        {
-            std::string resourceName = "Unknown";
-            for (const auto& resource : resources)
-            {
-                if (resource.id == barrier.resource)
-                {
-                    resourceName = resource.name;
-                    break;
-                }
-            }
-
-            Logger::Log(LogLevel::Info, ("RenderGraph::ExecuteParallel - Inserting barrier for resource '" + resourceName + "'").c_str());
-
-            GPUTextureHandle gpuHandle(barrier.resource.id, barrier.resource.generation);
-            cmdList.ResourceBarrier(gpuHandle);
-        }
 
         Logger::Log(LogLevel::Info, "RenderGraph::ExecuteParallel - Parallel execution completed successfully");
     }
@@ -883,112 +889,76 @@ namespace Engine
                                    " aliasing opportunities").c_str());
     }
 
-    void RenderGraph::ResolveReadAfterWriteBarriersForPass(
-        const RGPass& pass,
-        size_t passOrderIndex,
-        const std::unordered_map<RGTextureHandle, uint32_t>& lastWritePass)
+    ResourceState RenderGraph::DesiredState(const RGTexture& texture, bool isWrite)
     {
-        for (RGTextureHandle readResource : pass.reads)
+        const auto usage = static_cast<uint8_t>(texture.desc.usage);
+        const bool depth = (usage & static_cast<uint8_t>(TextureUsage::DepthStencil)) != 0;
+        const bool uav = (usage & static_cast<uint8_t>(TextureUsage::UnorderedAccess)) != 0;
+        const bool rt = (usage & static_cast<uint8_t>(TextureUsage::RenderTarget)) != 0;
+        if (isWrite)
         {
-            auto lastWriteIt = lastWritePass.find(readResource);
-            if (lastWriteIt != lastWritePass.end())
-            {
-                uint32_t lastWritePassId = lastWriteIt->second;
-                
-                uint32_t lastWriteOrderIndex = UINT32_MAX;
-                for (size_t i = 0; i < passOrderIndex; ++i)
-                {
-                    if (executionPlan.passOrder[i] == lastWritePassId)
-                    {
-                        lastWriteOrderIndex = static_cast<uint32_t>(i);
-                        break;
-                    }
-                }
-
-                if (lastWriteOrderIndex != UINT32_MAX && lastWriteOrderIndex < passOrderIndex)
-                {
-                    Barrier barrier(readResource, static_cast<uint32_t>(passOrderIndex));
-                    executionPlan.barriers.push_back(barrier);
-
-                    Logger::Log(LogLevel::Info, ("RenderGraph::InsertBarriers - Inserted barrier for resource " + 
-                                               std::to_string(readResource.id) + " before pass " + 
-                                               std::to_string(passOrderIndex) + " (read after write)").c_str());
-                }
-            }
+            if (depth) return ResourceState::DepthWrite;
+            if (uav && !rt) return ResourceState::UnorderedAccess;
+            return ResourceState::RenderTarget;
         }
-    }
-
-    void RenderGraph::ResolveWriteAfterAccessBarriersForPass(
-        const RGPass& pass,
-        size_t passOrderIndex,
-        std::unordered_map<RGTextureHandle, uint32_t>& lastWritePass)
-    {
-        uint32_t passId = executionPlan.passOrder[passOrderIndex];
-        for (RGTextureHandle writeResource : pass.writes)
-        {
-            bool needsBarrier = false;
-            
-            for (size_t prevPassOrderIndex = 0; prevPassOrderIndex < passOrderIndex; ++prevPassOrderIndex)
-            {
-                uint32_t prevPassId = executionPlan.passOrder[prevPassOrderIndex];
-                const RGPass& prevPass = passes[prevPassId];
-                
-                for (RGTextureHandle prevReadResource : prevPass.reads)
-                {
-                    if (prevReadResource == writeResource)
-                    {
-                        needsBarrier = true;
-                        break;
-                    }
-                }
-                
-                if (!needsBarrier)
-                {
-                    for (RGTextureHandle prevWriteResource : prevPass.writes)
-                    {
-                        if (prevWriteResource == writeResource)
-                        {
-                            needsBarrier = true;
-                            break;
-                        }
-                    }
-                }
-                
-                if (needsBarrier) break;
-            }
-
-            if (needsBarrier)
-            {
-                Barrier barrier(writeResource, static_cast<uint32_t>(passOrderIndex));
-                executionPlan.barriers.push_back(barrier);
-
-                Logger::Log(LogLevel::Info, ("RenderGraph::InsertBarriers - Inserted barrier for resource " + 
-                                           std::to_string(writeResource.id) + " before pass " + 
-                                           std::to_string(passOrderIndex) + " (write after access)").c_str());
-            }
-
-            lastWritePass[writeResource] = passId;
-        }
+        return depth ? ResourceState::DepthRead : ResourceState::ShaderResource;
     }
 
     void RenderGraph::InsertBarriers()
     {
+        // 리소스마다 "지금 상태"를 추적하고, 패스가 요구하는 상태와 다를 때만 src -> dst 배리어를 넣는다.
+        // 예전에는 상태 정보 없이 "쓰기 뒤 읽기 / 접근 뒤 쓰기" 규칙으로 배리어 위치만 기록했고(Barrier에
+        // "TODO: Add barrier type and state information"), 같은 상태로의 불필요한 배리어도 구분하지 못했다
+        // (docs/REVIEW_BASED_IMPROVEMENT_PLAN.md P2-1).
         Logger::Log(LogLevel::Info, "RenderGraph::InsertBarriers - Inserting resource barriers");
-
         executionPlan.barriers.clear();
 
-        std::unordered_map<RGTextureHandle, uint32_t> lastWritePass;
+        std::unordered_map<RGTextureHandle, const RGTexture*> textureById;
+        std::unordered_map<RGTextureHandle, ResourceState> currentState;
+        for (const auto& resource : resources)
+        {
+            textureById[resource.id] = &resource;
+            currentState[resource.id] = resource.imported ? ResourceState::Common : ResourceState::Undefined;
+        }
 
         for (size_t passOrderIndex = 0; passOrderIndex < executionPlan.passOrder.size(); ++passOrderIndex)
         {
-            uint32_t passId = executionPlan.passOrder[passOrderIndex];
-            const RGPass& pass = passes[passId];
+            const RGPass& pass = passes[executionPlan.passOrder[passOrderIndex]];
 
-            ResolveReadAfterWriteBarriersForPass(pass, passOrderIndex, lastWritePass);
-            ResolveWriteAfterAccessBarriersForPass(pass, passOrderIndex, lastWritePass);
+            // 한 패스 안에서 같은 리소스를 읽고 쓰면 쓰기 상태가 우선한다.
+            std::vector<std::pair<RGTextureHandle, bool>> accesses;
+            for (RGTextureHandle r : pass.reads) accesses.emplace_back(r, false);
+            for (RGTextureHandle w : pass.writes) accesses.emplace_back(w, true);
+            std::unordered_map<RGTextureHandle, bool> writesThisPass;
+            for (const auto& [handle, isWrite] : accesses)
+            {
+                writesThisPass[handle] = writesThisPass[handle] || isWrite;
+            }
+
+            for (const auto& [handle, isWrite] : writesThisPass)
+            {
+                auto texIt = textureById.find(handle);
+                if (texIt == textureById.end())
+                {
+                    continue;
+                }
+                const ResourceState desired = DesiredState(*texIt->second, isWrite);
+                ResourceState& current = currentState[handle];
+                if (current != desired)
+                {
+                    executionPlan.barriers.emplace_back(handle, static_cast<uint32_t>(passOrderIndex), current, desired);
+                    current = desired;
+                }
+            }
         }
 
-        Logger::Log(LogLevel::Info, ("RenderGraph::InsertBarriers - Inserted " + 
+        // Execute는 passIndex 순서로 배리어를 소비하므로 정렬해 둔다(패스 안 순서는 핸들 순서로 결정적으로).
+        std::stable_sort(executionPlan.barriers.begin(), executionPlan.barriers.end(),
+            [](const Barrier& a, const Barrier& b) {
+                return a.passIndex != b.passIndex ? a.passIndex < b.passIndex : a.resource.id < b.resource.id;
+            });
+
+        Logger::Log(LogLevel::Info, ("RenderGraph::InsertBarriers - Inserted " +
                                    std::to_string(executionPlan.barriers.size()) + " barriers").c_str());
     }
 

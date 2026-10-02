@@ -26,6 +26,7 @@ layout(location = 11) in uint aIsSelected;
 out vec3 FragPos;
 out vec3 Normal;
 out vec3 InstanceColor;
+out vec2 TexCoords;
 flat out uint IsSelected;
 
 uniform mat4 view;
@@ -40,6 +41,7 @@ void main()
     Normal = normalize(normalMatrix * aNormal);
 
     InstanceColor = aInstanceColor;
+    TexCoords = aTexCoords;
     IsSelected = aIsSelected;
 
     gl_Position = projection * view * worldPos;
@@ -53,6 +55,7 @@ out vec4 FragColor;
 in vec3 FragPos;
 in vec3 Normal;
 in vec3 InstanceColor;
+in vec2 TexCoords;
 flat in uint IsSelected;
 
 // 감쇠 없는 방향광 하나 - point light 배열(1/distance^2)과 달리 오브젝트가 광원 위치와
@@ -60,16 +63,28 @@ flat in uint IsSelected;
 uniform vec3 lightDir;   // 표면 -> 광원 방향(정규화됨)
 uniform vec3 viewPos;
 
+// InstancedBatchManager::RenderBatch가 배치마다 설정한다(텍스처 없는 배치는 uHasTexture = 0).
+uniform int uHasTexture;
+uniform sampler2D uTexture;
+
 void main()
 {
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
 
+    // 텍스처 색 * 인스턴스 색(색이 흰색이면 텍스처 그대로). 텍스처는 sRGB로 저작되므로 아래 감마 보정과
+    // 짝이 맞도록 선형 공간으로 옮겨서 조명한다.
+    vec3 baseColor = InstanceColor;
+    if (uHasTexture == 1)
+    {
+        baseColor *= pow(texture(uTexture, TexCoords).rgb, vec3(2.2));
+    }
+
     float ambientStrength = 0.25;
-    vec3 ambient = ambientStrength * InstanceColor;
+    vec3 ambient = ambientStrength * baseColor;
 
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * InstanceColor;
+    vec3 diffuse = diff * baseColor;
 
     vec3 halfDir = normalize(lightDir + viewDir);
     float spec = pow(max(dot(norm, halfDir), 0.0), 32.0);

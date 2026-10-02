@@ -374,6 +374,58 @@ class SoundEventRowWidget(QWidget):
         self.changed.emit()
 
 
+class CameraEventRowWidget(QWidget):
+    """Camera 이벤트 하나를 편집하는 행 위젯 (카메라 계획 C4).
+
+    params = {"camera": 카메라 엔티티 이름}. Scene Play에서 그 카메라가 활성 카메라가 된다
+    (ScenePlaybackController._switch_cameras). 전환 연출(블렌드 시간)은 카메라 쪽 값이다.
+    """
+
+    changed = Signal()
+    delete_requested = Signal(object)
+
+    def __init__(self, event: ActionEvent, total_frames: int, parent=None):
+        super().__init__(parent)
+        self._event = event
+        self._building = True
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
+
+        lbl_f = QLabel("프레임")
+        lbl_f.setFixedWidth(42)
+        self.spin_frame = QSpinBox()
+        self.spin_frame.setRange(0, max(0, total_frames))
+        self.spin_frame.setValue(int(event.frame))
+        self.spin_frame.setFixedWidth(56)
+        self.spin_frame.setButtonSymbols(QSpinBox.NoButtons)
+        self.spin_frame.valueChanged.connect(self._on_changed)
+
+        self.camera_edit = QLineEdit((event.params or {}).get("camera", ""))
+        self.camera_edit.setPlaceholderText("카메라 엔티티 이름 (예: Cam B)")
+        self.camera_edit.editingFinished.connect(self._on_changed)
+
+        btn_del = QPushButton("\u2715")
+        btn_del.setObjectName("btn_delete")
+        btn_del.setFixedSize(22, 22)
+        btn_del.clicked.connect(lambda: self.delete_requested.emit(self))
+
+        layout.addWidget(lbl_f)
+        layout.addWidget(self.spin_frame)
+        layout.addWidget(self.camera_edit, 1)
+        layout.addWidget(btn_del)
+        self._building = False
+
+    def _on_changed(self):
+        if self._building:
+            return
+        self._event.frame = int(self.spin_frame.value())
+        if self._event.params is None:
+            self._event.params = {}
+        self._event.params["camera"] = self.camera_edit.text().strip()
+        self.changed.emit()
+
+
 class SectionInspectorPanel(QWidget):
     """
     오른쪽 패널: 섹션 목록 + Animation Layer 믹서.
@@ -390,6 +442,7 @@ class SectionInspectorPanel(QWidget):
         self._section_widgets: list[SectionRowWidget] = []
         self._layer_widgets: list[LayerRowWidget] = []
         self._sound_widgets: list[SoundEventRowWidget] = []
+        self._camera_widgets: list[CameraEventRowWidget] = []
         self._build_ui()
 
     def _build_ui(self):
@@ -480,6 +533,19 @@ class SectionInspectorPanel(QWidget):
         btn_add_sound.clicked.connect(self._on_add_sound)
         self.scroll_layout.addWidget(btn_add_sound)
 
+        # ── 카메라 이벤트 블록 (카메라 계획 C4) ──
+        self.lbl_cameras = self._make_section_label("CAMERA EVENTS")
+        self.scroll_layout.addWidget(self.lbl_cameras)
+        self.cameras_container = QWidget()
+        self.cameras_layout = QVBoxLayout(self.cameras_container)
+        self.cameras_layout.setContentsMargins(0, 0, 0, 0)
+        self.cameras_layout.setSpacing(0)
+        self.scroll_layout.addWidget(self.cameras_container)
+        btn_add_camera = QPushButton("\uff0b Add Camera Event")
+        btn_add_camera.setObjectName("btn_create")
+        btn_add_camera.clicked.connect(self._on_add_camera_event)
+        self.scroll_layout.addWidget(btn_add_camera)
+
         self.scroll_layout.addStretch()
         scroll.setWidget(self.scroll_content)
         layout.addWidget(scroll)
@@ -544,10 +610,22 @@ class SectionInspectorPanel(QWidget):
             self.sounds_layout.addWidget(w)
             self._sound_widgets.append(w)
 
+        for event in self._camera_events():
+            w = CameraEventRowWidget(event, self._action.total_frames)
+            w.changed.connect(self._on_data_changed)
+            w.delete_requested.connect(self._on_delete_camera_event)
+            self.cameras_layout.addWidget(w)
+            self._camera_widgets.append(w)
+
     def _sound_events(self) -> list:
         if self._action is None:
             return []
         return [e for e in self._action.events if e.type == EventType.SOUND]
+
+    def _camera_events(self) -> list:
+        if self._action is None:
+            return []
+        return [e for e in self._action.events if e.type == EventType.CAMERA]
 
     def _clear_widgets(self):
         for w in self._section_widgets:
@@ -561,6 +639,10 @@ class SectionInspectorPanel(QWidget):
         for w in self._sound_widgets:
             w.deleteLater()
         self._sound_widgets.clear()
+
+        for w in self._camera_widgets:
+            w.deleteLater()
+        self._camera_widgets.clear()
 
     def _on_data_changed(self):
         if self._action:
@@ -628,5 +710,22 @@ class SectionInspectorPanel(QWidget):
         if 0 <= idx < len(sounds):
             # events 리스트에는 다른 타입도 섞여 있으므로 인덱스가 아니라 객체로 지운다.
             self._action.events.remove(sounds[idx])
+            self._refresh()
+            self.data_changed.emit(self._action)
+
+    def _on_add_camera_event(self):
+        if self._action is None:
+            return
+        self._action.events.append(ActionEvent(frame=0, type=EventType.CAMERA, params={"camera": ""}))
+        self._refresh()
+        self.data_changed.emit(self._action)
+
+    def _on_delete_camera_event(self, row_widget: CameraEventRowWidget):
+        if self._action is None:
+            return
+        idx = self._camera_widgets.index(row_widget)
+        cams = self._camera_events()
+        if 0 <= idx < len(cams):
+            self._action.events.remove(cams[idx])   # 다른 타입과 섞여 있으므로 객체로 지운다
             self._refresh()
             self.data_changed.emit(self._action)

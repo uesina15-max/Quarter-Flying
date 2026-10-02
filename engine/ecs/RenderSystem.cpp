@@ -3,42 +3,110 @@
 #include "ComponentArray.h"
 #include "../renderer/InstancedBatchManager.h"
 #include "../renderer/Mesh.h"
-#include "../renderer/Camera.h"
 #include "../core/logging/Logger.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <filesystem>
 
 namespace Engine
 {
-    glm::mat4 ComposeWorldMatrix(const TransformComponent& transform)
-    {
-        glm::vec3 position(transform.position.x, transform.position.y, transform.position.z);
-        glm::quat rotation(transform.rotation.w, transform.rotation.x, transform.rotation.y, transform.rotation.z);
-        glm::vec3 scale(transform.scale.x, transform.scale.y, transform.scale.z);
-
-        glm::mat4 t = glm::translate(glm::mat4(1.0f), position);
-        glm::mat4 r = glm::mat4_cast(rotation);
-        glm::mat4 s = glm::scale(glm::mat4(1.0f), scale);
-        return t * r * s;
-    }
-
-    InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle)
+InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
     {
         InstancedBatchKey key;
         key.meshGuid = static_cast<uint64_t>(meshHandle);
-        // materialId/shaderId/passType/materialLayout/features는 전부 기본값 - 아직
-        // 머티리얼 시스템이 없어서(§주석 참고) 메시 단위로만 배치를 나눈다.
+        key.materialId = static_cast<uint64_t>(glTexture);
+        // shaderId/passType/materialLayout/features는 전부 기본값 - 아직 머티리얼 시스템이 없다.
         return key;
     }
 
-    RenderSystem::RenderSystem(InstancedBatchManager* batchManager, Camera* camera)
+    RenderSystem::RenderSystem(InstancedBatchManager* batchManager,
+                               std::string assetRoot, MeshLoader meshLoader,
+                               TextureLoader textureLoader)
         : batchManager_(batchManager)
-        , camera_(camera)
+        , assetRoot_(std::move(assetRoot))
+        , meshLoader_(meshLoader ? std::move(meshLoader) : MeshLoader(&Mesh::loadFromFile))
+        , textureLoader_(std::move(textureLoader))
     {
+    }
+
+    uint32_t RenderSystem::ResolveTexture(const RenderableComponent& renderable)
+    {
+        if (renderable.texturePath.empty())
+        {
+            return 0;
+        }
+
+        auto it = textures_.find(renderable.texturePath);
+        if (it != textures_.end())
+        {
+            return it->second.glId;
+        }
+
+        const std::string fullPath = assetRoot_.empty()
+            ? renderable.texturePath
+            : (std::filesystem::path(assetRoot_) / renderable.texturePath).generic_string();
+
+        LoadedTexture loaded;
+        if (textureLoader_)
+        {
+            loaded = textureLoader_(fullPath);
+        }
+        if (loaded.glId == 0)
+        {
+            // 경로당 한 번만 경고한다. 원래 색으로 그려지므로 "텍스처가 왜 안 보이지"의 답은 이 로그뿐이다.
+            Logger::Log(LogLevel::Warning,
+                "RenderSystem - failed to load texture '{}' (resolved to '{}', assetRoot='{}'{}); drawing without texture",
+                renderable.texturePath, fullPath, assetRoot_,
+                textureLoader_ ? "" : ", no texture loader configured");
+            loaded = LoadedTexture{};
+        }
+        return textures_.emplace(renderable.texturePath, std::move(loaded)).first->second.glId;
+    }
+
+    uint32_t RenderSystem::ResolveMeshHandle(const RenderableComponent& renderable)
+    {
+        if (renderable.meshPath.empty())
+        {
+            return renderable.meshHandle;
+        }
+
+        auto it = pathHandles_.find(renderable.meshPath);
+        if (it != pathHandles_.end())
+        {
+            return it->second;
+        }
+
+        const std::string fullPath = assetRoot_.empty()
+            ? renderable.meshPath
+            : (std::filesystem::path(assetRoot_) / renderable.meshPath).generic_string();
+
+        std::shared_ptr<Mesh> mesh = meshLoader_(fullPath);
+        if (!mesh)
+        {
+            // 경로당 한 번만 경고한다(매 프레임 찍으면 로그가 묻힌다). 큐브로 대체되므로 화면에는
+            // "뭔가" 보이지만, 그게 의도한 모델이 아니라는 건 이 로그로만 알 수 있다.
+            Logger::Log(LogLevel::Warning,
+                "RenderSystem - failed to load mesh '{}' (resolved to '{}', assetRoot='{}'); drawing placeholder cube",
+                renderable.meshPath, fullPath, assetRoot_);
+            pathHandles_[renderable.meshPath] = 0;
+            return 0;
+        }
+
+        uint32_t handle = nextPathHandle_++;
+        meshRegistry_[handle] = std::move(mesh);
+        pathHandles_[renderable.meshPath] = handle;
+        return handle;
     }
 
     void RenderSystem::RegisterMesh(uint32_t meshHandle, std::shared_ptr<Mesh> mesh)
     {
+        if (meshHandle >= kPathHandleBase)
+        {
+            Logger::Log(LogLevel::Error,
+                "RenderSystem::RegisterMesh - handle {} is in the reserved path-mesh range (>= {}); ignored",
+                meshHandle, kPathHandleBase);
+            return;
+        }
         if (mesh)
         {
             meshRegistry_[meshHandle] = std::move(mesh);
@@ -104,7 +172,7 @@ namespace Engine
             auto* renderables = registry.GetComponentArray<RenderableComponent>();
             auto* transforms = registry.GetComponentArray<TransformComponent>();
 
-            std::unordered_set<uint32_t> seenThisFrame;
+            std::unordered_set<uint64_t> seenThisFrame;  // BatchId(meshHandle, texture)
 
             if (renderables && transforms)
             {
@@ -118,32 +186,40 @@ namespace Engine
                         continue;  // Renderable인데 Transform이 없으면 그릴 위치를 알 수 없다
                     }
 
-                    InstancedBatchKey key = MakeMeshBatchKey(rc.meshHandle);
+                    // meshPath가 있으면 경로 메시(첫 사용 시 로드), 없으면 meshHandle - ResolveMeshHandle 참고
+                    const uint32_t meshHandle = ResolveMeshHandle(rc);
+                    const uint32_t texture = ResolveTexture(rc);
+                    const uint64_t batchId = BatchId(meshHandle, texture);
+                    InstancedBatchKey key = MakeMeshBatchKey(meshHandle, texture);
 
-                    if (seenThisFrame.insert(rc.meshHandle).second)
+                    if (seenThisFrame.insert(batchId).second)
                     {
-                        // 이 프레임에 처음 보는 meshHandle - 배치가 없으면 만들고, 있으면
+                        // 이 프레임에 처음 보는 (메시, 텍스처) - 배치가 없으면 만들고, 있으면
                         // 매 프레임 처음부터 다시 채울 것이므로 인스턴스 목록을 비운다
                         // (AddInstance는 중복 없이 그냥 append라서 안 비우면 계속 누적됨).
-                        if (activeMeshHandles_.find(rc.meshHandle) == activeMeshHandles_.end())
+                        if (activeBatches_.find(batchId) == activeBatches_.end())
                         {
-                            auto mesh = GetOrCreateMesh(rc.meshHandle);
+                            auto mesh = GetOrCreateMesh(meshHandle);
                             auto result = batchManager_->CreateBatch(key, BatchType::Dynamic, mesh);
                             if (!result)
                             {
                                 Logger::Log(LogLevel::Warning,
-                                    "RenderSystem::Update - CreateBatch failed for meshHandle {}: {}",
-                                    rc.meshHandle, result.error().message);
+                                    "RenderSystem::Update - CreateBatch failed for meshHandle {} (texture {}): {}",
+                                    meshHandle, texture, result.error().message);
                                 continue;
                             }
-                            activeMeshHandles_.insert(rc.meshHandle);
+                            batchManager_->SetBatchTexture(key, texture);
+                            activeBatches_.insert(batchId);
                         }
                         batchManager_->ClearInstances(key);
                     }
 
                     InstanceData data{};
-                    data.model = ComposeWorldMatrix(*tc);
-                    data.color = glm::vec3(0.75f, 0.75f, 0.78f);  // 머티리얼 시스템 이전 임시 고정값
+                    // 부모가 있으면 조상 Transform까지 곱한 월드 행렬(Hierarchy.h). 루트면 로컬과 같다.
+                    data.model = ComputeWorldMatrix(registry, Entity(id));
+                    // 머티리얼 시스템 이전 임시 고정값. 텍스처가 있으면 셰이더가 텍스처 색에 이 값을 곱하므로
+                    // 흰색으로 둬야 텍스처 원래 색이 나온다.
+                    data.color = texture != 0 ? glm::vec3(1.0f) : glm::vec3(0.75f, 0.75f, 0.78f);
                     data.roughness = 0.6f;
                     data.metallic = 0.0f;
                     data.entityId = id;
@@ -158,57 +234,26 @@ namespace Engine
                 }
             }
 
-            // 이번 프레임에 아무 엔티티도 안 쓴 meshHandle의 배치는 정리한다
-            // (엔티티 삭제/RenderableComponent 제거에 대응).
-            for (auto it = activeMeshHandles_.begin(); it != activeMeshHandles_.end(); )
+            // 이번 프레임에 아무 엔티티도 안 쓴 (메시, 텍스처) 배치는 정리한다
+            // (엔티티 삭제/RenderableComponent 제거/texturePath 변경에 대응).
+            for (auto it = activeBatches_.begin(); it != activeBatches_.end(); )
             {
                 if (seenThisFrame.find(*it) == seenThisFrame.end())
                 {
-                    auto removeResult = batchManager_->RemoveBatch(MakeMeshBatchKey(*it));
+                    const uint32_t meshHandle = static_cast<uint32_t>(*it & 0xFFFFFFFFu);
+                    const uint32_t texture = static_cast<uint32_t>(*it >> 32);
+                    auto removeResult = batchManager_->RemoveBatch(MakeMeshBatchKey(meshHandle, texture));
                     if (!removeResult)
                     {
                         Logger::Log(LogLevel::Warning,
-                            "RenderSystem::Update - RemoveBatch failed for meshHandle {}: {}",
-                            *it, removeResult.error().message);
+                            "RenderSystem::Update - RemoveBatch failed for meshHandle {} (texture {}): {}",
+                            meshHandle, texture, removeResult.error().message);
                     }
-                    it = activeMeshHandles_.erase(it);
+                    it = activeBatches_.erase(it);
                 }
                 else
                 {
                     ++it;
-                }
-            }
-        }
-
-        // 카메라 동기화: isMainCamera 엔티티의 Transform -> Camera(position/lookAt).
-        // projection(fov/aspect/near/far)은 건드리지 않는다(RenderSystem.h 주석 참고).
-        if (camera_)
-        {
-            auto* cameras = registry.GetComponentArray<CameraComponent>();
-            auto* transforms = registry.GetComponentArray<TransformComponent>();
-            if (cameras && transforms)
-            {
-                for (size_t i = 0; i < cameras->Size(); ++i)
-                {
-                    const CameraComponent& cc = cameras->GetDenseArray()[i];
-                    if (!cc.isMainCamera)
-                    {
-                        continue;
-                    }
-                    EntityID id = cameras->GetEntityIDs()[i];
-                    const TransformComponent* tc = transforms->Get(id);
-                    if (!tc)
-                    {
-                        continue;
-                    }
-
-                    glm::vec3 position(tc->position.x, tc->position.y, tc->position.z);
-                    glm::quat rotation(tc->rotation.w, tc->rotation.x, tc->rotation.y, tc->rotation.z);
-                    glm::vec3 forward = rotation * glm::vec3(0.0f, 0.0f, -1.0f);
-
-                    camera_->setPosition(position);
-                    camera_->lookAt(position + forward);
-                    break;  // isMainCamera 유일성은 상위 계층 책임 - 첫 번째 것만 사용
                 }
             }
         }

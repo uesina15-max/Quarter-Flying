@@ -25,6 +25,11 @@ struct EngineConfig
     // Logging configuration
     uint32_t logFrameInterval; // Log frame stats every N frames
 
+    // 에셋 경로(RenderableComponent::meshPath 등)의 기준 디렉터리. 비어 있으면 현재 작업
+    // 디렉터리 기준. 에디터는 engine/ 절대경로를 넣는다(scene.json/프리팹의 경로가
+    // "assets/models/..." 형태로 engine/ 기준이기 때문).
+    std::string assetRoot;
+
     EngineConfig()
         : windowTitle("Quarter Flying")
         , windowWidth(kDefaultWindowWidth)

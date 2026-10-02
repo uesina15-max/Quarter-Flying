@@ -9,6 +9,7 @@ Stage 2: 엔진 모듈 연결 시 실제 ECS 연동
 import sys
 import os
 import time
+import json
 
 # 에디터 디렉토리를 경로에 추가
 _EDITOR_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +39,8 @@ from demo_scene_integration import DemoSceneIntegration
 from config_manager import ConfigManager
 from core.scene_action_playback import ScenePlaybackController
 from demo_scene_seed import seed_demo_scene
+from core.editor_camera import look_rotation_quaternion, forward_from_quaternion, quaternion_from_euler_degrees
+from scene_instantiation import expand_scene_objects, instantiate_scene
 
 # 모션 에디터 임포트
 try:
@@ -55,7 +58,7 @@ except Exception as e:
     print(f"[Editor] 뷰포트 로드 실패 (더미 모드): {e}")
     HAS_VIEWPORT = False
 
-from engine_binding import binding as ge_python, HAS_ENGINE
+from engine_binding import binding as ge_python, HAS_ENGINE, to_entity
 
 
 # ============================================================
@@ -238,6 +241,28 @@ class EditorMainWindow(QMainWindow):
         tb.addActions([self.act_play, act_pause, act_stop])
         tb.addSeparator()
 
+        # 뷰포트 카메라: 기본은 에디터 카메라(우클릭 드래그 회전 / 휠클릭 드래그 이동 / 휠 줌 / F 리셋).
+        # 체크하면 ECS Main Camera 시점(게임에서 보이는 화면)으로 본다.
+        self.act_game_camera = QAction("🎥 게임 카메라로 보기", self)
+        self.act_game_camera.setCheckable(True)
+        self.act_game_camera.setToolTip(
+            "체크: ECS Main Camera 시점으로 보기\n"
+            "해제: 에디터 카메라 - 우클릭(또는 Alt+좌클릭) 드래그 회전, "
+            "휠클릭(또는 Shift+우클릭) 드래그 이동, 휠 줌, F 리셋")
+        self.act_game_camera.toggled.connect(self._on_toggle_game_camera)
+        act_reset_camera = QAction("⟲ 카메라 리셋", self)
+        act_reset_camera.setToolTip("에디터 카메라를 기본 시점으로 되돌립니다 (뷰포트에서 F)")
+        act_reset_camera.triggered.connect(self._on_reset_editor_camera)
+        act_align_camera = QAction("📌 선택 카메라를 이 시점으로", self)
+        act_align_camera.setToolTip(
+            "선택한 카메라 엔티티의 위치/회전을 지금 에디터 카메라 시점으로 맞춥니다 (Undo 가능)")
+        act_align_camera.triggered.connect(self._on_align_camera_to_view)
+        act_look_through = QAction("👁 선택 카메라 시점으로 보기", self)
+        act_look_through.setToolTip("에디터 카메라를 선택한 카메라 엔티티의 위치/방향으로 옮깁니다 (Align의 반대)")
+        act_look_through.triggered.connect(self._on_look_through_selected_camera)
+        tb.addActions([self.act_game_camera, act_reset_camera, act_align_camera, act_look_through])
+        tb.addSeparator()
+
         # 씬 이름
         self.lbl_scene = QLabel("  Untitled Scene  ")
         self.lbl_scene.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px; padding: 0 8px;")
@@ -276,7 +301,8 @@ class EditorMainWindow(QMainWindow):
 
         # 2. 뷰포트
         if HAS_VIEWPORT and HAS_ENGINE:
-            self.viewport = EngineViewport()
+            # Scene 뷰포트는 마우스로 조작하는 에디터 카메라를 쓴다(툴바에서 게임 카메라로 전환 가능).
+            self.viewport = EngineViewport(editor_camera=True)
         else:
             self.viewport = DummyViewport()
         self.viewport.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -303,13 +329,14 @@ class EditorMainWindow(QMainWindow):
         play_layout.setContentsMargins(0, 0, 0, 0)
         play_layout.setSpacing(0)
         
-        # 플레이 뷰포트
-        if HAS_VIEWPORT and HAS_ENGINE:
-            self.play_viewport = EngineViewport()
-        else:
-            self.play_viewport = DummyViewport()
-        self.play_viewport.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        play_layout.addWidget(self.play_viewport)
+        # Play 페이지에는 뷰포트를 따로 만들지 않는다. Play에 들어갈 때 Scene 뷰포트(씬 World를
+        # 가진 엔진)를 이 레이아웃으로 옮기고 게임 카메라로 전환한다(_move_viewport_to_play).
+        # 예전에는 여기서 두 번째 EngineViewport(= 두 번째 Engine, 빈 World)를 만들었다. 그래서
+        # Play 버튼을 누르면 씬 World는 숨겨진 Scene 뷰포트에서 돌고, 화면에는 씬이 없는 엔진이
+        # 보였다. 즉 Play 화면에 게임이 나온 적이 없다(docs/INGAME_CAMERA_PLAN.md C0).
+        self._play_layout = play_layout
+        if not (HAS_VIEWPORT and HAS_ENGINE):
+            play_layout.addWidget(DummyViewport())
         
         self.stack.addWidget(self.play_mode_widget)
 
@@ -331,13 +358,18 @@ class EditorMainWindow(QMainWindow):
     def _set_mode(self, index: int):
         prev_index = self.stack.currentIndex()
 
-        # Motion Editor(2)로 들어가거나 나갈 때 공유 뷰포트를 옮긴다 (§C11). main_splitter
-        # 안의 viewport 자리를 placeholder로 채워서 스플리터 3분할 비율이 안 무너지게 한다.
-        if hasattr(self, 'motion_editor') and self.motion_editor is not None:
-            if index == 2 and prev_index != 2:
-                self._move_viewport_to_motion_editor()
-            elif index != 2 and prev_index == 2:
+        # 공유 뷰포트는 Scene(0) / Play(1) / Motion Editor(2) 페이지 사이를 옮겨 다닌다(§C11).
+        # 먼저 원래 자리(Scene 스플리터)로 되돌린 다음, 새 페이지가 Scene이 아니면 거기로 옮긴다.
+        # 그래서 Motion Editor -> Play 같은 직접 전환도 같은 경로를 탄다.
+        if index != prev_index:
+            if prev_index == 2 and getattr(self, 'motion_editor', None) is not None:
                 self._move_viewport_to_scene_editor()
+            elif prev_index == 1:
+                self._move_viewport_back_from_play()
+            if index == 2 and getattr(self, 'motion_editor', None) is not None:
+                self._move_viewport_to_motion_editor()
+            elif index == 1:
+                self._move_viewport_to_play()
 
         self.stack.setCurrentIndex(index)
 
@@ -373,6 +405,29 @@ class EditorMainWindow(QMainWindow):
         self.motion_editor.attach_viewport()
         self.main_splitter.insertWidget(1, self._viewport_placeholder)
         self.motion_editor.activate_motion_preview()
+
+    def _viewport_is_engine(self) -> bool:
+        return HAS_VIEWPORT and HAS_ENGINE and isinstance(self.viewport, EngineViewport)
+
+    def _move_viewport_to_play(self):
+        """공유 뷰포트를 Play 페이지로 옮기고 게임 카메라(ECS Main Camera)로 전환한다."""
+        if not self._viewport_is_engine():
+            return
+        if not hasattr(self, '_viewport_placeholder'):
+            self._viewport_placeholder = QWidget()
+            self._viewport_placeholder.setStyleSheet(f"background-color: {COLORS['bg_base']};")
+        self._play_layout.addWidget(self.viewport)          # 재부모 이동 - 스플리터에서는 자동으로 빠진다
+        self.main_splitter.insertWidget(1, self._viewport_placeholder)
+        self.viewport.set_use_editor_camera(False)
+
+    def _move_viewport_back_from_play(self):
+        """Play 페이지에서 Scene 스플리터로 되돌리고, 툴바 설정대로 카메라를 복원한다."""
+        if not self._viewport_is_engine():
+            return
+        if hasattr(self, '_viewport_placeholder'):
+            self._viewport_placeholder.setParent(None)
+        self.main_splitter.insertWidget(1, self.viewport)
+        self.viewport.set_use_editor_camera(not self.act_game_camera.isChecked())
 
     def _move_viewport_to_scene_editor(self):
         """공유 뷰포트를 Motion Editor에서 빼서 Scene Editor 스플리터로 되돌리고 Scene
@@ -432,6 +487,10 @@ class EditorMainWindow(QMainWindow):
         self.scene_panel.prefab_capture_status.connect(
             lambda _msg: self.prefab_browser.refresh()
         )
+
+        # 부모 변경(드래그)/삭제(Scene Hierarchy) → 상태 바 + Undo 메뉴 활성화
+        self.scene_panel.hierarchy_status.connect(self.status.log)
+        self.scene_panel.hierarchy_status.connect(lambda _msg: self._update_undo_redo_actions())
 
         # Instantiate(Prefab Browser) → 상태 바
         self.prefab_browser.status_message.connect(self.status.log)
@@ -499,6 +558,20 @@ class EditorMainWindow(QMainWindow):
         if not getattr(self, '_demo_scene_seeded', False):
             seed_demo_scene(editor_api, registry, self._log_engine)
             self._demo_scene_seeded = True
+            self._instantiate_loaded_scene(editor_api, registry)
+
+    def _instantiate_loaded_scene(self, editor_api, registry):
+        """이미 파싱해 둔 scene.json 오브젝트를 ECS 엔티티로 만든다 (scene_instantiation.py 참고)."""
+        scene_objects = self.demo_scene.get_scene_objects() if hasattr(self, 'demo_scene') else []
+        if not scene_objects:
+            return
+        try:
+            specs = expand_scene_objects(scene_objects)
+        except ValueError as e:
+            # scene.json 형식 오류는 파일을 고쳐야 하는 문제라 엔티티를 하나도 만들지 않는다.
+            self._log_engine(f"[SceneLoad] scene.json 형식 오류 - {e}")
+            return
+        instantiate_scene(editor_api, registry, specs, self._log_engine)
 
     def _activate_world(self):
         """뷰포트의 엔진에서 World를 확보해 active로 만든다. (engine, world, registry)를 반환."""
@@ -530,6 +603,7 @@ class EditorMainWindow(QMainWindow):
 
         editor_api = ge_python.EditorAPI.get_instance()
         editor_api.set_registry(registry)
+        self._editor_api = editor_api
         self.inspector.connect_editor(editor_api)
         self.scene_panel.connect_editor(editor_api)
         self.prefab_browser.set_editor_api(editor_api)
@@ -583,6 +657,82 @@ class EditorMainWindow(QMainWindow):
     # ----------------------------------------------------------------
     # 레이아웃 리셋
     # ----------------------------------------------------------------
+
+    def _on_toggle_game_camera(self, checked: bool):
+        viewport = getattr(self, 'viewport', None)
+        if HAS_VIEWPORT and isinstance(viewport, EngineViewport) and viewport.has_editor_camera:
+            viewport.set_use_editor_camera(not checked)
+            self.status.log("뷰포트: 게임 카메라(Main Camera)" if checked else "뷰포트: 에디터 카메라")
+
+    def _on_align_camera_to_view(self):
+        """선택한 카메라 엔티티를 에디터 카메라 시점으로 옮긴다 (docs/INGAME_CAMERA_PLAN.md C7 Align to View).
+
+        이동과 회전을 트랜잭션 하나로 묶어서 Undo 한 번에 되돌아가게 한다.
+        """
+        viewport = getattr(self, 'viewport', None)
+        editor_api = getattr(self, '_editor_api', None)
+        if not (HAS_VIEWPORT and isinstance(viewport, EngineViewport) and viewport.has_editor_camera
+                and editor_api is not None and self._world is not None):
+            self.status.log("Align to View: 엔진이 연결된 Scene 뷰포트에서만 쓸 수 있습니다")
+            return
+        entity_id = self.inspector._current_entity_id
+        if entity_id is None or entity_id < 0:
+            self.status.log("Align to View: 먼저 카메라 엔티티를 선택하세요")
+            return
+        registry = self._world.GetRegistry()
+        entity = to_entity(entity_id)
+        cam_json = registry.GetComponentJson(entity, "CameraComponent")
+        if not cam_json or cam_json == "{}":
+            self.status.log(f"Align to View: '{registry.GetEntityName(entity)}'에 CameraComponent가 없습니다")
+            return
+
+        eye, target = viewport._orbit.view()
+        qx, qy, qz, qw = look_rotation_quaternion(eye, target)
+        editor_api.begin_transaction("Align Camera to View")
+        try:
+            editor_api.move_entity(entity, ge_python.Vec3(*eye))
+            editor_api.rotate_entity(entity, ge_python.Quaternion(qx, qy, qz, qw))
+            editor_api.commit_transaction()
+        except Exception as e:
+            editor_api.cancel_transaction()
+            self.status.log(f"Align to View 실패: {type(e).__name__}: {e}")
+            return
+        self._update_undo_redo_actions()
+        self.inspector.on_entity_selected(entity_id)
+        self.status.log(f"'{registry.GetEntityName(entity)}' 카메라를 현재 에디터 시점으로 맞췄습니다")
+
+    def _on_look_through_selected_camera(self):
+        """에디터 카메라를 선택한 카메라 엔티티 시점으로 옮긴다 (docs/INGAME_CAMERA_PLAN.md C7).
+
+        카메라 프리뷰(작은 PIP 창) 대신 넣은 기능이다. PIP는 오프스크린 렌더 타깃과 두 번째 렌더 패스가
+        필요해서 보류했다. 에디터 카메라를 옮길 뿐 엔티티는 바꾸지 않으므로 Undo 대상이 아니다.
+        """
+        viewport = getattr(self, 'viewport', None)
+        if not (HAS_VIEWPORT and isinstance(viewport, EngineViewport) and viewport.has_editor_camera
+                and self._world is not None):
+            self.status.log("선택 카메라 시점으로 보기: 엔진이 연결된 Scene 뷰포트에서만 쓸 수 있습니다")
+            return
+        entity_id = self.inspector._current_entity_id
+        if entity_id is None or entity_id < 0:
+            self.status.log("선택 카메라 시점으로 보기: 먼저 카메라 엔티티를 선택하세요")
+            return
+        registry = self._world.GetRegistry()
+        entity = to_entity(entity_id)
+        if registry.GetComponentJson(entity, "CameraComponent") in ("", "{}"):
+            self.status.log(f"'{registry.GetEntityName(entity)}'에 CameraComponent가 없습니다")
+            return
+        t = json.loads(registry.GetComponentJson(entity, "TransformComponent"))
+        forward = forward_from_quaternion(quaternion_from_euler_degrees(t["rotation"]))
+        viewport._orbit.look_from(t["position"], forward)
+        if self.act_game_camera.isChecked():
+            self.act_game_camera.setChecked(False)   # 에디터 카메라 보기로 전환(toggled -> set_use_editor_camera)
+        viewport._push_editor_camera()
+        self.status.log(f"에디터 카메라를 '{registry.GetEntityName(entity)}' 시점으로 옮겼습니다")
+
+    def _on_reset_editor_camera(self):
+        viewport = getattr(self, 'viewport', None)
+        if HAS_VIEWPORT and isinstance(viewport, EngineViewport):
+            viewport.reset_editor_camera()
 
     def _reset_layout(self):
         self.main_splitter.setSizes([240, 900, 300])
@@ -743,7 +893,8 @@ class EditorMainWindow(QMainWindow):
     # ----------------------------------------------------------------
 
     def _on_fps_tick(self):
-        self.viewport.tick()
+        # 여기서 self.viewport.tick()을 부르지 않는다. EngineViewport는 자기 16ms 타이머로 이미
+        # 틱한다. 예전에는 여기서도 불러서 Scene 엔진이 프레임당 두 번(약 120Hz) 틱했다.
         self.status.tick_frame()
 
         # 이 타이머는 60fps 고정인데 액션의 fps는 다를 수 있다. 틱 수를 프레임 수로

@@ -90,6 +90,12 @@ namespace Engine
         // 기본값: 0 (보통 우선순위)
         virtual int GetPriority() const { return 0; }
 
+        // 에디터 Edit 모드(PIE Play가 아닐 때)에도 Update를 받을지.
+        // 기본값 true(렌더 배치, 파티클처럼 에디터에서도 보여야 하는 것). 게임 로직처럼 ECS 데이터를 바꾸는
+        // System(예: 추적 카메라)은 false로 둔다. Edit 모드에서 돌면 에디터에서 편집 중인 씬 데이터를
+        // 매 프레임 덮어쓰고, 그 값이 그대로 저장/스냅샷에 들어간다.
+        virtual bool RunsInEditMode() const { return true; }
+
         // ========================================
         // Parallel Execution Support
         // ========================================

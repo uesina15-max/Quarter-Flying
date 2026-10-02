@@ -290,3 +290,11 @@ Phase 1과 2가 각각 **발화 규칙**과 **소리 내기**를 따로 닫으�
 - [engine/ecs/Components.h](../engine/ecs/Components.h) / [engine/ecs/Reflection.cpp](../engine/ecs/Reflection.cpp) — POD 컴포넌트 정의·등록 위치, `AIComponent`의 action 필드가 읽히지 않는다는 사실
 - `engine/editor/test_*.py` — 파이썬 테스트 형식(pytest 미사용, `if __name__ == "__main__"` 직접 실행)
 - [docs/VFX_LITE_IMPLEMENTATION_PLAN.md](VFX_LITE_IMPLEMENTATION_PLAN.md) — Phase 분해와 검증 단계 기록 형식. Phase 1에서 확인된 "리플렉션 등록만 하면 Inspector 폼이 자동 생성된다"와 "`FieldType::Enum`은 조용히 누락된다"
+
+---
+
+## 부록: Phase 6 실제 가청 확인 (2026-09-30)
+
+- Phase 6 커밋(`2080d3c`) 시점에는 Scene Play의 소리가 실제로는 나지 않았다. preload 키(액션 파일 기준 절대 경로)와 play 키(params.clip 원본 상대 경로)가 달라서 모든 Sound 이벤트가 `[SoundPlayer] 프리로드되지 않은 클립(재생 건너뜀)`으로 건너뛰어졌다. 유닛 테스트의 가짜 SoundPlayer는 preload 여부를 따지지 않아서 잡지 못했다.
+- `2c9c929`에서 `sound_player.resolve_clip_path()` 하나로 해석 규칙을 모아 고쳤고, 계약을 지키는 `StrictFakeSound` 회귀 테스트를 추가했다.
+- **실제 실행 검증:** 에디터 Scene Play에서 Sound Test 엔티티의 소리가 스피커로 들리는 것을 사용자가 직접 확인했다(2026-09-30).

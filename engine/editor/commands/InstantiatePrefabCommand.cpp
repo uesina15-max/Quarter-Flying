@@ -1,6 +1,7 @@
 #include "InstantiatePrefabCommand.h"
 #include "../../ecs/ECSRegistry.h"
 #include "../../prefab/PrefabInstanceComponent.h"
+#include "EntitySnapshot.h"
 
 namespace Engine
 {
@@ -12,7 +13,6 @@ InstantiatePrefabCommand::InstantiatePrefabCommand(ECSRegistry* registry,
     , prefabPath_(std::move(prefabPath))
     , position_(position)
     , spawnedEntity_()
-    , savedUUID_(0)
 {
 }
 
@@ -35,14 +35,18 @@ std::expected<void, EngineError> InstantiatePrefabCommand::Apply()
         }
         loadedAsset_ = std::move(loaded.value());
 
-        auto spawned = loadedAsset_->SpawnInto(*registry_);
+        auto spawned = loadedAsset_->SpawnHierarchyInto(*registry_);
         if (!spawned)
         {
             return std::unexpected(spawned.error());
         }
 
-        spawnedEntity_ = spawned.value();
-        savedUUID_     = registry_->GetUUID(spawnedEntity_);
+        spawnedEntity_ = spawned->front();
+        savedUUIDs_.clear();
+        for (Entity e : spawned.value())
+        {
+            savedUUIDs_.push_back(registry_->GetUUID(e));
+        }
         applied_       = true;
     }
     else
@@ -52,17 +56,24 @@ std::expected<void, EngineError> InstantiatePrefabCommand::Apply()
         // ApplyToEntity (its strong guarantee, plan §2.4, means a failure here
         // leaves the freshly (re)created — and thus still bare — entity exactly
         // as it was, which we then destroy below).
-        spawnedEntity_ = registry_->CreateEntityWithUUID(savedUUID_);
-        if (!registry_->IsValid(spawnedEntity_))
+        std::vector<Entity> recreated;
+        for (UUID uuid : savedUUIDs_)
         {
-            return MakeError(EngineErrorCode::OperationFailed,
-                "Failed to recreate entity for prefab instantiation redo", "InstantiatePrefabCommand");
+            Entity e = registry_->CreateEntityWithUUID(uuid);
+            if (!registry_->IsValid(e))
+            {
+                DestroyEntitiesReverse(*registry_, recreated);
+                return MakeError(EngineErrorCode::OperationFailed,
+                    "Failed to recreate entity for prefab instantiation redo", "InstantiatePrefabCommand");
+            }
+            recreated.push_back(e);
         }
+        spawnedEntity_ = recreated.front();
 
-        auto applyResult = loadedAsset_->ApplyToEntity(*registry_, spawnedEntity_);
+        auto applyResult = loadedAsset_->ApplyHierarchyTo(*registry_, recreated);
         if (!applyResult)
         {
-            registry_->DestroyEntity(spawnedEntity_);
+            DestroyEntitiesReverse(*registry_, recreated);
             return std::unexpected(applyResult.error());
         }
     }
@@ -108,7 +119,12 @@ std::expected<void, EngineError> InstantiatePrefabCommand::Undo()
         return MakeError(EngineErrorCode::EntityNotFound, "Entity is no longer valid", "InstantiatePrefabCommand");
     }
 
-    registry_->DestroyEntity(spawnedEntity_);
+    std::vector<Entity> spawned;
+    for (UUID uuid : savedUUIDs_)
+    {
+        spawned.push_back(registry_->GetEntityByUUID(uuid));
+    }
+    DestroyEntitiesReverse(*registry_, spawned);
     return {};
 }
 

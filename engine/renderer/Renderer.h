@@ -16,6 +16,7 @@
 #include "SceneMeshRenderer.h"
 #include "ParticleRenderer.h"
 #include "RenderMode.h"
+#include "DebugLineBuffer.h"
 #include "../animation/MotionPreviewState.h"
 #include <memory>
 
@@ -55,6 +56,9 @@ namespace Engine
         void RenderWithJobSystem(JobSystem* jobSystem);
 
         // Instanced batch rendering interface (PR-3)
+        // Submit*에 넘길 shaderId를 만든다(0 = 실패). 이 함수가 생기기 전에는 호출자가 유효한
+        // shaderId를 얻을 공개 경로가 없어서 Submit*는 사실상 테스트 전용 API였다.
+        uint32_t CreateShaderProgram(const char* vertexSource, const char* fragmentSource);
         Result<void> SubmitInstancedBatch(const RenderBatchKey& batchKey, uint32_t vertexCount, uint32_t instanceCount, uint32_t startVertex = 0, uint32_t baseInstance = 0);
         Result<void> SubmitIndexedInstancedBatch(const RenderBatchKey& batchKey, uint32_t indexCount, uint32_t instanceCount, uint32_t startIndex = 0, uint32_t baseVertex = 0, uint32_t baseInstance = 0);
 
@@ -84,6 +88,12 @@ namespace Engine
         RenderMode GetRenderMode() const { return renderMode; }
 
         void SetMotionPreviewState(MotionPreviewState* state) { motionPreviewState = state; }
+
+        // 에디터 기즈모(카메라 시야 선 등). ECS System이 매 프레임 채우고, 여기서 그린 뒤 EndFrame에서 비운다.
+        // 에디터 카메라로 볼 때만 그린다(Engine::SetViewCamera가 켜고 끔). 게임 화면에는 나오지 않는다.
+        DebugLineBuffer& GetDebugLineBuffer() { return debugLines; }
+        void SetDrawEditorGizmos(bool draw) { drawEditorGizmos = draw; }
+        bool IsDrawingEditorGizmos() const { return drawEditorGizmos; }
         MotionPreviewState* GetMotionPreviewState() const { return motionPreviewState; }
 
         // ROADMAP.md P0-2에서 발견: 씬 에디터/플레이 모드가 각자 별도의 EngineViewport(=
@@ -150,6 +160,10 @@ namespace Engine
         RenderMode renderMode = RenderMode::Scene;
         MotionPreviewState* motionPreviewState = nullptr;  // 소유하지 않음 - Engine이 소유
         std::unique_ptr<BoneLineRenderer> boneLineRenderer;
+
+        // 에디터 기즈모 (GetDebugLineBuffer 주석 참고)
+        DebugLineBuffer debugLines;
+        bool drawEditorGizmos = false;
         
         // Feature flags
         bool frameInProgress;

@@ -31,7 +31,12 @@ namespace Engine
         job->function = func;
         job->data = data;
         job->completed.store(false, std::memory_order_release);
-        job->unfinishedDependencies.store(numDependencies, std::memory_order_release);
+        // 0에서 시작한다. 실제로 기다려야 하는 의존성은 DependencyResolver::SetupDependencies가 센다.
+        // 증상(예전): 의존성이 있는 잡은 절대 실행되지 않았다(RenderGraph::ExecuteParallel이 Wait에서 영원히 멈춤).
+        // 원인: 여기서 numDependencies로 설정한 뒤 SetupDependencies가 미완료 의존성마다 또 +1 해서 이중으로 셌고,
+        // 선행 잡 완료 시에는 1씩만 줄어 0이 되지 않았다. 의존성 디스패치 테스트가 없어서 드러나지 않았다.
+        (void)numDependencies;
+        job->unfinishedDependencies.store(0, std::memory_order_release);
         job->dependents.clear();
 
         // 핸들 생성 (atomic 연산으로 스레드 안전)

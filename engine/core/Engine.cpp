@@ -21,9 +21,15 @@
 #include "PlatformFactory.h"
 #include "../ecs/WorldManager.h"
 #include "../ecs/RenderSystem.h"
+#include "../ecs/CameraSystem.h"
+#include "../ecs/CameraRigSystem.h"
+#include "../ecs/CameraGizmoSystem.h"
 #include "../ecs/ParticleSystem.h"
 #include "../job/JobSystem.h"
 #include "../renderer/Renderer.h"
+#include "../renderer/Texture2D.h"
+#include "../asset/AssetManager.h"
+#include "../asset/importers/TextureImporter.h"
 #include <string>
 #include <memory>
 #include <glm/gtc/matrix_transform.hpp>
@@ -81,6 +87,11 @@ namespace Engine
         // 하나도 안 쌓이는 것과 별개로, Renderer::Tick/LateTick 자체가 호출되지 않고 있었다.
         RegisterSubsystem<Renderer>(std::make_unique<Renderer>());
 
+        // 6-2-1. AssetManager 서브시스템(파일 -> CPU 데이터, 경로 중복 제거). 지금은 텍스처만 이 경로를
+        // 쓴다(메시는 Mesh::loadFromFile). 예전엔 모듈이 빌드만 되고 어디에도 등록되지 않아서 임포터가
+        // 픽셀을 버리는 버그(TextureImporter::Import 주석)도, GetAsset<T> 정의 누락도 드러나지 않았다.
+        RegisterSubsystem<AssetManager>(std::make_unique<AssetManager>());
+
         // 6-3. 임시 기본 카메라
         // World가 아직 하나도 없는 시점(CreateWorld는 이 초기화 이후에 Python에서 호출됨)이라
         // RenderSystem이 ECS Main Camera를 읽어 갱신해주기 전까지의 시작값이 필요하다 -
@@ -95,12 +106,19 @@ namespace Engine
             : 16.0f / 9.0f;
         defaultCamera->setProjection(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
 
+        // 6-3-1. 에디터 카메라(ViewCamera 주석 참고). 시작값은 게임 카메라와 같다.
+        editorCamera = std::make_unique<Camera>();
+        editorCamera->setPosition(glm::vec3(0.0f, 5.0f, 15.0f));
+        editorCamera->lookAt(glm::vec3(0.0f, 0.0f, 0.0f));
+        editorCamera->setProjection(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
+
         // 6-4. Motion Mixer 프리뷰 상태 (Phase 4A)
         motionPreviewState = std::make_unique<MotionPreviewState>();
 
         if (Renderer* renderer = GetSubsystem<Renderer>())
         {
-            renderer->SetMainCamera(defaultCamera.get());
+            renderer->SetMainCamera(viewCamera == ViewCamera::Editor ? editorCamera.get() : defaultCamera.get());
+            renderer->SetDrawEditorGizmos(viewCamera == ViewCamera::Editor);
             renderer->SetMotionPreviewState(motionPreviewState.get());
             renderer->SetViewportSize(config.windowWidth, config.windowHeight);
         }
@@ -376,9 +394,13 @@ namespace Engine
         }
         contextLossLogged = false;
 
+        // 입력 상태: 이번 프레임 이동량을 0으로 되돌리고, 아래 두 경로의 이벤트를 모두 반영한다(InputState.h).
+        inputState.BeginFrame();
+
         InputEvent event;
         while ((event = platform->GetNextInputEvent()).type != InputEventType::None)
         {
+            inputState.Apply(event);
             if (event.type == InputEventType::WindowClose)
             {
                 isRunning = false;
@@ -413,7 +435,7 @@ namespace Engine
                 HandleWindowResize(queuedEvent.windowWidth, queuedEvent.windowHeight);
                 continue;
             }
-            // 필요한 경우 향후 InputSystem/World 등으로 이벤트 전달
+            inputState.Apply(queuedEvent);
         }
 
         // 4. ECS 업데이트 (입력 처리 → ECS 업데이트 → 렌더링 순서)
@@ -461,11 +483,17 @@ namespace Engine
         // 잘리거나 완전히 안 보이게 된다.
         glViewport(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
 
-        // 종횡비가 안 맞으면 그림이 눌리거나 늘어나 보인다 - 기본 카메라도 같이 갱신.
+        // 종횡비가 안 맞으면 그림이 눌리거나 늘어나 보인다. Engine은 종횡비만 갱신한다.
+        // 렌즈(fov/near/far)는 CameraSystem이 활성 CameraComponent 값으로 관리하므로 여기서 덮어쓰지 않는다
+        // (예전에는 60도 고정 투영으로 통째로 덮어써서 CameraComponent.fov가 반영되지 않았다).
+        const float aspect = static_cast<float>(width) / static_cast<float>(height);
         if (defaultCamera)
         {
-            float aspect = static_cast<float>(width) / static_cast<float>(height);
-            defaultCamera->setProjection(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
+            defaultCamera->setAspect(aspect);
+        }
+        if (editorCamera)
+        {
+            editorCamera->setAspect(aspect);
         }
 
         // Renderer가 매 프레임 재적용할 수 있도록 최신 크기를 전달 (Renderer::SetViewportSize
@@ -496,9 +524,51 @@ namespace Engine
             // batchManager는 nullptr로 넘어가고, RenderSystem::Update()는 그 경우 아무 것도
             // 안 하고 조용히 리턴한다 - 시각화가 안 될 뿐 크래시로 이어지진 않는다.
             Renderer* renderer = GetSubsystem<Renderer>();
+
+            // 텍스처 로더: asset/(파일 해석, 픽셀) -> renderer/(GL 업로드)를 여기서 잇는다. 두 모듈이
+            // 서로 모르게 하려고 연결은 조립 지점(Engine)에 둔다. 로더는 RenderSystem::Update 안에서
+            // 불리므로 이 Engine의 GL 컨텍스트가 current다(TickFrame이 매 프레임 보장).
+            RenderSystem::TextureLoader textureLoader;
+            if (AssetManager* assets = GetSubsystem<AssetManager>())
+            {
+                textureLoader = [assets](const std::string& fullPath) -> RenderSystem::LoadedTexture {
+                    auto handle = assets->LoadAsset(fullPath);
+                    if (!handle)
+                    {
+                        Logger::Warning("Texture load failed: {}", handle.error().message);
+                        return {};
+                    }
+                    auto data = assets->GetAsset<TextureData>(handle.value());
+                    if (!data || !data.value())
+                    {
+                        Logger::Warning("Texture load failed: {}",
+                                        data ? std::string("null texture data") : data.error().message);
+                        return {};
+                    }
+                    const TextureData& tex = *data.value();
+                    auto gpu = Texture2D::Create(tex.width, tex.height, tex.channels, tex.pixels.data());
+                    if (!gpu)
+                    {
+                        return {};
+                    }
+                    const uint32_t id = gpu->GetId();
+                    return { id, std::move(gpu) };
+                };
+            }
+
             world->RegisterSystem(std::make_unique<RenderSystem>(
                 renderer ? renderer->GetInstancedBatchManager() : nullptr,
-                defaultCamera.get()));
+                config.assetRoot, RenderSystem::MeshLoader{}, std::move(textureLoader)));
+
+            // ECS 활성 카메라 -> 게임 카메라(위치/시선/렌즈). RenderSystem에서 분리했다(CameraSystem.h).
+            world->RegisterSystem(std::make_unique<CameraSystem>(defaultCamera.get()));
+
+            // 추적/주시/플레이어 조작 카메라가 카메라 엔티티의 Transform을 먼저 계산한다(CameraRigSystem.h).
+            world->RegisterSystem(std::make_unique<CameraRigSystem>(&inputState));
+
+            // 에디터 카메라 기즈모(카메라마다 위치/시야 선). 그릴지는 Renderer가 뷰 카메라에 따라 정한다.
+            world->RegisterSystem(std::make_unique<CameraGizmoSystem>(
+                renderer ? &renderer->GetDebugLineBuffer() : nullptr, defaultCamera.get()));
 
             // VFX Lite Phase 3A(docs/VFX_LITE_PHASE3_RENDERING_PLAN.md §3.8) - 같은 자리에
             // ParticleSystem도 등록한다. Phase 2에서 시뮬레이션은 다 만들었지만 여기까지
@@ -525,6 +595,33 @@ namespace Engine
     World* Engine::GetActiveWorld()
     {
         return worldManager ? worldManager->GetActiveWorld() : nullptr;
+    }
+
+    void Engine::SetViewCamera(ViewCamera which)
+    {
+        viewCamera = which;
+        Camera* camera = (which == ViewCamera::Editor) ? editorCamera.get() : defaultCamera.get();
+        if (Renderer* renderer = GetSubsystem<Renderer>())
+        {
+            if (!camera)
+            {
+                // Initialize 전에 불렸다 - 선택만 기억해 두고 초기화 때 적용된다(InitializeCoreSystems 6-3).
+                return;
+            }
+            renderer->SetMainCamera(camera);
+            renderer->SetDrawEditorGizmos(which == ViewCamera::Editor);
+        }
+    }
+
+    void Engine::SetEditorCameraView(float eyeX, float eyeY, float eyeZ, float targetX, float targetY, float targetZ)
+    {
+        if (!editorCamera)
+        {
+            Logger::Warning("Engine::SetEditorCameraView - called before Initialize; ignored");
+            return;
+        }
+        editorCamera->setPosition(glm::vec3(eyeX, eyeY, eyeZ));
+        editorCamera->lookAt(glm::vec3(targetX, targetY, targetZ));
     }
 
     void Engine::SetRenderMode(RenderMode mode)

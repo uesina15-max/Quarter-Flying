@@ -60,6 +60,14 @@ namespace Engine {
         for (Entity entity : entities) {
             nlohmann::json entityJson;
             entityJson["uuid"] = registry.GetUUID(entity).GetValue();
+            // 이름도 저장한다. 증상: 에디터에서 Play -> Stop을 한 번 하면 Scene Hierarchy의 모든 이름이
+            // "Main Camera" -> "Entity_108"처럼 바뀌었다. 원인: 이 스냅샷(PIE)은 UUID와 컴포넌트만
+            // 저장했고, 복원은 Clear() 후 엔티티를 새로 만들어서(새 runtime id) 이름 매핑이 통째로 사라졌다.
+            // 명시적으로 설정된 이름만 저장한다(GetEntityName의 "Entity_<옛 id>" 대체값을 저장하면
+            // 복원 후 옛 id가 박힌 가짜 이름이 생긴다).
+            if (registry.HasEntityName(entity)) {
+                entityJson["name"] = registry.GetEntityName(entity);
+            }
             nlohmann::json compsJson = nlohmann::json::object();
 
             for (const auto& pair : ComponentRegistry::GetAllComponents()) {
@@ -84,7 +92,10 @@ namespace Engine {
         const auto& entitiesArray = data["entities"];
         for (const auto& entityJson : entitiesArray) {
             UUID uuid = entityJson["uuid"].get<uint64_t>();
-            registry.CreateEntityWithUUID(uuid);
+            Entity created = registry.CreateEntityWithUUID(uuid);
+            if (entityJson.contains("name") && created.IsValid()) {
+                registry.SetEntityName(created, entityJson["name"].get<std::string>());
+            }
         }
 
         // Pass 2: Restore component data using ComponentFactory mapping
@@ -119,7 +130,7 @@ namespace Engine {
     void RegisterPODComponentsReflection() {
         GE_BEGIN_COMPONENT(TransformComponent)
             GE_FIELD(TransformComponent, position, Vec3, "Position")
-            GE_FIELD(TransformComponent, rotation, Vec3, "Rotation")
+            GE_FIELD(TransformComponent, rotation, EulerRotation, "Rotation")  // 저장은 Quaternion, 직렬화/편집은 오일러 각(도)
             GE_FIELD(TransformComponent, scale, Vec3, "Scale")
         GE_END_COMPONENT(TransformComponent)
 
@@ -127,6 +138,8 @@ namespace Engine {
             GE_FIELD(RenderableComponent, meshHandle, Int, "Mesh Handle")
             GE_FIELD(RenderableComponent, materialHandle, Int, "Material Handle")
             GE_FIELD(RenderableComponent, castShadows, Bool, "Cast Shadows")
+            GE_FIELD(RenderableComponent, meshPath, String, "Mesh Path")
+            GE_FIELD(RenderableComponent, texturePath, String, "Texture Path")
         GE_END_COMPONENT(RenderableComponent)
 
         GE_BEGIN_COMPONENT(CameraComponent)
@@ -134,6 +147,8 @@ namespace Engine {
             GE_FIELD(CameraComponent, nearPlane, Float, "Near Plane")
             GE_FIELD(CameraComponent, farPlane, Float, "Far Plane")
             GE_FIELD(CameraComponent, isMainCamera, Bool, "Is Main Camera")
+            GE_FIELD(CameraComponent, priority, Int, "Priority")
+            GE_FIELD(CameraComponent, blendInSeconds, Float, "Blend In (s)")
         GE_END_COMPONENT(CameraComponent)
     }
 
@@ -314,6 +329,33 @@ namespace Engine {
         GE_END_COMPONENT(ActionPlayerComponent)
     }
 
+    void RegisterCameraRigComponentsReflection() {
+        // 카메라 리그 (docs/INGAME_CAMERA_PLAN.md C5, C6). 등록만 하면 Inspector 폼이 자동으로 나온다.
+        GE_BEGIN_COMPONENT(CameraFollowComponent)
+            GE_FIELD(CameraFollowComponent, target, EntityRef, "Target")
+            GE_FIELD(CameraFollowComponent, offset, Vec3, "Offset")
+            GE_FIELD(CameraFollowComponent, damping, Float, "Damping (s)")
+        GE_END_COMPONENT(CameraFollowComponent)
+
+        GE_BEGIN_COMPONENT(CameraLookAtComponent)
+            GE_FIELD(CameraLookAtComponent, target, EntityRef, "Target")
+            GE_FIELD(CameraLookAtComponent, targetOffset, Vec3, "Target Offset")
+        GE_END_COMPONENT(CameraLookAtComponent)
+
+        GE_BEGIN_COMPONENT(CameraOrbitControlComponent)
+            GE_FIELD(CameraOrbitControlComponent, target, EntityRef, "Target")
+            GE_FIELD(CameraOrbitControlComponent, targetOffset, Vec3, "Target Offset")
+            GE_FIELD(CameraOrbitControlComponent, distance, Float, "Distance")
+            GE_FIELD(CameraOrbitControlComponent, minDistance, Float, "Min Distance")
+            GE_FIELD(CameraOrbitControlComponent, maxDistance, Float, "Max Distance")
+            GE_FIELD(CameraOrbitControlComponent, yaw, Float, "Yaw")
+            GE_FIELD(CameraOrbitControlComponent, pitch, Float, "Pitch")
+            GE_FIELD(CameraOrbitControlComponent, sensitivity, Float, "Sensitivity (deg/px)")
+            GE_FIELD(CameraOrbitControlComponent, zoomPerStep, Float, "Zoom Per Wheel Step")
+            GE_FIELD(CameraOrbitControlComponent, requireRightMouse, Bool, "Require Right Mouse")
+        GE_END_COMPONENT(CameraOrbitControlComponent)
+    }
+
     static int InitializeReflection() {
         RegisterPODComponentsReflection();
         RegisterScriptComponentReflection();
@@ -321,6 +363,12 @@ namespace Engine {
         RegisterPrefabComponentsReflection();
         RegisterParticleComponentsReflection();
         RegisterActionPlayerComponentReflection();
+        RegisterCameraRigComponentsReflection();
+
+        // 계층(ecs/Hierarchy.h). parent는 EntityRef라 UUID로 직렬화되어 PIE 스냅샷(2패스 복원)을 통과한다.
+        GE_BEGIN_COMPONENT(HierarchyComponent)
+            GE_FIELD(HierarchyComponent, parent, EntityRef, "Parent")
+        GE_END_COMPONENT(HierarchyComponent)
         return 0;
     }
     static int s_dummyInit = InitializeReflection();

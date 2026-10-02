@@ -175,6 +175,19 @@ namespace Engine
         UnorderedAccess = 1 << 3
     };
 
+    // RenderGraph가 추적하는 텍스처 상태(백엔드 중립). 배리어는 상태가 바뀔 때만 넣는다.
+    // Vulkan image layout / D3D12 resource state로 그대로 매핑할 수 있는 집합이다.
+    enum class ResourceState : uint8_t
+    {
+        Undefined,        // 내용 없음(이번 프레임 처음 쓰는 transient)
+        Common,           // 외부에서 가져온(imported) 리소스의 알 수 없는 초기 상태
+        RenderTarget,
+        DepthWrite,
+        DepthRead,
+        ShaderResource,
+        UnorderedAccess
+    };
+
     using GPUTextureHandle = Handle<GPUTextureHandleTag>; // Physical Backend Allocation
     using GPUBufferHandle = Handle<GPUBufferHandleTag>;   // Physical Backend Allocation
     using GPUVertexArrayHandle = Handle<GPUVertexArrayHandleTag>; // Vertex Array Object

@@ -317,6 +317,14 @@ namespace Engine
             boneLineRenderer->Render(viewProjection, lines);
         }
 
+        // 에디터 기즈모(카메라 시야 선 등). 에디터 카메라로 볼 때만, 씬 모드에서만 그린다.
+        if (renderMode == RenderMode::Scene && drawEditorGizmos && !debugLines.Lines().empty()
+            && boneLineRenderer && boneLineRenderer->IsInitialized() && mainCamera)
+        {
+            glm::mat4 viewProjection = mainCamera->getProjectionMatrix() * mainCamera->getViewMatrix();
+            boneLineRenderer->Render(viewProjection, debugLines.Lines(), glm::vec3(0.35f, 0.85f, 1.0f));  // 하늘색
+        }
+
         // ECS RenderSystem이 이번 프레임에 InstancedBatchManager로 채운 씬 메시를 그린다
         // (ROADMAP.md P0-2). Scene 모드일 때만 - Motion 모드에서는 본 라인이 그 자리를 대신한다.
         if (renderMode == RenderMode::Scene && sceneMeshRenderer && sceneMeshRenderer->IsInitialized()
@@ -410,6 +418,18 @@ namespace Engine
         Logger::Log(LogLevel::Trace, "Renderer::RenderWithJobSystem - Parallel render execution completed");
     }
 
+    uint32_t Renderer::CreateShaderProgram(const char* vertexSource, const char* fragmentSource)
+    {
+        // commandList는 Initialize()에서 항상 OpenGLCommandList로 만든다.
+        auto* glCommandList = static_cast<OpenGLCommandList*>(commandList.get());
+        if (!glCommandList || !glCommandList->GetResourceManager())
+        {
+            Logger::Log(LogLevel::Error, "Renderer::CreateShaderProgram - Renderer is not initialized");
+            return 0;
+        }
+        return glCommandList->GetResourceManager()->CreateShaderProgram(vertexSource, fragmentSource);
+    }
+
     Result<void> Renderer::SubmitInstancedBatch(const RenderBatchKey& batchKey, uint32_t vertexCount, uint32_t instanceCount, uint32_t startVertex, uint32_t baseInstance)
     {
         if (!commandList)
@@ -425,7 +445,13 @@ namespace Engine
             return MakeUnexpected(EngineErrorCode::InvalidBatchKey, "Invalid batch key provided", "Renderer");
         }
 
-        commandList->SetShader(batchKey.shaderId);
+        // 셰이더가 무효하면 draw를 발행하지 않고 에러를 돌려준다. 예전에는 SetShader가 로그만 남기고
+        // 여기서는 결과를 알 수 없어서 프로그램 0 상태로 그대로 그렸다(docs/REVIEW_BASED_IMPROVEMENT_PLAN.md P0-1).
+        if (!commandList->SetShader(batchKey.shaderId))
+        {
+            return MakeUnexpected(EngineErrorCode::InvalidParameter,
+                "Shader " + std::to_string(batchKey.shaderId) + " is not a valid shader program", "Renderer");
+        }
         commandList->DrawArraysInstanced(vertexCount, instanceCount, startVertex, baseInstance);
         return {};
     }
@@ -445,8 +471,18 @@ namespace Engine
             return MakeUnexpected(EngineErrorCode::InvalidBatchKey, "Invalid batch key provided", "Renderer");
         }
 
-        commandList->SetShader(batchKey.shaderId);
-        commandList->DrawIndexedInstanced(indexCount, instanceCount, startIndex, baseVertex, baseInstance);
+        // 셰이더가 무효하면 draw를 발행하지 않고 에러를 돌려준다. 예전에는 SetShader가 로그만 남기고
+        // 여기서는 결과를 알 수 없어서 프로그램 0 상태로 그대로 그렸다(docs/REVIEW_BASED_IMPROVEMENT_PLAN.md P0-1).
+        if (!commandList->SetShader(batchKey.shaderId))
+        {
+            return MakeUnexpected(EngineErrorCode::InvalidParameter,
+                "Shader " + std::to_string(batchKey.shaderId) + " is not a valid shader program", "Renderer");
+        }
+        if (!commandList->DrawIndexedInstanced(indexCount, instanceCount, startIndex, baseVertex, baseInstance))
+        {
+            return MakeUnexpected(EngineErrorCode::InvalidState,
+                "Indexed draw skipped: no index buffer bound (see OpenGLCommandList::DrawIndexedInstanced)", "Renderer");
+        }
         return {};
     }
 
@@ -479,6 +515,10 @@ namespace Engine
 
     void Renderer::EndFrame()
     {
+        // 기즈모 선은 그렸든 안 그렸든(Motion 모드, 게임 카메라 보기) 매 프레임 비운다.
+        // 그리지 않는 프레임에 비우지 않으면 System이 매 프레임 추가하는 선이 끝없이 쌓인다.
+        debugLines.Clear();
+
         if (!frameInProgress)
         {
             Logger::Log(LogLevel::Warning, "Renderer::EndFrame - No frame in progress");

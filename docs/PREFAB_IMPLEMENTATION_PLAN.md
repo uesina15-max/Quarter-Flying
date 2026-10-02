@@ -403,6 +403,28 @@ public:
 
 §1에서 짚은 "엔티티 계층 컴포넌트 부재"를 실제로 메꿔야 하는 지점. `FieldType::EntityRef`(이미 리플렉션 매크로가 지원)를 쓰는 `HierarchyComponent{parent: EntityRef}` 도입이 전제 조건. MASTER_PLAN.md §2의 P2 "프리팹 베리언트"(Apply의 다중 인스턴스 역전파 포함)도 여기서 같이 다룬다. 착수 전에 이 계획서에 별도 절로 다시 설계를 채워 넣는다 — 지금은 "여기서 이어진다"는 지점만 표시해둔다.
 
+#### Phase 5A 구현 기록 (2026-10-01) — 계층 컴포넌트 + 다중 엔티티 프리팹
+
+**검증 단계**: 컴파일 ✓ / 유닛 테스트 ✓ (`HierarchyTests` 17개, 전체 545/545) / 실제 에디터 실행 ✓ — Lamp 프리팹(엔티티 4개)이 Scene Hierarchy에 트리로 나오고, 루트만 옮기면 자식이 같이 움직이며(같은 카메라 전후 캡처), **실제 OS 마우스 드래그**로 Test Cube를 Head 아래로 옮기면 부모가 바뀌고 화면에서 제자리에 있으며, Ctrl+Z로 되돌아가는 것을 캡처와 엔진 상태로 확인했다. 베리언트/Apply 역전파는 아직 없다(Phase 5B).
+
+설계 결정 (`INGAME_UI_CUSTOMIZATION_PLAN.md` §4.1 초안과 다른 점 포함):
+
+- **`HierarchyComponent{Entity parent}`만 저장한다.** §4.1 초안의 `children` 배열은 두지 않는다. 부모 쪽 목록과 자식 쪽 parent가 어긋날 수 있고, 리플렉션이 배열 필드를 직렬화하지 못한다. 자식 목록은 `GetChildren()`이 조회 시 계산한다(`ecs/Hierarchy.h`).
+- **순환**: 쓰기 경로 `SetParent()`가 거절한다. Inspector/`SetComponentJson`처럼 필드를 직접 쓰는 경로를 대비해, 조상을 따라가는 모든 함수는 깊이 64에서 멈추고 엔티티당 한 번 경고한다. Inspector의 Parent 필드 편집은 `EditorAPI.set_parent`로 보낸다.
+- **월드 변환**: 메시(`RenderSystem`), 파티클 이미터, 활성 카메라(`CameraSystem`), 카메라 기즈모가 부모 체인을 곱한 월드 값을 쓴다. 카메라 리그(Follow/LookAt/Orbit)는 대상의 **월드** 위치를 따라가지만, 리그가 붙은 카메라 자신에게 부모가 있으면 건너뛰고 경고한다(리그는 월드 값을 Transform에 직접 쓰므로).
+- **부모 변경 시 Transform**: 에디터 경로(드래그/Inspector, `SetParentCommand`)는 **월드 위치 유지**. 처음에는 로컬 유지로 만들었는데, 실제 에디터에서 드래그한 큐브가 새 부모의 회전/스케일로 다시 해석돼 화면 밖으로 사라졌다. 프리팹 스폰은 로컬 값이 곧 데이터이므로 로컬 유지.
+- **파일 포맷 v2**: `{"version": 2, "name", "entities": [{name, components}, {name, parent: <index>, components}, ...]}`. `parent`는 배열 인덱스이고 **자기보다 앞**이어야 한다(손으로 고친 파일의 순환을 원천 차단). `HierarchyComponent` 자체는 파일에 넣지 않는다(`SerializeOptions::excludeHierarchy`). 자식이 없으면 계속 v1으로 저장한다. 다른 EntityRef(카메라 리그 target 등)는 여전히 캡처를 거절한다.
+- **Definition A 예외 추가**: `HierarchyComponent`는 `ApplyToEntity`가 지우지 않는다(인스턴스가 씬 어디에 붙어 있는지는 프리팹 내용이 아니다). 없으면 부모 아래 둔 인스턴스를 Revert할 때 조용히 떨어져 나갔다.
+- **명령**: 삭제는 자손까지 함께(Undo는 전부 원래 UUID로 복원 — 부모만 지우면 자식이 루트로 튀어나오고, 부모를 되살려도 런타임 id가 달라 다시 연결되지 않는다). 인스턴스화 Undo/Redo는 모든 엔티티의 UUID를 기억한다. v2 프리팹의 Revert는 자식 집합을 프리팹과 똑같이 되돌린다(현재 자손 파괴 후 재생성, Undo로 원래 자손 복원). v1 프리팹의 Revert는 사용자가 붙인 자손을 건드리지 않는다.
+- **스폰된 루트 이름**: 프리팹 이름으로 설정한다. 이전에는 인스턴스가 이름 없이 `Entity_<id>`로 보여서 트리가 읽기 어려웠다.
+
+알려진 한계: 부모가 비균등 스케일이면서 회전된 경우, 월드 위치를 유지하는 재부모화와 `ComputeWorldTransform`의 스케일은 근사값이다(그리기는 정확한 행렬을 쓴다).
+
+남은 작업. 할 일과 근거는 `REVIEW_BASED_IMPROVEMENT_PLAN.md`에 있다.
+- **Phase 5B: 베리언트 + 인스턴스 수정을 원본에 반영(Apply)** → P2-7. 착수 전에 이 문서에 설계 절을 먼저 추가한다(오버라이드 기록, 다른 인스턴스로의 전파, `sourceRevision`, 베리언트 포맷, 자식 식별).
+- **형제 순서 저장** → P2-8. 지금은 트리가 id(= 생성) 순서다.
+- **Scene Hierarchy "Duplicate" 메뉴 엔진 연결** → P1-5. 지금은 더미 트리 항목만 만들고, 500ms 뒤 사라진다.
+
 ---
 
 ## 4. 진행 순서 요약

@@ -24,7 +24,7 @@ from PySide6.QtGui import QPainter, QColor, QPen, QBrush
 
 from core.action_data import ActionData, EventType
 from core.action_playback import ActionPlaybackCursor, events_of_type
-from core.sound_player import SoundPlayer, collect_clip_paths
+from core.sound_player import SoundPlayer, collect_clip_paths, resolve_clip_path
 from panels.motion_mixer import MotionMixerPanel
 from style.theme import COLORS
 
@@ -267,6 +267,8 @@ class AnimationPreviewPanel(QWidget):
             clips = collect_clip_paths(action, base_dir)
             if clips:
                 self._sound.preload(clips)
+        # 재생도 preload와 같은 기준으로 clip을 푼다(sound_player.resolve_clip_path 주석 참고).
+        self._clip_base = base_dir
 
     def set_current_frame(self, frame: int):
         self._current_frame = frame
@@ -368,7 +370,7 @@ class AnimationPreviewPanel(QWidget):
             if not clip:
                 continue
             self._sound.play(
-                clip,
+                resolve_clip_path(clip, getattr(self, "_clip_base", None)),
                 volume=float(params.get("volume", 1.0)),
                 volume_var=float(params.get("volumeVar", 0.0)),
             )

@@ -22,6 +22,16 @@ file(GLOB_RECURSE JOB_SOURCES
     "../job/*.cpp"
 )
 
+file(GLOB_RECURSE ASSET_SOURCES
+    "../asset/*.h"
+    "../asset/*.cpp"
+)
+
+file(GLOB_RECURSE INPUT_SOURCES
+"../input/*.h"
+    "../input/*.cpp"
+)
+
 file(GLOB_RECURSE ECS_SOURCES
     "../ecs/*.h"
     "../ecs/*.cpp"
@@ -95,6 +105,8 @@ add_executable(SimpleEngineTests
     ../editor/commands/RemoveComponentCommand.cpp
     ../editor/commands/InstantiatePrefabCommand.cpp
     ../editor/commands/RevertPrefabInstanceCommand.cpp
+    ../editor/commands/EntitySnapshot.cpp
+    ../editor/commands/SetParentCommand.cpp
 
     # --- RenderGraph Tests ---
     HandleTypeContractTests.cpp
@@ -107,6 +119,7 @@ add_executable(SimpleEngineTests
     RenderGraphPhysicalResourceTests.cpp
     RenderGraphPropertyTests.cpp
     RenderGraphUnitTests.cpp
+    RenderGraphBarrierStateTests.cpp
 
     # --- Motion Mixer / Animation Tests ---
     SkeletonTests.cpp
@@ -117,6 +130,15 @@ add_executable(SimpleEngineTests
 
     # --- RenderSystem Tests (P0-2) ---
     RenderSystemTests.cpp
+
+    # --- Asset module (P1-2: 텍스처 로드 경로) ---
+    AssetManagerTests.cpp
+
+    # --- Transform rotation reflection (EulerRotation) ---
+    TransformRotationTests.cpp
+
+    # --- Camera rig (C5/C6) + InputState ---
+    CameraRigTests.cpp
 
     # --- Sound Lite Tests (Phase 5) ---
     ActionPlayerComponentTests.cpp
@@ -131,11 +153,16 @@ add_executable(SimpleEngineTests
     InstantiatePrefabCommandTests.cpp
     RevertPrefabInstanceCommandTests.cpp
 
+    # --- Hierarchy + multi-entity prefabs (Prefab Phase 5) ---
+    HierarchyTests.cpp
+
     ${CORE_SOURCES}
     ${PLATFORM_SOURCES}
     ${JOB_SOURCES}
     ${ECS_SOURCES}
-    ${RENDERER_SOURCES}
+    ${INPUT_SOURCES}
+    ${ASSET_SOURCES}
+${RENDERER_SOURCES}
     ${ANIMATION_SOURCES}
     ${PREFAB_SOURCES}
 )
@@ -147,7 +174,8 @@ add_executable(SimpleEngineTests
 # glfw: 프로젝트 전체에서 이미 제거된 의존성인데("GLFW dependency excluded" - Dependencies.cmake)
 # 이 링크 목록에만 죽은 참조로 남아 있어서 링크 단계에서 LNK1181로 실패하고 있었다. 제거.
 target_link_libraries(SimpleEngineTests PRIVATE gtest rapidcheck fmt::fmt glm::glm nlohmann_json::nlohmann_json glew_s tinyobjloader)
-target_include_directories(SimpleEngineTests PRIVATE ${GLEW_TRUE_INCLUDE_DIR})
+# STB_INCLUDE_DIR: ASSET_SOURCES의 TextureImporter.cpp가 stb_image.h를 쓴다.
+target_include_directories(SimpleEngineTests PRIVATE ${GLEW_TRUE_INCLUDE_DIR} ${STB_INCLUDE_DIR})
 
 # Definitions
 target_compile_definitions(SimpleEngineTests PRIVATE ENABLE_TESTS)

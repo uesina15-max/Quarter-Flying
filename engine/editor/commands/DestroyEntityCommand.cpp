@@ -1,6 +1,5 @@
 #include "DestroyEntityCommand.h"
 #include "../../ecs/ECSRegistry.h"
-#include "../../ecs/Reflection.h"
 
 namespace Engine
 {
@@ -23,23 +22,21 @@ std::expected<void, EngineError> DestroyEntityCommand::Apply()
         return MakeError(EngineErrorCode::EntityNotFound, "Target entity is not valid", "DestroyEntityCommand");
     }
 
-    // 최초 Apply: 스냅샷 캡처
+    // 최초 Apply: 대상 + 자손 스냅샷. Redo에서도 같은 스냅샷을 쓴다(Undo가 같은 UUID로 되살리므로).
     if (!snapshotCaptured_)
     {
-        snapshot_.uuid = registry_->GetUUID(entity_);
-        snapshot_.name = registry_->GetEntityName(entity_);
-
-        // ComponentRegistry를 순회하며 모든 컴포넌트 직렬화
-        nlohmann::json componentData;
-        for (auto& [name, info] : ComponentRegistry::GetAllComponents())
-        {
-            info.serialize(*registry_, entity_, componentData);
-        }
-        snapshot_.componentData = std::move(componentData);
+        snapshots_ = CaptureSubtreeSnapshots(*registry_, entity_);
         snapshotCaptured_ = true;
     }
 
-    registry_->DestroyEntity(entity_);
+    // Redo 시점의 런타임 엔티티는 UUID로 찾는다(Undo가 새 런타임 id로 되살렸다).
+    std::vector<Entity> toDestroy;
+    toDestroy.reserve(snapshots_.size());
+    for (const EntitySnapshot& snapshot : snapshots_)
+    {
+        toDestroy.push_back(registry_->GetEntityByUUID(snapshot.uuid));
+    }
+    DestroyEntitiesReverse(*registry_, toDestroy);
     return {};
 }
 
@@ -55,27 +52,14 @@ std::expected<void, EngineError> DestroyEntityCommand::Undo()
         return MakeError(EngineErrorCode::InvalidState, "No snapshot available to restore", "DestroyEntityCommand");
     }
 
-    // 저장된 UUID로 Entity 복원
-    Entity newEntity = registry_->CreateEntityWithUUID(snapshot_.uuid);
-    if (!registry_->IsValid(newEntity))
+    auto restored = RestoreEntitySnapshots(*registry_, snapshots_);
+    if (!restored)
     {
-        return MakeError(EngineErrorCode::OperationFailed, "Failed to recreate entity", "DestroyEntityCommand");
-    }
-
-    // 이름 복원
-    registry_->SetEntityName(newEntity, snapshot_.name);
-
-    // 각 컴포넌트를 역직렬화로 복원
-    for (auto& [name, info] : ComponentRegistry::GetAllComponents())
-    {
-        if (snapshot_.componentData.contains(name))
-        {
-            info.deserialize(*registry_, newEntity, snapshot_.componentData[name]);
-        }
+        return std::unexpected(restored.error());
     }
 
     // 복원된 entity를 추후 Redo에서 재삭제할 수 있도록 갱신
-    entity_ = newEntity;
+    entity_ = restored->front();
     return {};
 }
 

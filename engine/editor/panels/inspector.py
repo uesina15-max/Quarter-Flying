@@ -157,7 +157,7 @@ class DynamicComponentWidget(ComponentWidget):
                 widget.editingFinished.connect(make_change_handler(field['name']))
                 h.addWidget(widget)
                 
-            elif ftype == 3: # Vec3
+            elif ftype in (3, 7): # Vec3 / EulerRotation(오일러 각 도 단위 3개 값 - Reflection.h FieldType)
                 v_layout = QHBoxLayout()
                 v_layout.setSpacing(2)
                 widget = []
@@ -175,17 +175,25 @@ class DynamicComponentWidget(ComponentWidget):
                 h.addLayout(v_layout)
                 
             elif ftype == 5: # EntityRef
+                # 콤보 항목의 데이터는 runtime id가 아니라 UUID(문자열)다. 엔진은 EntityRef를 UUID로
+                # 직렬화하고(GetComponentJson), 필드 패치도 UUID로 해석한다(Reflection.h patchField의
+                # GetEntityByUUID). 문자열인 이유: UUID는 uint64라 QVariant의 부호 있는 64비트 정수에
+                # 담으면 큰 값이 깨질 수 있다.
+                # 증상(예전): 목록에 "None"만 나왔고, 값을 표시하지도 바꾸지도 못했다. 원인은 세 가지였다.
+                #   1) GetEntityName(e.id)에 raw int를 넘겨 pybind11이 "incompatible function arguments"를
+                #      던졌고, 바로 아래 bare except가 그걸 삼켰다.
+                #   2) 표시: 저장값(UUID)과 콤보 데이터(runtime id)가 달라 findData가 항상 실패했다.
+                #   3) 변경: runtime id를 보내면 엔진이 그것을 UUID로 해석해 엉뚱한 엔티티(또는 무효)가 됐다.
                 widget = QComboBox()
-                # Populate Entity List
-                widget.addItem("None", 0)
+                widget.addItem("None", "0")
                 if HAS_ENGINE and self.registry:
                     try:
-                        entities = self.registry.GetAllEntities()
-                        for e in entities:
-                            fname = self.registry.GetEntityName(e.id)
-                            widget.addItem(f"{fname} (ID: {e.id})", e.id)
-                    except:
-                        pass
+                        for e in self.registry.GetAllEntities():
+                            fname = self.registry.GetEntityName(e)
+                            uuid = self.registry.GetEntityUUID(e)
+                            widget.addItem(f"{fname} (ID: {e.id})", str(uuid))
+                    except Exception as ex:
+                        print(f"[Inspector] EntityRef 목록 구성 실패({field['name']}): {ex}")
                 widget.currentIndexChanged.connect(make_change_handler(field['name']))
                 h.addWidget(widget)
                 
@@ -333,11 +341,14 @@ class DynamicComponentWidget(ComponentWidget):
                         w.setValue(val)
                     elif ftype == 4:
                         w.setText(str(val))
-                    elif ftype == 3:
+                    elif ftype in (3, 7):
                         w[0].setValue(val[0])
                         w[1].setValue(val[1])
                         w[2].setValue(val[2])
-                    elif ftype in (5, 6):
+                    elif ftype == 5:
+                        idx = w.findData(str(int(val or 0)))   # EntityRef: UUID 문자열로 비교
+                        if idx >= 0: w.setCurrentIndex(idx)
+                    elif ftype == 6:
                         idx = w.findData(val)
                         if idx >= 0: w.setCurrentIndex(idx)
             self._building = False
@@ -362,8 +373,9 @@ class DynamicComponentWidget(ComponentWidget):
         if ftype == 2: val = w.isChecked()
         elif ftype in (0, 1): val = w.value()
         elif ftype == 4: val = w.text()
-        elif ftype == 3: val = [w[0].value(), w[1].value(), w[2].value()]
-        elif ftype in (5, 6): val = w.currentData()
+        elif ftype in (3, 7): val = [w[0].value(), w[1].value(), w[2].value()]
+        elif ftype == 5: val = int(w.currentData() or "0")   # EntityRef: UUID(정수)로 보낸다
+        elif ftype == 6: val = w.currentData()
         
         try:
             if self._uses_editor_api(fname):
@@ -371,6 +383,14 @@ class DynamicComponentWidget(ComponentWidget):
                     to_entity(self.entity_id),
                     ge_python.Vec3(val[0], val[1], val[2]),
                 )
+                return
+
+            if self.editor_api is not None and self.comp_name == "HierarchyComponent" and fname == "parent":
+                # 필드를 직접 쓰면(SetComponentFieldJson) 순환 검사도 Undo도 없다 - 자기 자손을 부모로
+                # 고르면 계층이 순환하고 엔진은 경고만 남긴 채 그 체인을 루트로 끊는다. 드래그와 같은
+                # EditorAPI.set_parent 경로로 보내서 순환은 거절되고 Ctrl+Z가 되게 한다.
+                parent = self.registry.GetEntityByUUID(val) if val else None
+                self.editor_api.set_parent(to_entity(self.entity_id), parent)
                 return
 
             # Partial Single-Field Update calling with schema version protection!

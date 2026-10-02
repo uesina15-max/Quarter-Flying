@@ -30,8 +30,7 @@
 
 namespace Engine
 {
-    // Static pointer to access platform instance in WindowProc
-    static Win32Platform* g_PlatformInstance = nullptr;
+    // WindowProc는 창(HWND)마다 자기 Win32Platform을 GWLP_USERDATA에서 찾는다(WindowProc 주석 참고).
 
     Win32Platform::Win32Platform()
         : hInstance(nullptr)
@@ -41,7 +40,6 @@ namespace Engine
         , lastMouseY(0)
         , initialized(false)
     {
-        g_PlatformInstance = this;
     }
 
     Win32Platform::~Win32Platform()
@@ -50,7 +48,6 @@ namespace Engine
         {
             Shutdown();
         }
-        g_PlatformInstance = nullptr;
     }
 
     bool Win32Platform::Initialize()
@@ -189,7 +186,7 @@ namespace Engine
             nullptr,
             nullptr,
             hInstance,
-            nullptr
+            this   // WM_NCCREATE에서 GWLP_USERDATA에 저장된다(WindowProc)
         );
 
         delete[] wideTitle;
@@ -198,7 +195,8 @@ namespace Engine
         {
             DWORD error = GetLastError();
             Logger::Log(LogLevel::Error, "Failed to create Win32 window (Error: {})", error);
-            delete[] wideTitle;
+            // 여기서 wideTitle을 한 번 더 delete[] 하고 있었다(바로 위에서 이미 해제함) - 창 생성이
+            // 실패하는 경로에서만 일어나는 이중 해제라 드러나지 않았다.
             return WindowHandle();
         }
 
@@ -484,20 +482,35 @@ namespace Engine
 
     LRESULT CALLBACK Win32Platform::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
-        if (!g_PlatformInstance)
+        // 창마다 자기 Win32Platform을 찾는다. 예전에는 프로세스 전역 g_PlatformInstance 하나였다. 생성자가
+        // 덮어쓰고 소멸자가 무조건 nullptr로 만들어서, Win32Platform이 둘 이상이면(예: Engine 두 개) 나중에
+        // 만든 쪽이 입력을 가로채고, 한쪽이 파괴되면 다른 쪽 창의 입력이 끊겼다
+        // (docs/REVIEW_BASED_IMPROVEMENT_PLAN.md P1-4).
+        Win32Platform* self = nullptr;
+        if (msg == WM_NCCREATE)
+        {
+            auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            self = static_cast<Win32Platform*>(cs->lpCreateParams);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        }
+        else
+        {
+            self = reinterpret_cast<Win32Platform*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        }
+        if (!self)
         {
             return DefWindowProc(hwnd, msg, wParam, lParam);
         }
 
-        if (auto res = HandleWindowLifecycleMessage(hwnd, msg, wParam, lParam))
+        if (auto res = HandleWindowLifecycleMessage(self, hwnd, msg, wParam, lParam))
         {
             return *res;
         }
-        if (auto res = HandleKeyboardMessage(hwnd, msg, wParam, lParam))
+        if (auto res = HandleKeyboardMessage(self, hwnd, msg, wParam, lParam))
         {
             return *res;
         }
-        if (auto res = HandleMouseMessage(hwnd, msg, wParam, lParam))
+        if (auto res = HandleMouseMessage(self, hwnd, msg, wParam, lParam))
         {
             return *res;
         }
@@ -505,21 +518,21 @@ namespace Engine
         return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 
-    std::optional<LRESULT> Win32Platform::HandleWindowLifecycleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    std::optional<LRESULT> Win32Platform::HandleWindowLifecycleMessage(Win32Platform* self, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         InputEvent event;
         switch (msg)
         {
         case WM_CLOSE:
             event.type = InputEventType::WindowClose;
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_SIZE:
             event.type = InputEventType::WindowResize;
             event.windowWidth = LOWORD(lParam);
             event.windowHeight = HIWORD(lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_DESTROY:
@@ -529,7 +542,7 @@ namespace Engine
         return std::nullopt;
     }
 
-    std::optional<LRESULT> Win32Platform::HandleKeyboardMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    std::optional<LRESULT> Win32Platform::HandleKeyboardMessage(Win32Platform* self, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         InputEvent event;
         switch (msg)
@@ -537,21 +550,21 @@ namespace Engine
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
             event.type = InputEventType::KeyDown;
-            event.keyCode = g_PlatformInstance->TranslateKeyCode(wParam, lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            event.keyCode = self->TranslateKeyCode(wParam, lParam);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_KEYUP:
         case WM_SYSKEYUP:
             event.type = InputEventType::KeyUp;
-            event.keyCode = g_PlatformInstance->TranslateKeyCode(wParam, lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            event.keyCode = self->TranslateKeyCode(wParam, lParam);
+            self->PushInputEvent(event);
             return 0;
         }
         return std::nullopt;
     }
 
-    std::optional<LRESULT> Win32Platform::HandleMouseMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    std::optional<LRESULT> Win32Platform::HandleMouseMessage(Win32Platform* self, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         InputEvent event;
         switch (msg)
@@ -560,11 +573,11 @@ namespace Engine
             event.type = InputEventType::MouseMove;
             event.mouseX = GET_X_LPARAM(lParam);
             event.mouseY = GET_Y_LPARAM(lParam);
-            event.mouseDeltaX = event.mouseX - g_PlatformInstance->lastMouseX;
-            event.mouseDeltaY = event.mouseY - g_PlatformInstance->lastMouseY;
-            g_PlatformInstance->lastMouseX = event.mouseX;
-            g_PlatformInstance->lastMouseY = event.mouseY;
-            g_PlatformInstance->PushInputEvent(event);
+            event.mouseDeltaX = event.mouseX - self->lastMouseX;
+            event.mouseDeltaY = event.mouseY - self->lastMouseY;
+            self->lastMouseX = event.mouseX;
+            self->lastMouseY = event.mouseY;
+            self->PushInputEvent(event);
             return 0;
 
         case WM_LBUTTONDOWN:
@@ -572,7 +585,7 @@ namespace Engine
             event.mouseButton = MouseButton::Left;
             event.mouseX = GET_X_LPARAM(lParam);
             event.mouseY = GET_Y_LPARAM(lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_LBUTTONUP:
@@ -580,7 +593,7 @@ namespace Engine
             event.mouseButton = MouseButton::Left;
             event.mouseX = GET_X_LPARAM(lParam);
             event.mouseY = GET_Y_LPARAM(lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_RBUTTONDOWN:
@@ -588,7 +601,7 @@ namespace Engine
             event.mouseButton = MouseButton::Right;
             event.mouseX = GET_X_LPARAM(lParam);
             event.mouseY = GET_Y_LPARAM(lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_RBUTTONUP:
@@ -596,7 +609,7 @@ namespace Engine
             event.mouseButton = MouseButton::Right;
             event.mouseX = GET_X_LPARAM(lParam);
             event.mouseY = GET_Y_LPARAM(lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_MBUTTONDOWN:
@@ -604,7 +617,7 @@ namespace Engine
             event.mouseButton = MouseButton::Middle;
             event.mouseX = GET_X_LPARAM(lParam);
             event.mouseY = GET_Y_LPARAM(lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_MBUTTONUP:
@@ -612,7 +625,7 @@ namespace Engine
             event.mouseButton = MouseButton::Middle;
             event.mouseX = GET_X_LPARAM(lParam);
             event.mouseY = GET_Y_LPARAM(lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
 
         case WM_MOUSEWHEEL:
@@ -620,7 +633,7 @@ namespace Engine
             event.mouseWheelDelta = GET_WHEEL_DELTA_WPARAM(wParam) / (float)WHEEL_DELTA;
             event.mouseX = GET_X_LPARAM(lParam);
             event.mouseY = GET_Y_LPARAM(lParam);
-            g_PlatformInstance->PushInputEvent(event);
+            self->PushInputEvent(event);
             return 0;
         }
         return std::nullopt;

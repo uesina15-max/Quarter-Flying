@@ -18,6 +18,7 @@
     {
       "name": "center_pyramid",
       "model": "assets/models/pyramid.obj",
+      "texture": "assets/textures/checker.png",
       "instances": [
         {
           "position": [0.0, 3.0, 0.0],
