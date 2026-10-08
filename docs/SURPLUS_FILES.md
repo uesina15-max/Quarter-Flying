@@ -2,6 +2,14 @@
 
 > **2026-09-30 정리 결과:** 1번만 처리했다. `새 텍스트 문서.txt`(옛 ge_python 오류 메모, git 이력에 남음)와 빌드 로그 7개, 빈 `editor/qml/`는 삭제했다. `새 텍스트 문서 (2).txt`는 확인해 보니 VFX Lite 타당성 검토 보고서(git 미추적, 삭제 시 복구 불가)라서 `docs/archive/VFX_LITE_FEASIBILITY_REVIEW.txt`로 옮겨 보존했다. 2번의 `engine/asset/`은 삭제하지 않고 **텍스처 기능으로 연결하기로 했다**(사용자 결정: 정적 분석상 미사용이라고 지우면, 에디터 사용자는 기능이 구현되지 않은 것으로 경험한다). 나머지 2번 코드와 3번 문서는 그대로 두었다.
 
+> **2026-10-07 정리 결과:** 3번 문서를 처리했다. 아무것도 삭제하지 않았다. 내용을 고치지 않고 당시 기록 그대로 `git mv`로 옮겼으므로 이력이 이어진다.
+> - `docs/archive/`로 이동: `PLAN.md`, `PROBLEM_ANALYSIS_REPORT.md`, `UNUSED_AND_LEGACY_REPORT.md`(이상 루트), `engine/ARCHIVE_INFO.md`, `docs/PYTHON_EDITOR_BUG_ANALYSIS_KO.md`, `docs/ge_python_api_dump_20260810.txt`(옛 모듈명 `ge_python` 기준 API 덤프), `docs/ARCHITECTURE_KO.md`(옛 이름 "GE" 기준, 실제 코드에 없는 ImGui 통합을 기술함)
+> - `docs/archive/legacy/`로 이동: `docs/ARCHITECTURE_IMPROVEMENT_PLAN.md`(2026-07-30, 같은 계열의 v3·4차 리뷰본이 이미 legacy에 있음), `engine/editor/PHASE1~3_*.md`(2026-07-28 GUI 단일화 기록, 같은 계열의 `FINAL_SINGLE_GUI_REPORT.md`가 이미 legacy에 있음)
+> - 제거: `docs/architecture/ARCHITECTURE_KO.md` — `docs/ARCHITECTURE_KO.md`와 내용이 완전히 같은 사본이었다(`diff` 확인). 원본은 위처럼 보관했다.
+> - 이 문서들을 가리키던 링크·경로는 README, ROADMAP, MASTER_PLAN, PYTHON_BINDING 계획서, INGAME_UI 계획서에서 새 위치로 고쳤다. `docs/archive/` 안의 문서끼리의 참조는 당시 기록이므로 고치지 않았다.
+> - 판단 보류: `docs/PERFORMANCE_IMPROVEMENTS_KO.md`, `docs/PERFORMANCE_OPTIMIZATION_GUIDE.md`. 2026-08-10 이후 수정도 참조도 없지만, 지금도 존재하는 LOD·컬링 코드를 설명하므로 오래됐다고 단정하지 않았다. 내용이 현재 코드와 맞는지는 확인하지 않았다(확인 필요).
+> - 같은 날 루트의 임시 파일 두 개를 `docs/`의 정식 문서로 옮겼다: `Untitled-1.md` → `docs/GAME_BUILD_PLAN.md`, `새 텍스트 문서.txt`(2026-10-07 코드 리뷰) → `docs/CODE_REVIEW_2026-10-07.md`.
+
 기준: 코드/빌드/문서 어디에서도 참조되지 않거나, 임시 산출물인 파일이다. 아직 아무것도 삭제하지 않았다.
 
 ## 1. 임시 파일 / 로그 (삭제 권장)

@@ -3,6 +3,7 @@
 #include "AssetImporter.h"
 #include "importers/TextureImporter.h"
 #include "../core/logging/Logger.h"
+#include "../core/Utf8Path.h"
 #include <fstream>
 #include <filesystem>
 
@@ -76,8 +77,8 @@ namespace Engine
         }
 
         // Path normalization
-        std::filesystem::path fsPath(path);
-        std::string normalizedPath = fsPath.lexically_normal().string();
+        std::filesystem::path fsPath = PathFromUtf8(path);
+        std::string normalizedPath = Utf8FromPath(fsPath.lexically_normal());   // core/Utf8Path.h
 
         // Check if already loaded in registry
         auto existingHandle = registry.FindAssetByPath(normalizedPath);
@@ -93,7 +94,7 @@ namespace Engine
                     // 전부 언로드된 뒤 다시 요청된 경우. 예전에는 참조 카운트만 올리고 핸들을 돌려줘서
                     // 호출자는 "로드 성공"을 받는데 GetAsset은 AssetNotFound였다(레지스트리엔 남고 데이터만
                     // 지워진 상태). 이미 등록된 경로라 ImportAsset은 중복 등록으로 실패하므로 데이터만 다시 읽는다.
-                    AssetImporter* importer = FindImporter(std::filesystem::path(metadata->sourcePath).extension().string());
+                    AssetImporter* importer = FindImporter(Utf8FromPath(PathFromUtf8(metadata->sourcePath).extension()));
                     if (!importer)
                     {
                         return MakeError<AssetHandle>(EngineErrorCode::UnsupportedAssetType,
@@ -186,7 +187,7 @@ namespace Engine
         }
 
         // File existence check
-        if (!std::filesystem::exists(sourcePath))
+        if (!std::filesystem::exists(PathFromUtf8(sourcePath)))
         {
             return MakeError<AssetHandle>(
                 EngineErrorCode::FileNotFound,
@@ -196,8 +197,8 @@ namespace Engine
         }
 
         // Extract extension
-        std::filesystem::path fsPath(sourcePath);
-        std::string extension = fsPath.extension().string();
+        std::filesystem::path fsPath = PathFromUtf8(sourcePath);
+        std::string extension = Utf8FromPath(fsPath.extension());
 
         // Find appropriate importer
         AssetImporter* importer = FindImporter(extension);
@@ -317,7 +318,7 @@ namespace Engine
     Result<AssetHandle> AssetManager::LoadAssetInternal(const std::string& path)
     {
         // File existence check
-        if (!std::filesystem::exists(path))
+        if (!std::filesystem::exists(PathFromUtf8(path)))
         {
             return MakeError<AssetHandle>(
                 EngineErrorCode::FileNotFound,
@@ -375,8 +376,9 @@ namespace Engine
     uint64_t AssetManager::CalculateSourceHash(const std::string& path) const
     {
         // Simple file hash calculation (modification time + file size)
-        auto ftime = std::filesystem::last_write_time(path);
-        uint64_t size = std::filesystem::file_size(path);
+        const std::filesystem::path fsPath = PathFromUtf8(path);
+        auto ftime = std::filesystem::last_write_time(fsPath);
+        uint64_t size = std::filesystem::file_size(fsPath);
         
         // Convert modification time to timestamp
         auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(

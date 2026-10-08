@@ -308,6 +308,35 @@ TEST(RenderSystemMeshPathTest, LoadFailure_FallsBackToHandleZero_AndDoesNotRetry
     EXPECT_EQ(loader.calls[0], "missing.obj");   // assetRoot가 비면 경로 그대로
 }
 
+TEST(RenderSystemMeshPathTest, NonAsciiAssetRoot_IsJoinedAsUtf8_WithoutThrowing)
+{
+    // 한글 폴더의 프로젝트에서 매 프레임 "No mapping for the Unicode character..." 예외가 나던 회귀
+    // (core/Utf8Path.h). 경로 문자열은 UTF-8로 들어오고 UTF-8로 로더에 넘어가야 한다.
+    FakeLoader loader;
+    const std::string root = "C:/게임 프로젝트";
+    RenderSystem system(nullptr, root, loader.Fn());
+    uint32_t handle = 0;
+    EXPECT_NO_THROW(handle = system.ResolveMeshHandle(RenderableWithPath("assets/models/배.obj")));
+    EXPECT_GE(handle, RenderSystem::kPathHandleBase);
+    ASSERT_EQ(loader.calls.size(), 1u);
+    EXPECT_EQ(loader.calls[0], "C:/게임 프로젝트/assets/models/배.obj");
+}
+
+TEST(RenderSystemMeshPathTest, SetAssetRoot_AppliesOnNextUpdate_AndReloadsFromNewRoot)
+{
+    FakeLoader loader;
+    RenderSystem system(nullptr, "C:/old", loader.Fn());
+    system.ResolveMeshHandle(RenderableWithPath("assets/a.obj"));
+    system.SetAssetRoot("C:/new");
+    EXPECT_EQ(system.GetAssetRoot(), "C:/old");            // 예약만 — GL 자원은 Update 안에서 바꾼다
+    ECSRegistry registry;
+    system.Update(registry, 0.016f);
+    EXPECT_EQ(system.GetAssetRoot(), "C:/new");
+    system.ResolveMeshHandle(RenderableWithPath("assets/a.obj"));   // 캐시가 비워져 새 기준으로 다시 로드
+    ASSERT_EQ(loader.calls.size(), 2u);
+    EXPECT_EQ(loader.calls[1], "C:/new/assets/a.obj");
+}
+
 TEST(RenderSystemMeshPathTest, RegisterMesh_InReservedPathRange_IsIgnored)
 {
     FakeLoader loader;

@@ -653,6 +653,8 @@ struct SerializeOptions
 
 #### 8.2.1 문서 업데이트 (즉시 실행 권장)
 
+> **2026-10-07**: 아래 우선순위 1·2의 대상 문서(`UNUSED_AND_LEGACY_REPORT.md`, `PLAN.md`, `ARCHIVE_INFO.md`, `PHASE3_LEGACY_REMOVAL.md`)는 고치지 않고 당시 기록 그대로 `docs/archive/`(PHASE3는 `docs/archive/legacy/`)로 옮겼다. 따라서 이 항목들은 더 이상 할 일이 아니다. 근거는 `docs/SURPLUS_FILES.md`.
+
 **우선순위 1: 모듈명 일치**
 - `UNUSED_AND_LEGACY_REPORT.md`의 `ge_python` → `quarterflying`로 전체 수정
 - `PLAN.md`의 `ge_python` → `quarterflying`로 전체 수정

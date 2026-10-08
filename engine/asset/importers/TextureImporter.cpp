@@ -1,5 +1,9 @@
 #include "TextureImporter.h"
 #include "../../core/logging/Logger.h"
+#include "../../core/Utf8Path.h"
+#include <fstream>
+#include <iterator>
+#include <vector>
 #include <filesystem>
 #include <algorithm>
 #include <cstring>
@@ -73,8 +77,8 @@ namespace Engine
         metadata.uuid = UUID::Generate();
 
         // 파일 이름 추출
-        std::filesystem::path fsPath(sourcePath);
-        metadata.name = fsPath.stem().string();
+        std::filesystem::path fsPath = PathFromUtf8(sourcePath);
+        metadata.name = Utf8FromPath(fsPath.stem());
         metadata.sourcePath = sourcePath;
 
         // 기본 메타데이터 설정
@@ -104,7 +108,19 @@ namespace Engine
 
         // 텍스처 로드
         int width, height, channels;
-        unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 0);
+        // stbi_load(경로)는 fopen으로 열어 경로를 ANSI로 해석한다. UTF-8 경로로 직접 읽어 메모리에서 디코딩한다
+        // (core/Utf8Path.h — 한글 폴더의 텍스처가 열리지 않던 문제).
+        std::vector<unsigned char> fileBytes;
+        {
+            std::ifstream in(PathFromUtf8(path), std::ios::binary);
+            if (in)
+            {
+                fileBytes.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+            }
+        }
+        unsigned char* pixels = fileBytes.empty()
+            ? nullptr
+            : stbi_load_from_memory(fileBytes.data(), static_cast<int>(fileBytes.size()), &width, &height, &channels, 0);
 
         if (!pixels)
         {

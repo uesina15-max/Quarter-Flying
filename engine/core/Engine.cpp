@@ -29,6 +29,9 @@
 #include "../renderer/Renderer.h"
 #include "../renderer/Texture2D.h"
 #include "../asset/AssetManager.h"
+#ifndef QF_NO_PYTHON_SCRIPTING
+#include "../ecs/ScriptSystem.h"   // 테스트 타깃은 pybind11 없이 빌드하므로 제외(tests/CMakeLists.txt)
+#endif
 #include "../asset/importers/TextureImporter.h"
 #include <string>
 #include <memory>
@@ -119,6 +122,7 @@ namespace Engine
         {
             renderer->SetMainCamera(viewCamera == ViewCamera::Editor ? editorCamera.get() : defaultCamera.get());
             renderer->SetDrawEditorGizmos(viewCamera == ViewCamera::Editor);
+            renderer->SetDrawDebugGrid(config.showDebugGrid);
             renderer->SetMotionPreviewState(motionPreviewState.get());
             renderer->SetViewportSize(config.windowWidth, config.windowHeight);
         }
@@ -239,6 +243,11 @@ namespace Engine
 
     void Engine::Run()
     {
+        Run(std::function<bool(float)>{});
+    }
+
+    void Engine::Run(const std::function<bool(float)>& afterFrame)
+    {
         if (!initialized)
         {
             Logger::Error("Engine not initialized");
@@ -252,6 +261,10 @@ namespace Engine
         while (isRunning)
         {
             TickFrame();
+            if (isRunning && afterFrame && !afterFrame(deltaTime))
+            {
+                isRunning = false;
+            }
         }
 
         Logger::Info("Engine main loop ended");
@@ -580,6 +593,13 @@ namespace Engine
             world->RegisterSystem(std::make_unique<ParticleSystem>(
                 renderer ? renderer->GetInstancedBatchManager() : nullptr,
                 defaultCamera.get()));
+
+            // Python 스크립트(ScriptComponent). 예전에는 ScriptSystem이 구현만 되어 있고 어떤 World에도
+            // 등록되지 않아서, ScriptComponent를 붙여도 on_create/on_update가 한 번도 호출되지 않았다
+            // (에러도 로그도 없이 "아무 일도 안 일어남"). Play 상태에서만 돈다(ScriptSystem::RunsInEditMode).
+#ifndef QF_NO_PYTHON_SCRIPTING
+            world->RegisterSystem(std::make_unique<ScriptSystem>(config.scriptHotReload));
+#endif
         }
         return world;
     }
@@ -589,6 +609,20 @@ namespace Engine
         if (worldManager)
         {
             worldManager->SetActiveWorld(world);
+        }
+    }
+
+    void Engine::SetAssetRoot(const std::string& assetRoot)
+    {
+        config.assetRoot = assetRoot;
+        if (worldManager)
+        {
+            worldManager->ForEachWorld([&](World& world) {
+                if (RenderSystem* rs = world.GetSystem<RenderSystem>())
+                {
+                    rs->SetAssetRoot(assetRoot);
+                }
+            });
         }
     }
 

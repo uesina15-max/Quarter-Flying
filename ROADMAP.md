@@ -39,7 +39,7 @@
 
 Phase 1(빌드 확인)은 완료됨. 나머지는 [docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md](docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md)에 상세 계획이 있다 — 여기서는 순서만 짚는다.
 
-- **Phase 2 — 런타임 Protocol 정의**: [docs/ge_python_api_dump_20260810.txt](docs/ge_python_api_dump_20260810.txt)를 입력으로 `typing.Protocol` 확정. `EngineConfig`는 3개 필드(`windowWidth`/`windowHeight`/`windowTitle`)만 노출된다는 점, `CreateTexture` 등 렌더러 저수준 API는 바인딩에 없다는 점을 반영.
+- **Phase 2 — 런타임 Protocol 정의**: [docs/archive/ge_python_api_dump_20260810.txt](docs/archive/ge_python_api_dump_20260810.txt)를 입력으로 `typing.Protocol` 확정. `EngineConfig`는 3개 필드(`windowWidth`/`windowHeight`/`windowTitle`)만 노출된다는 점, `CreateTexture` 등 렌더러 저수준 API는 바인딩에 없다는 점을 반영.
 - ✅ **Phase 3 — 공통 래퍼 계층 완료(2026-08-15, 예정보다 앞당겨 진행)**: 신규 [engine/editor/engine_binding.py](engine/editor/engine_binding.py)에 `import ge_python`을 유일하게 모아뒀다. `try: import ge_python as binding / except ImportError: binding = None`으로 `HAS_ENGINE`/`binding`을 노출하고, 다른 모든 코드는 `from engine_binding import binding as ge_python, HAS_ENGINE`으로 받아쓴다(별칭이라 호출부의 `ge_python.Xxx` 표현은 그대로 유지됨). 원래 계획한 6개보다 늘어난 **9개 파일**(`main.py`, `viewport.py`, `qt_engine_viewport.py`, `demo_scene_integration.py`, `test_viewport_compatibility.py`, `panels/scene_hierarchy.py`, `panels/inspector.py`, `panels/animation_preview.py`, `panels/motion_mixer.py` — Motion Mixer Phase 4A/5에서 새로 늘어난 2개 포함)를 전부 마이그레이션. `test_viewport_compatibility.py`의 `test_ge_python_binding()`처럼 "import 실패"를 별도로 검사하던 테스트는 `HAS_ENGINE` 명시적 체크로 바꿔서 원래 의미를 그대로 보존(래퍼가 `ImportError`를 삼켜버리므로 그대로 두면 거짓 통과가 날 뻔했음). 엔진 있음/없음 두 모드 모두 실제 에디터 실행으로 재확인, 회귀 없음. 이제 Phase 6(이름 개명) 시점에 고쳐야 할 import 지점은 이 파일 한 곳뿐이다.
 - **Phase 4 — 모드 경계 + IDE 경고**: pyright/mypy 기준선 측정 후 수치로 검증.
 - **Phase 5 — 테스트**: 더미/실제 인터페이스 일치를 회귀로 고정.
@@ -72,7 +72,9 @@ Phase 1(빌드 확인)은 완료됨. 나머지는 [docs/PYTHON_BINDING_IMPLEMENT
 - **[하드코딩 정리]** `"PrefabInstanceComponent"` 문자열 리터럴이 `PrefabAsset.cpp`에 2곳 중복돼 있던 것을 `PrefabInstanceComponent.h`의 `kPrefabInstanceComponentName` 상수로 통합.
 
 수정 후 재검증: `PrefabAssetTests` 20개(신규 1개 포함) + 전체 스위트 411개 — 406 통과/5 실패(기존 무관 실패와 동일) 전부 통과. 라이브 스크립트로 (1) Scene Hierarchy에서 실제 엔티티 선택 → Inspector가 정확히 그 엔티티(`entity_id=3`)를 반영, (2) Inspector 위젯 트리에서 `PrefabInstanceHeader` 인스턴스 1개 확인 — 자식 위젯 텍스트가 "📦 Prefab: Barrel" / "Revert" / "Apply"로 정확히 렌더링됨을 직접 확인, (3) Revert 클릭 → 위치가 프리팹 파일의 캡처된 값(0,0,0)으로 정확히 복원되고 상태 바에 "프리팹 되돌리기 완료" 표시됨을 확인.
-- ⬜ Phase 5(확장 과제) — 계층 컴포넌트 → 다중 엔티티 프리팹 → 베리언트
+- ✅ **Phase 5A 완료(2026-10-01)** — 계층 컴포넌트(`HierarchyComponent{Entity parent}`) + 다중 엔티티 프리팹 v2(`entities` 배열, `parent`는 앞선 인덱스) + Scene Hierarchy 트리/실제 마우스 드래그 재부모화(`SetParentCommand`, 월드 위치 유지). 검증: 컴파일 ✓ / 유닛 테스트 545/545 ✓ / 실제 에디터에서 Lamp 프리팹(엔티티 4개) 트리 표시·루트 이동 시 자식 추종·실제 OS 마우스 드래그 재부모화·Ctrl+Z를 캡처로 확인 ✓. 설계 결정과 한계는 [docs/PREFAB_IMPLEMENTATION_PLAN.md](docs/PREFAB_IMPLEMENTATION_PLAN.md) "Phase 5A 구현 기록"(= 개선안 P1-1).
+- ✅ Scene Hierarchy "Duplicate" 메뉴 엔진 연결 완료(2026-10-06, 개선안 P1-5) — `EditorAPI::DuplicateEntity`/`DuplicateEntityCommand`(대상+자손 새 UUID 복제, 내부 EntityRef 재매핑/외부 참조 보존). 검증: 유닛 11개 + 전체 556/556 + 헤드리스 바인딩 실측(실제 Qt 에디터 UI 확인은 미완). `create_entity()`도 Undo 가능한 EditorAPI 경로로 전환.
+- ⬜ Phase 5B(확장 과제) — 베리언트 + 인스턴스 수정을 원본 프리팹에 반영(Apply) → 개선안 P2-7(착수 전 설계 절 선행). 그 밖의 남은 프리팹/계층 과제: 형제 순서 저장(P2-8). 근거·설계는 [docs/REVIEW_BASED_IMPROVEMENT_PLAN.md](docs/REVIEW_BASED_IMPROVEMENT_PLAN.md).
 
 ### P1.7 — VFX Lite (파티클 시스템)
 
@@ -90,7 +92,7 @@ Phase 1(빌드 확인)은 완료됨. 나머지는 [docs/PYTHON_BINDING_IMPLEMENT
 
 - git 이력이 이번 세션에서 다소 뒤섞였다(`.gitignore` 수정과 컴파일 버그 수정이 한 커밋에 같이 들어간 지점 등). 기능에는 영향 없지만, 여유 있을 때 `git rebase -i`로 정리하면 이력을 근거로 추적하기 더 쉬워진다.
 - `D:\Quarter Flying`(구버전 사본, USB 추정)을 계속 들고 갈지 정리할지 결정. 현재는 완전히 별개 사본으로 방치된 상태.
-- 기존 `PLAN.md`(저장소 미접근 상태로 작성된 추측 기반 정리문)와 `PROBLEM_ANALYSIS_REPORT.md`/`UNUSED_AND_LEGACY_REPORT.md`는 이번 세션에서 검증된 사실과 상당 부분 어긋나거나 이미 해소됐을 가능성이 있다 — 다음에 참고할 때는 이 로드맵과 `docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md`의 실측 결과를 우선한다.
+- 기존 `PLAN.md`(저장소 미접근 상태로 작성된 추측 기반 정리문)와 `PROBLEM_ANALYSIS_REPORT.md`/`UNUSED_AND_LEGACY_REPORT.md`(2026-10-07 모두 `docs/archive/`로 이동)는 이번 세션에서 검증된 사실과 상당 부분 어긋나거나 이미 해소됐을 가능성이 있다 — 다음에 참고할 때는 이 로드맵과 `docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md`의 실측 결과를 우선한다.
 
 ---
 
@@ -204,3 +206,27 @@ P0 두 개는 렌더링 파이프라인의 기본 동작 여부를 가리므로 
   - **2026-09-25 원인 확정 / 유닛 테스트 통과, 화면 검증은 아직**: 원인은 `ECSRegistry.SetComponentJson` 바인딩이 JSON을 `{"CameraComponent": {...}}`로 한 겹 더 감싸서 `deserialize`에 넘긴 것이었다. 필드 이름이 하나도 매칭되지 않아 `isMainCamera`가 영원히 `false`로 남았고, sync 루프가 항상 `continue`했다. 이 바인딩 버그는 그 사이 이미 고쳐져 있었다(`engine/bindings/ECSBindings.cpp` 주석). 다만 sync 경로 자체를 검증하는 테스트가 없었다(기존 테스트는 `camera=nullptr`로 크래시 여부만 확인). 그래서 `engine/tests/RenderSystemTests.cpp`에 `RenderSystemCameraSyncTest` 5개를 추가했다: Main Camera 위치 복사, 비-Main 무시, Transform 변경 후 다음 프레임 추종, 리플렉션 JSON 경로로 `isMainCamera` 설정 후 동기화, 감싼 JSON은 무시됨(과거 원인 문서화). 5개 모두 통과했다. 전체 스위트는 468개 중 463 통과 / 5 실패이고, 실패 5개는 기존과 같은 테스트다. **남은 것:** 에디터 Inspector에서 Main Camera Position을 바꿨을 때 뷰포트가 실제로 따라 움직이는지는 화면에서 확인하지 않았다.
 - ✅ **2026-09-30 해결(화면 캡처로 확인)**: `RenderableComponent.meshPath` + `RenderSystem::ResolveMeshHandle` + `editor/scene_instantiation.py`로 scene.json 모델이 실제 ECS 엔티티로 만들어지고 그려진다(docs/REVIEW_BASED_IMPROVEMENT_PLAN.md P0-2). 아래는 해결 전 기록.
 - `RenderableComponent.meshHandle`은 여전히 절차적 큐브로만 대체된다 — scene.json의 `objects[].model` 경로를 실제 meshHandle로 매핑하는 브리지, 그리고 `demo_scene_integration.py`가 실제 ECS 엔티티를 안 만드는 문제(§4에서부터 알려진 것)는 별개 후속 작업.
+
+## 7. 2026-10-07 업데이트 — 게임 빌드(Build Game) Phase 0~4 구현
+
+계획서: [docs/GAME_BUILD_PLAN.md](docs/GAME_BUILD_PLAN.md) (상세 기록은 §9). 작업 범위는 ①(소스)·②(완제품 에디터)다.
+
+### 구현
+
+- **씬 파일 저장/불러오기**: `engine/scene/SceneIO.{h,cpp}`, `World.SaveScene/LoadScene/NewScene` 바인딩. 에디터 File 메뉴(New/Open/Save/Save As Scene)가 처음으로 동작한다.
+- **프로젝트 폴더**: `editor/project/`(Qt 없음), File > New/Open Project, 경로 상수 7곳을 현재 프로젝트에서 받도록 변경, `Engine.SetAssetRoot`. 프로젝트를 열지 않으면 샘플 프로젝트(`engine/`)로 기존 데모 흐름 유지.
+- **게임 실행 파일(Player)**: `engine/runtime/PlayerMain.cpp`, `GameConfig`, `runtime_bootstrap.py`, `quarterflying_player` 타깃. Python 내장, 디버그 그리드 끔, 스크립트 핫 리로드 끔, `--smoke-test N`.
+- **Player 템플릿**: `player_template` 타깃(`runtime/stage_template.py`) — Player + 엔진 DLL + .pyd + VC 런타임 + Player 전용 Python 런타임(`._pth` 격리) + 매니페스트(해시). `cmake --install` 구성 재정리(`bin/`, `editor/`, `assets/`, `runtime/win-x64/`), `run_editor.bat` 수정.
+- **Build Game**: `editor/gamebuild/game_builder.py`(Qt 없음, CLI 겸용) + `build_dialog.py`(Build Settings, 진행·취소, 결과). 시작 씬에서 참조되는 파일만 모으고, 누락 파일은 실패, 모르는 구성은 허용, Qt 파일 검출 시 실패, 빌드 결과를 임시 경로에서 실행해 검증.
+
+### 검증
+
+- C++ `SimpleEngineTests` 574/574 통과(신규: SceneIO 10, GameConfig 6, RenderSystem 2). CTest `player_template_smoke` 통과.
+- Python: `gamebuild/test_game_builder.py` 18개(실제 템플릿으로 한글 폴더 프로젝트를 빌드해 다른 한글 경로로 옮겨 실행 포함), 에디터 기존 테스트 전부 통과.
+- 실제 실행: Player 창 화면 캡처(그리드·기즈모 없음), 에디터 자동화(새 프로젝트 → 저장 → 다시 열기 → Play/Stop → 빌드, 화면 캡처), 빌드 대화상자 자동화(진행·취소·결과), 설치본만으로 템플릿 스모크 테스트·Build Game CLI·에디터 시작.
+- **미확인**: 깨끗한 PC(VM) 두 대로 하는 최종 통과 기준. **미착수**: 인게임 UI 선행 과제(UI Phase 1~3).
+
+### 발견하고 고친 기존 버그 (GAME_BUILD_PLAN §9.3)
+
+`ScriptSystem`이 어떤 World에도 등록되지 않아 스크립트가 한 번도 돌지 않던 문제, 한글 경로에서 엔진이 매 프레임 예외를 던지던 문제(`core/Utf8Path.h`), 로그 레벨이 DLL마다 따로 있던 문제, RenderGraph 경고 반복, 독립 창 제목이 첫 글자만 나오던 문제, 설치본 실행 스크립트가 빌드 폴더로 이동하던 문제 등 11건.
+

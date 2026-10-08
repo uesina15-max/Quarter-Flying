@@ -2,6 +2,7 @@
 #include "../../ecs/ECSRegistry.h"
 #include "../../prefab/PrefabInstanceComponent.h"
 #include "../../ecs/Hierarchy.h"
+#include "../../core/Utf8Path.h"
 
 namespace Engine
 {
@@ -38,7 +39,7 @@ std::expected<void, EngineError> RevertPrefabInstanceCommand::Apply()
         // §2.9: if the source file is missing/unreadable, the entity must be left
         // completely untouched — LoadFromFile failing here means we return before
         // ApplyToEntity is ever called.
-        auto loaded = PrefabAsset::LoadFromFile(meta->prefabPath);
+        auto loaded = PrefabAsset::LoadFromFile(PathFromUtf8(meta->prefabPath));   // UTF-8로 저장됨
         if (!loaded)
         {
             return std::unexpected(loaded.error());

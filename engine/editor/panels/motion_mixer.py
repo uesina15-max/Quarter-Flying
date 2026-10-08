@@ -31,14 +31,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 from style.theme import COLORS
+from project import current_project
 
 from engine_binding import binding as ge_python, HAS_ENGINE
 
-# engine/editor/panels/motion_mixer.py 기준 engine/assets/motion/
-_MOTION_ASSETS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "assets", "motion",
-)
+# 경로는 import 시점에 고정하지 않고 쓰는 순간 현재 프로젝트에서 받는다(editor/project/project.py).
+# 예전에는 이 파일 위치 기준 engine/assets/...를 상수로 계산해 두어서, 다른 프로젝트를 열 수 없었다
+# (docs/GAME_BUILD_PLAN.md §1.2 항목 3).
+def _motion_dir() -> str:
+    return str(current_project().motion_dir)
 
 # (내부 enum 이름, 드롭다운 표시 이름) - MaskPreset::Custom은 per-bone 맵 편집 UI가 아직
 # 없어서(§C7 "posteri에" 슬롯, 1차 미사용) 여기 목록에서 뺀다.
@@ -288,7 +289,7 @@ class MotionMixerPanel(QWidget):
         prev_skel = self.combo_skeleton.currentData()
         self.combo_skeleton.clear()
         for name in self._scan_dir(".skeleton.json"):
-            self.combo_skeleton.addItem(name, os.path.join(_MOTION_ASSETS_DIR, name))
+            self.combo_skeleton.addItem(name, os.path.join(_motion_dir(), name))
         if prev_skel:
             idx = self.combo_skeleton.findData(prev_skel)
             if idx >= 0:
@@ -297,7 +298,7 @@ class MotionMixerPanel(QWidget):
         self.combo_base.clear()
         self.combo_add_layer.clear()
         for name in self._scan_dir(".clip.json"):
-            path = os.path.join(_MOTION_ASSETS_DIR, name)
+            path = os.path.join(_motion_dir(), name)
             if preview is not None and preview.HasSkeleton():
                 text = _read_text(path)
                 if text is None or not preview.CheckClipCompatible(text):
@@ -307,9 +308,9 @@ class MotionMixerPanel(QWidget):
 
     @staticmethod
     def _scan_dir(suffix: str) -> list[str]:
-        if not os.path.isdir(_MOTION_ASSETS_DIR):
+        if not os.path.isdir(_motion_dir()):
             return []
-        return sorted(f for f in os.listdir(_MOTION_ASSETS_DIR) if f.endswith(suffix))
+        return sorted(f for f in os.listdir(_motion_dir()) if f.endswith(suffix))
 
     # ── 스켈레톤 ─────────────────────────────────────────────────────────────
 
@@ -325,7 +326,7 @@ class MotionMixerPanel(QWidget):
 
     def _on_import_skeleton(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "스켈레톤 가져오기", _MOTION_ASSETS_DIR, "Skeleton Files (*.skeleton.json)"
+            self, "스켈레톤 가져오기", _motion_dir(), "Skeleton Files (*.skeleton.json)"
         )
         if not path:
             return
@@ -367,7 +368,7 @@ class MotionMixerPanel(QWidget):
 
     def _on_import_base_clip(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "베이스 클립 가져오기", _MOTION_ASSETS_DIR, "Clip Files (*.clip.json)"
+            self, "베이스 클립 가져오기", _motion_dir(), "Clip Files (*.clip.json)"
         )
         if not path:
             return
@@ -406,7 +407,7 @@ class MotionMixerPanel(QWidget):
 
     def _on_import_layer_clip(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "레이어 클립 가져오기", _MOTION_ASSETS_DIR, "Clip Files (*.clip.json)"
+            self, "레이어 클립 가져오기", _motion_dir(), "Clip Files (*.clip.json)"
         )
         if not path:
             return
@@ -455,9 +456,9 @@ class MotionMixerPanel(QWidget):
         """번들된 샘플 스켈레톤 + Idle 베이스 + Attack 레이어(weight 0.5)를 미리 채워
         Mixer UI가 뭘 하는 물건인지 바로 보여준다. 이후 사용자가 자유롭게 레이어를
         추가/조절/제거할 수 있다."""
-        skel_path = os.path.join(_MOTION_ASSETS_DIR, "sample.skeleton.json")
-        idle_path = os.path.join(_MOTION_ASSETS_DIR, "idle.clip.json")
-        attack_path = os.path.join(_MOTION_ASSETS_DIR, "attack.clip.json")
+        skel_path = os.path.join(_motion_dir(), "sample.skeleton.json")
+        idle_path = os.path.join(_motion_dir(), "idle.clip.json")
+        attack_path = os.path.join(_motion_dir(), "attack.clip.json")
 
         skel_text = _read_text(skel_path)
         idle_text = _read_text(idle_path)

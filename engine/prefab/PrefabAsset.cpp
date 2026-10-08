@@ -3,6 +3,7 @@
 #include "../ecs/Reflection.h"
 #include "../ecs/Hierarchy.h"
 #include "../core/logging/Logger.h"
+#include "../core/Utf8Path.h"
 
 #include <fstream>
 #include <unordered_map>
@@ -502,7 +503,7 @@ namespace Engine
         if (!file.is_open())
         {
             return MakeError(EngineErrorCode::FileNotFound,
-                "Failed to open '" + path.string() + "' for writing", "PrefabAsset");
+                "Failed to open '" + Utf8FromPath(path) + "' for writing", "PrefabAsset");
         }
 
         file << ToJson().dump(4);
@@ -516,7 +517,7 @@ namespace Engine
         if (!file.is_open())
         {
             return MakeError(EngineErrorCode::FileNotFound,
-                "Prefab file not found: '" + path.string() + "'", "PrefabAsset");
+                "Prefab file not found: '" + Utf8FromPath(path) + "'", "PrefabAsset");
         }
 
         nlohmann::json parsed;
@@ -527,7 +528,7 @@ namespace Engine
         catch (const std::exception& e)
         {
             return MakeError(EngineErrorCode::ResourceLoadFailed,
-                "Failed to parse prefab JSON '" + path.string() + "': " + e.what(), "PrefabAsset");
+                "Failed to parse prefab JSON '" + Utf8FromPath(path) + "': " + e.what(), "PrefabAsset");
         }
 
         return FromJson(parsed);

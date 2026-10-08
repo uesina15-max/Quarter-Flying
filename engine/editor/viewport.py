@@ -41,9 +41,10 @@ class EngineViewport(QWidget):
             config = ge_python.EngineConfig()
             config.windowWidth = self.width()
             config.windowHeight = self.height()
-            # RenderableComponent.meshPath("assets/models/...")의 기준 = engine/ 디렉터리.
-            # cwd와 무관하게 이 파일(engine/editor/viewport.py) 위치에서 계산한다.
-            config.assetRoot = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # RenderableComponent.meshPath("assets/models/...")의 기준 = 현재 프로젝트 폴더
+            # (샘플 프로젝트면 engine/). 프로젝트를 바꾸면 Engine.SetAssetRoot로 갱신한다.
+            from project import current_project
+            config.assetRoot = str(current_project().root)
             
             # winId()는 HWND를 반환 (Windows 기준)
             hwnd = int(self.winId())

@@ -163,6 +163,13 @@ def test_scene_hierarchy_integration():
         return False
 
 if __name__ == "__main__":
+    # QApplication을 먼저 만든다. 증상: 이 파일이 아무 메시지 없이 종료 코드 127로 끝났다
+    # ("Scene Hierarchy Integration Test" 제목만 찍히고 끝). 원인: 두 번째 테스트가 QApplication 없이
+    # SceneHierarchyPanel(QWidget)을 만들어서 Qt가 프로세스를 바로 끝냈다 — 파이썬 예외가 아니라서
+    # 아래 try/except로도 잡히지 않았다.
+    from PySide6.QtWidgets import QApplication
+    _app = QApplication.instance() or QApplication(sys.argv)
+
     # 테스트 실행
     test1_passed = test_demo_scene_integration()
     test2_passed = test_scene_hierarchy_integration()

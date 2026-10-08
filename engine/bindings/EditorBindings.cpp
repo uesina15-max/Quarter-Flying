@@ -52,6 +52,9 @@ void RegisterEditorBindings(pybind11::module_& m)
         .def("create_entity", [](Editor::EditorAPI& self, const std::string& name) {
             return UnwrapOrThrow(self.CreateEntity(name));
         }, py::arg("name") = "")
+        .def("duplicate_entity", [](Editor::EditorAPI& self, Entity entity) {
+            return UnwrapOrThrow(self.DuplicateEntity(entity));
+        })
         .def("destroy_entity", [](Editor::EditorAPI& self, Entity entity) {
             UnwrapOrThrow(self.DestroyEntity(entity));
         })

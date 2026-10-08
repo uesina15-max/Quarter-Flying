@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "title": "Template Smoke Test",
+  "window": { "width": 640, "height": 360, "fullscreen": false },
+  "startScene": "scenes/Smoke.scene.json",
+  "assetRoot": "./"
+}

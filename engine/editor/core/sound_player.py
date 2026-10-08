@@ -28,8 +28,16 @@ import os
 import random
 from typing import Dict, Iterable, Optional
 
-from PySide6.QtCore import QUrl
-from PySide6.QtMultimedia import QSoundEffect
+# PySide6는 에디터에만 있다. 게임 실행 파일(Player)은 Qt 없이 이 패키지를 import하므로
+# (docs/GAME_BUILD_PLAN.md D9), 여기서 import가 실패해도 모듈 자체는 불러와져야 한다.
+# 예전에는 맨 위에서 바로 import해서, 이 파일을 import하는 scene_action_playback.py까지
+# PySide6 없는 환경에서는 ImportError로 통째로 쓸 수 없었다.
+try:
+    from PySide6.QtCore import QUrl
+    from PySide6.QtMultimedia import QSoundEffect
+    HAS_QT_AUDIO = True
+except ImportError:
+    HAS_QT_AUDIO = False
 
 
 class SoundPlayer:
@@ -40,6 +48,8 @@ class SoundPlayer:
     DEFAULT_MAX_VOICES = 16
 
     def __init__(self, max_voices: int = DEFAULT_MAX_VOICES, rng: Optional[random.Random] = None):
+        if not HAS_QT_AUDIO:
+            raise RuntimeError("SoundPlayer needs PySide6.QtMultimedia; use NullSoundPlayer without Qt")
         self._effects: Dict[str, QSoundEffect] = {}
         self._max_voices = max(1, int(max_voices))
         self._rng = rng or random.Random()
@@ -144,6 +154,37 @@ class SoundPlayer:
         """액션을 닫을 때. 로드한 클립을 전부 버린다."""
         self.stop_all()
         self._effects.clear()
+
+
+class NullSoundPlayer:
+    """소리를 내지 않는 SoundPlayer. 게임 빌드의 오디오는 v1에서 제외했으므로
+    (SOUND_LITE_PLAN §6.1) Player는 이것을 쓴다. 액션 이벤트는 그대로 발생하고 소리만 나지 않는다.
+
+    SoundPlayer와 같은 메서드를 갖되, 재생 요청은 모두 "재생 안 함"(False)으로 답한다.
+    """
+
+    def preload(self, clip_paths: Iterable[str], wait_ms: int = 1000) -> Dict[str, bool]:
+        return {p: False for p in dict.fromkeys(clip_paths) if p}
+
+    def is_loaded(self, clip: str) -> bool:
+        return False
+
+    def play(self, clip: str, volume: float = 1.0, volume_var: float = 0.0) -> bool:
+        return False
+
+    def playing_count(self) -> int:
+        return 0
+
+    def stop_all(self) -> None:
+        pass
+
+    def clear(self) -> None:
+        pass
+
+
+def default_sound_player():
+    """Qt 오디오가 있으면 SoundPlayer, 없으면 NullSoundPlayer."""
+    return SoundPlayer() if HAS_QT_AUDIO else NullSoundPlayer()
 
 
 def resolve_clip_path(clip: str, base_dir: Optional[str] = None) -> str:

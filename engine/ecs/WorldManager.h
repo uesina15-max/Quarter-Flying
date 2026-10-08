@@ -75,6 +75,16 @@ namespace Engine
         // 등록된 World 수
         size_t GetWorldCount() const { return worlds.size(); }
 
+        // 모든 World에 fn을 적용한다(예: Engine::SetAssetRoot가 각 World의 RenderSystem에 전달).
+        template<typename Fn>
+        void ForEachWorld(Fn&& fn)
+        {
+            for (auto& pair : worlds)
+            {
+                if (pair.second) fn(*pair.second);
+            }
+        }
+
     private:
         std::unordered_map<std::string, std::unique_ptr<World>> worlds;
         World* activeWorld = nullptr;

@@ -4,6 +4,7 @@
 #include "commands/ScaleEntityCommand.h"
 #include "commands/CreateEntityCommand.h"
 #include "commands/DestroyEntityCommand.h"
+#include "commands/DuplicateEntityCommand.h"
 #include "commands/AddComponentCommand.h"
 #include "commands/RemoveComponentCommand.h"
 #include "commands/InstantiatePrefabCommand.h"
@@ -214,6 +215,33 @@ std::expected<void, EngineError> EditorAPI::DestroyEntity(Entity entity)
     }
 
     return Dispatch(std::make_unique<DestroyEntityCommand>(registry_, entity));
+}
+
+std::expected<Entity, EngineError> EditorAPI::DuplicateEntity(Entity entity)
+{
+    if (auto r = CheckRegistry(); !r)
+    {
+        return std::unexpected(r.error());
+    }
+
+    if (!registry_->IsValid(entity))
+    {
+        return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "EditorAPI");
+    }
+
+    auto cmd    = std::make_unique<DuplicateEntityCommand>(registry_, entity);
+    auto rawPtr = cmd.get();  // observe result after ownership transfer
+
+    auto result = Dispatch(std::move(cmd));
+    if (!result)
+    {
+        return std::unexpected(result.error());
+    }
+
+    // Dispatch() always Apply()s the command (either directly via CommandManager
+    // or via the pre-apply path inside a transaction), so GetDuplicatedRoot() is
+    // always valid here.
+    return rawPtr->GetDuplicatedRoot();
 }
 
 std::expected<void, EngineError> EditorAPI::SetParent(Entity child, Entity parent)

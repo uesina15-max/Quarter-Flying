@@ -18,6 +18,7 @@
 #include <string>
 #include <utility>
 #include <mutex>
+#include <functional>
 
 namespace Engine
 {
@@ -59,6 +60,9 @@ namespace Engine
         std::expected<void, EngineError> Initialize(const EngineConfig& config);
         std::expected<void, EngineError> InitializeFromWindowHandle(void* handle, const EngineConfig& config);
         void Run();
+        // 독립 실행용 메인 루프(게임 실행 파일). 매 TickFrame 뒤에 afterFrame(deltaTime)을 부르고,
+        // false를 돌려주면 루프를 끝낸다. 창을 닫아도 끝난다. Run()은 afterFrame 없이 이것을 부른다.
+        void Run(const std::function<bool(float)>& afterFrame);
 
         // 엔진을 종료하고 모든 리소스를 해제합니다.
         // 이 함수 호출 이후 다시 Initialize()를 호출하여 엔진을 재시작(Restart)할 수 있습니다.
@@ -83,6 +87,11 @@ namespace Engine
         World* CreateWorld(const std::string& name);
         void SetActiveWorld(World* world);
         World* GetActiveWorld();
+
+        // 에셋 기준 폴더(EngineConfig::assetRoot)를 바꾼다. 이미 만든 World의 RenderSystem에도
+        // 전달되며, 실제 교체는 다음 프레임에 일어난다(RenderSystem::SetAssetRoot 주석).
+        void SetAssetRoot(const std::string& assetRoot);
+        const std::string& GetAssetRoot() const { return config.assetRoot; }
 
         // 엔진 상태 조회
         bool IsRunning() const { return isRunning; }

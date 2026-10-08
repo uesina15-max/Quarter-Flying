@@ -34,6 +34,17 @@ RestoreEntitySnapshots(ECSRegistry& registry, const std::vector<EntitySnapshot>&
 // entity와 모든 자손을 전위 순서(부모 먼저)로 스냅샷한다. RestoreEntitySnapshots와 짝.
 std::vector<EntitySnapshot> CaptureSubtreeSnapshots(ECSRegistry& registry, Entity root);
 
+// root 하위 트리를 "복제"하기 위한 스냅샷을 만든다. CaptureSubtreeSnapshots와 달리 각 엔티티에
+// 새 UUID를 주므로, RestoreEntitySnapshots에 넘기면 원본과 공존하는 별도 엔티티가 생긴다.
+// 핵심은 EntityRef 재매핑이다(자식의 HierarchyComponent.parent, 카메라 리그 target 등 UUID로
+// 직렬화되는 필드):
+//   - 참조가 복제되는 트리 "안"을 가리키면  → 그에 대응하는 새 UUID로 바꾼다
+//     (그래야 복제본의 부모-자식/타깃 관계가 원본이 아니라 복제본끼리 연결된다).
+//   - 참조가 트리 "밖"을 가리키면(루트의 parent = 원본의 부모 등) → 그대로 둔다
+//     (복제본이 원본과 같은 부모 아래 들어가고, 바깥 엔티티를 그대로 가리킨다).
+// 원본 레지스트리 상태는 바꾸지 않는다(읽기만 한다).
+std::vector<EntitySnapshot> MakeDuplicateSnapshots(ECSRegistry& registry, Entity root);
+
 // 자식부터(역순) 파괴한다. 무효한 엔티티는 건너뛴다.
 void DestroyEntitiesReverse(ECSRegistry& registry, const std::vector<Entity>& entities);
 

@@ -17,6 +17,8 @@
 - pybind11 확장 모듈 `quarterflying`(CMake 타겟명, `.pyd` 파일명도 동일)은 `quarterflying_engine`(렌더러 포함 엔진 전체, CMake 공유 라이브러리 타겟)을 링크하므로, 렌더러 모듈이 컴파일되지 않으면 바인딩도 빌드할 수 없습니다. (2026-08-20: 옛 이름 `ge_python`/`ge_engine`에서 개명 — ROADMAP.md P1 Phase 6 참고. 에디터 파이썬 코드는 `engine/editor/engine_binding.py` 한 곳에서만 실제 모듈명을 참조하므로 다른 파일은 영향받지 않는다.)
 - **Smart App Control 차단 (2026-09-30)**: 새로 빌드한 `quarterflying.*.pyd`가 import 시 `DLL load failed ... 애플리케이션 제어 정책에서 이 파일을 차단했습니다`로 막힐 때가 있다. 이벤트 로그 `Microsoft-Windows-CodeIntegrity/Operational`에 3033/3077("Enterprise signing level")로 남는다. 바이너리별 평판 판정이라 소스 변경 없이 다시 링크하면(예: `touch engine/bindings/PythonModule.cpp` 후 `quarterflying` 타겟 재빌드) 새 해시로 통과한 적이 있다. 보안 설정 자체를 끄지는 않는다.
 - 엔진 코어(특히 `renderer/`)는 오랫동안 컴파일된 적이 없었던 것으로 보이는 다수의 선존재 버그를 포함하고 있었습니다. 자세한 내용은 `docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md`의 Phase 1 기록과 git 커밋 로그를 참고하십시오.
+- **게임 빌드(2026-10-07, `docs/GAME_BUILD_PLAN.md`)**: 게임 실행 파일은 `quarterflying_player` 타깃, Build Game이 복사하는 템플릿은 `cmake --build . --config Release --target player_template`(기본 빌드에 포함되지 않음 — 표준 라이브러리 zip을 다시 만들어 느리다)로 `engine/build/runtime/win-x64`에 만든다. Player·엔진·Python 파일을 고치면 템플릿을 다시 만들어야 Build Game에 반영된다. 템플릿 검증은 `ctest -C Release -R player_template_smoke`, Build Game 테스트는 `engine/editor`에서 `python gamebuild/test_game_builder.py`.
+- **경로 문자열은 UTF-8이다(2026-10-07)**: C++에서 경로 문자열(`std::string`)을 파일 경로로 쓸 때는 `core/Utf8Path.h`의 `PathFromUtf8`/`Utf8FromPath`를 거친다. `std::filesystem::path(std::string)`, `path.string()`, `ifstream(const char*)`, `fopen`, `stbi_load`는 Windows에서 ANSI로 해석해서, 한글 폴더에서 "No mapping for the Unicode character exists in the target multi-byte code page." 예외나 파일 열기 실패가 난다. 경로가 ASCII뿐인 테스트에서는 드러나지 않으므로, 경로를 다루는 테스트에는 한글 경로를 넣는다.
 
 ## 코드 품질 관례 (2026-08-29 확정)
 

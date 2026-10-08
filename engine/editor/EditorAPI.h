@@ -51,6 +51,11 @@ public:
     std::expected<Entity, EngineError> CreateEntity(const std::string& name = "");
     std::expected<void, EngineError>   DestroyEntity(Entity entity);   // 자손까지 함께 파괴(Undo로 전부 복원)
 
+    // 엔티티와 그 자손 전체를 복제한다(개선안 P1-5). 복제본은 전부 새 UUID를 받고 원본과 같은
+    // 부모 아래로 들어간다. 반환값은 복제된 루트(선택 이동용). Undo로 복제본 전체가 사라진다.
+    // 내부 참조 재매핑 규칙은 DuplicateEntityCommand/MakeDuplicateSnapshots 참고.
+    std::expected<Entity, EngineError> DuplicateEntity(Entity entity);
+
     // 부모 변경(프리팹 Phase 5, ecs/Hierarchy.h). parent가 Entity()면 루트로. 자기 자신/자손을 부모로
     // 지정하면(순환) 에러. 월드 위치는 유지된다(화면에서 제자리) - SetParentCommand 참고.
     std::expected<void, EngineError>   SetParent(Entity child, Entity parent);

@@ -301,7 +301,7 @@ namespace Engine
         {
             commandList->Clear(0.10f, 0.11f, 0.13f, 1.0f);
         }
-        if (debugGrid && debugGrid->IsInitialized() && mainCamera)
+        if (drawDebugGrid && debugGrid && debugGrid->IsInitialized() && mainCamera)
         {
             glm::mat4 viewProjection = mainCamera->getProjectionMatrix() * mainCamera->getViewMatrix();
             debugGrid->Render(viewProjection);
@@ -529,7 +529,10 @@ namespace Engine
 
         // Task 13.4: Transient Resource 정리 구현
         // 프레임 종료 시 리소스 해제 및 풀 반환
-        if (renderGraph)
+        // 컴파일된 그래프가 있을 때만 정리한다. 게임 실행 중에는 RenderGraph에 패스를 등록하는 코드가
+        // 없어서(Render()가 GetPassCount() == 0에서 반환) 그래프가 컴파일되지 않는데, 예전에는 그래도
+        // 매 프레임 아래 두 함수를 불러 "Graph not compiled" 경고가 프레임마다 두 줄씩 쌓였다.
+        if (renderGraph && renderGraph->IsCompiled())
         {
             Logger::Log(LogLevel::Trace, "Renderer::EndFrame - Cleaning up transient resources");
 

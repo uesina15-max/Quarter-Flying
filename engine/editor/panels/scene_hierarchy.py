@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QIcon, QColor, QBrush, QFont, QAction
 
 from style.theme import COLORS
+from project import current_project
 
 # 엔진 모듈이 없는 경우에도 더미 모드로 동작
 from engine_binding import binding as ge_python, HAS_ENGINE, to_entity
@@ -21,13 +22,11 @@ from hierarchy_model import (ABOVE_ITEM, BELOW_ITEM, ON_ITEM, ON_VIEWPORT,
                              order_for_tree, resolve_drop_parent)
 
 # engine/editor/panels/scene_hierarchy.py 기준 engine/assets/prefabs/
-# (panels/prefab_browser.py도 같은 경로를 독립적으로 계산한다 - 패널 사이에
-# 공유 "paths" 모듈이 아직 없어서, motion_mixer.py가 이미 하는 것과 같은 방식으로
-# 각자 로컬 상수를 둔다.)
-_PREFAB_ASSETS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "assets", "prefabs",
-)
+# 경로는 import 시점에 고정하지 않고 쓰는 순간 현재 프로젝트에서 받는다(editor/project/project.py).
+# 예전에는 이 파일 위치 기준 engine/assets/...를 상수로 계산해 두어서, 다른 프로젝트를 열 수 없었다
+# (docs/GAME_BUILD_PLAN.md §1.2 항목 3).
+def _prefab_dir() -> str:
+    return str(current_project().prefabs_dir)
 
 
 class EntityItem(QTreeWidgetItem):
@@ -391,21 +390,32 @@ class SceneHierarchyPanel(QWidget):
     # ----------------------------------------------------------------
 
     def create_entity(self):
-        """새 엔티티 생성 (엔진 연동 시 ECS에도 반영)"""
-        entity_id = self._dummy_counter
-        self._dummy_counter += 1
+        """새 엔티티 생성 (엔진 연동 시 ECS에도 반영).
 
-        if self.registry and HAS_ENGINE:
+        엔진 연결 시에는 EditorAPI.create_entity 경로로 만든다 - 예전처럼 registry.CreateEntity()를
+        직접 부르면 Undo가 안 됐다(개선안 P1-5). 이름을 커맨드에 넘겨서 Redo 때도 같은 이름으로
+        복원되게 한다(엔진이 부여하는 런타임 id는 생성 전엔 알 수 없으므로 모노토닉 카운터로 이름을
+        짓는다). 생성 후에는 삭제/복제와 같이 refresh_from_engine()이 엔진 기준으로 트리를 다시 그린다.
+        """
+        if self.registry and self.editor_api and HAS_ENGINE:
+            name = f"Entity_{self._dummy_counter}"
+            self._dummy_counter += 1
             try:
-                entity = self.registry.CreateEntity()
-                entity_id = entity.id
-                name = f"Entity_{entity_id}"
+                entity = self.editor_api.create_entity(name)
+                # 복제/삭제와 같은 재선택 규칙(refresh_from_engine이 _selected_entity_id로 재선택).
+                self._selected_entity_id = entity.id
+                self.hierarchy_status.emit(f"엔티티 '{name}'를 만들었습니다 (Ctrl+Z로 되돌리기)")
             except Exception as e:
                 print(f"[SceneHierarchy] 엔티티 생성 실패: {e}")
-                name = f"Entity_{entity_id}"
-        else:
-            name = f"Entity_{entity_id}"
+                self.hierarchy_status.emit(f"생성 실패: {e}")
+            self._last_structure = None
+            self.refresh_from_engine()
+            return
 
+        # 더미 모드(엔진 없음): 실제 ECS가 없으므로 트리 항목만 추가한다.
+        entity_id = self._dummy_counter
+        self._dummy_counter += 1
+        name = f"Entity_{entity_id}"
         item = EntityItem(entity_id, f"🔲  {name}")
         self.tree.addTopLevelItem(item)
         self.tree.setCurrentItem(item)
@@ -468,13 +478,15 @@ class SceneHierarchyPanel(QWidget):
 
         if item and isinstance(item, EntityItem):
             menu.addSeparator()
-            action_dup = QAction("📋  Duplicate", self)
-            action_dup.triggered.connect(lambda: self._duplicate_entity(item))
-            menu.addAction(action_dup)
 
             # 실제 ECS에 연결되어 있어야만 의미가 있다 - 연결 전 더미 트리 항목은
-            # 캡처할 실제 컴포넌트가 없다.
+            # 캡처/복제할 실제 컴포넌트가 없다. (예전 Duplicate는 엔진 없이도 메뉴에
+            # 떴지만 더미 트리 항목만 만들어 500ms 뒤 사라졌다 - 개선안 P1-5.)
             if self.registry and self.editor_api and HAS_ENGINE:
+                action_dup = QAction("📋  Duplicate", self)
+                action_dup.triggered.connect(lambda: self._duplicate_entity(item))
+                menu.addAction(action_dup)
+
                 action_prefab = QAction("📦  Create Prefab...", self)
                 action_prefab.triggered.connect(lambda: self._create_prefab_from_item(item))
                 menu.addAction(action_prefab)
@@ -496,12 +508,12 @@ class SceneHierarchyPanel(QWidget):
         if not self.editor_api:
             return
 
-        os.makedirs(_PREFAB_ASSETS_DIR, exist_ok=True)
+        os.makedirs(_prefab_dir(), exist_ok=True)
 
         # 트리 표시용 이모지/공백을 걷어내고 기본 저장 이름을 제안한다.
         raw_name = item.entity_name.strip()
         default_name = "".join(ch for ch in raw_name if ch.isalnum() or ch in ("_", "-")) or "Prefab"
-        default_path = os.path.join(_PREFAB_ASSETS_DIR, f"{default_name}.prefab.json")
+        default_path = os.path.join(_prefab_dir(), f"{default_name}.prefab.json")
 
         path, _ = QFileDialog.getSaveFileName(
             self, "Create Prefab", default_path, "Prefab Files (*.prefab.json)"
@@ -542,19 +554,31 @@ class SceneHierarchyPanel(QWidget):
         return sum(1 + SceneHierarchyPanel._count_descendants(item.child(i)) for i in range(item.childCount()))
 
     def _duplicate_entity(self, item: EntityItem):
-        """엔티티 복제"""
-        new_id = self._dummy_counter
-        self._dummy_counter += 1
-        new_name = f"{item.entity_name}_copy"
-        new_item = EntityItem(new_id, new_name)
+        """선택한 엔티티(와 자손)를 엔진에서 실제로 복제한다
+        (개선안 P1-5, EditorAPI::DuplicateEntity).
 
-        parent = item.parent()
-        if parent:
-            parent.addChild(new_item)
-        else:
-            self.tree.addTopLevelItem(new_item)
-
-        self.tree.setCurrentItem(new_item)
+        예전에는 더미 id로 트리 항목만 추가했다 - ECS에는 아무것도 안 만들어서, 500ms
+        refresh_from_engine()이 트리를 엔진 기준으로 다시 그리는 순간 '<이름>_copy'가 조용히
+        사라졌다(에러도 로그도 없어 "복제가 안 된다"로 보였다). 이제 엔진에 복제를 맡기고
+        트리를 다시 읽는다. 메뉴 자체가 엔진 연결 시에만 뜨므로(_on_context_menu) 여기
+        도달하면 registry/editor_api는 항상 있지만, 방어적으로 한 번 더 확인한다."""
+        if not (self.registry and self.editor_api and HAS_ENGINE):
+            self.hierarchy_status.emit("엔진에 연결돼 있어야 복제할 수 있습니다")
+            return
+        try:
+            new_root = self.editor_api.duplicate_entity(to_entity(item.entity_id))
+            children = self._count_descendants(item)
+            suffix = f" (자식 {children}개 포함)" if children else ""
+            # 복제된 루트를 선택 상태로 둔다. refresh_from_engine()이 _selected_entity_id를
+            # 기준으로 재선택하므로, 트리를 다시 그리기 전에 먼저 바꿔둔다.
+            self._selected_entity_id = new_root.id
+            self.hierarchy_status.emit(
+                f"'{item.entity_name}'를 복제했습니다{suffix} (Ctrl+Z로 되돌리기)")
+        except Exception as e:
+            print(f"[SceneHierarchy] 엔티티 복제 실패: {e}")
+            self.hierarchy_status.emit(f"복제 실패: {e}")
+        self._last_structure = None
+        self.refresh_from_engine()
 
     # ----------------------------------------------------------------
     # Public API

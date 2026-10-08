@@ -104,7 +104,9 @@ namespace Engine
                 if (!comp.moduleName.empty() && !comp.className.empty()) {
                     try {
                         py::module_ mod = py::module_::import(comp.moduleName.c_str());
-                        mod.reload(); // 스크립트 모듈 Hot Reload
+                        if (hotReload) {
+                            mod.reload(); // 스크립트 모듈 Hot Reload (에디터용, EngineConfig::scriptHotReload)
+                        }
                         
                         py::object pyClass = mod.attr(comp.className.c_str());
                         // 스크립트 객체화 및 Entity 주입
@@ -134,7 +136,8 @@ namespace Engine
                             instance.attr("on_create")();
                         }
                         
-                        std::string msg = fmt::format("ScriptSystem: Reloaded {}::{}", comp.moduleName, comp.className);
+                        std::string msg = fmt::format("ScriptSystem: instantiated {}::{}{}", comp.moduleName, comp.className,
+                                                      hotReload ? " (module reloaded)" : "");
                         Logger::Info("{}", msg.c_str());
                     } catch (const std::exception& e) {
                         Logger::Error("ScriptSystem HotReload Error: {}", e.what());
@@ -147,7 +150,17 @@ namespace Engine
             if (comp.hasUpdate && comp.cachedOnUpdate) {
                 // 캐싱된 py::object를 함수처럼 직접 호출 (룩업 비용 및 try/catch 0)
                 py::object* updateFunc = static_cast<py::object*>(comp.cachedOnUpdate);
-                (*updateFunc)(deltaTime);
+                // on_update 안의 예외를 여기서 잡는다. 예전에는 잡지 않아서 py::error_already_set이
+                // TickFrame 밖(에디터의 Qt 타이머, Player의 메인 루프)까지 그대로 빠져나갔다 — 스크립트
+                // 한 줄의 오타가 프레임 전체를 중단시킨다. 잡은 뒤에는 그 스크립트의 on_update만 끈다
+                // (매 프레임 같은 트레이스백이 쌓이는 것을 막기 위해). Play를 다시 시작하면 재시도된다.
+                try {
+                    (*updateFunc)(deltaTime);
+                } catch (const std::exception& e) {
+                    Logger::Error("ScriptSystem: {}::{}.on_update raised; disabling its on_update until next Play: {}",
+                                  comp.moduleName, comp.className, e.what());
+                    comp.hasUpdate = false;
+                }
             }
         }
     }

@@ -423,7 +423,7 @@ public:
 남은 작업. 할 일과 근거는 `REVIEW_BASED_IMPROVEMENT_PLAN.md`에 있다.
 - **Phase 5B: 베리언트 + 인스턴스 수정을 원본에 반영(Apply)** → P2-7. 착수 전에 이 문서에 설계 절을 먼저 추가한다(오버라이드 기록, 다른 인스턴스로의 전파, `sourceRevision`, 베리언트 포맷, 자식 식별).
 - **형제 순서 저장** → P2-8. 지금은 트리가 id(= 생성) 순서다.
-- **Scene Hierarchy "Duplicate" 메뉴 엔진 연결** → P1-5. 지금은 더미 트리 항목만 만들고, 500ms 뒤 사라진다.
+- ✅ **Scene Hierarchy "Duplicate" 메뉴 엔진 연결** → P1-5 (2026-10-06 완료). `EditorAPI::DuplicateEntity`/`DuplicateEntityCommand`로 대상+자손을 새 UUID로 복제하고, 복제 트리 안을 가리키는 EntityRef는 복제본으로 재매핑·밖을 가리키는 참조는 보존한다(복제본이 원본과 같은 부모 아래로). 상세·검증 수준은 `REVIEW_BASED_IMPROVEMENT_PLAN.md` P1-5.
 
 ---
 

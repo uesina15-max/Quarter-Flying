@@ -1,6 +1,11 @@
 @echo off
-cd /d "@CMAKE_CURRENT_BINARY_DIR@"
-python editor/main.py
+rem Editor launcher (placed at the install root).
+rem It used to cd into the build folder, so the installed editor
+rem stopped working once the build folder was removed or the install folder was moved
+rem (docs/GAME_BUILD_PLAN.md section 1.2 item 6). Everything is now relative to this file.
+cd /d "%~dp0"
+set "PYTHONPATH=%~dp0bin;%PYTHONPATH%"
+python "%~dp0editor\main.py"
 if errorlevel 1 (
     echo Error running editor
     pause

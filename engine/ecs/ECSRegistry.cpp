@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include <string>
+#include <typeindex>
 
 namespace Engine
 {
@@ -73,6 +74,27 @@ namespace Engine
     size_t ECSRegistry::GetEntityCount() const
     {
         return entityManager->GetEntityCount();
+    }
+
+    std::vector<std::string> ECSRegistry::GetComponentTypeNames(Entity entity) const
+    {
+        std::vector<std::string> names;
+        for (const std::type_index& type : componentManager->GetEntityComponentTypes(entity))
+        {
+            // MSVC의 typeid 이름은 "struct Engine::HierarchyComponent" 꼴이다. 다른 컴파일러는
+            // 맹글링된 이름을 줄 수 있는데, 그 경우에도 마지막 "::" 뒤만 남기므로 비교가 실패할 뿐
+            // (= 경고가 더 나올 뿐) 저장 자체는 영향받지 않는다.
+            std::string name = type.name();
+            for (const char* prefix : { "struct ", "class " })
+            {
+                const std::string p(prefix);
+                if (name.rfind(p, 0) == 0) { name.erase(0, p.size()); break; }
+            }
+            const size_t pos = name.rfind("::");
+            if (pos != std::string::npos) name.erase(0, pos + 2);
+            names.push_back(std::move(name));
+        }
+        return names;
     }
 
     void ECSRegistry::Clear()

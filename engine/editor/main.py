@@ -41,6 +41,8 @@ from core.scene_action_playback import ScenePlaybackController
 from demo_scene_seed import seed_demo_scene
 from core.editor_camera import look_rotation_quaternion, forward_from_quaternion, quaternion_from_euler_degrees
 from scene_instantiation import expand_scene_objects, instantiate_scene
+from project import current_project
+from project_actions import ProjectActionsMixin
 
 # 모션 에디터 임포트
 try:
@@ -95,7 +97,7 @@ class DummyViewport(QWidget):
 # 메인 에디터 윈도우
 # ============================================================
 
-class EditorMainWindow(QMainWindow):
+class EditorMainWindow(ProjectActionsMixin, QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Quarter Flying Editor")
@@ -108,6 +110,9 @@ class EditorMainWindow(QMainWindow):
         
         # 설정 관리자
         self.config_manager = ConfigManager()
+        # 마지막으로 연 프로젝트(없으면 샘플 프로젝트 = engine/). 뷰포트가 엔진을 만들 때
+        # 에셋 기준 폴더를 이 프로젝트에서 받으므로 _build_central_widget보다 먼저 정한다.
+        self._restore_last_project()
 
         self._build_menu()
         self._build_toolbar()
@@ -150,13 +155,11 @@ class EditorMainWindow(QMainWindow):
 
         # File
         file_menu = mb.addMenu("File")
-        act_new   = QAction("New Scene",    self, shortcut="Ctrl+N")
-        act_open  = QAction("Open Scene…",  self, shortcut="Ctrl+O")
-        act_save  = QAction("Save Scene",   self, shortcut="Ctrl+S")
-        act_saveas = QAction("Save As…",    self, shortcut="Ctrl+Shift+S")
+        # 예전에는 New/Open/Save Scene 항목만 만들고 아무 동작에도 연결하지 않았다(눌러도 아무 일 없음).
+        # 씬 파일 저장/불러오기가 엔진에 생기면서(engine/scene/SceneIO.h) project_actions.py로 연결한다.
+        self._add_project_menu_actions(file_menu)
         act_exit  = QAction("Exit",         self, shortcut="Alt+F4")
         act_exit.triggered.connect(self.close)
-        file_menu.addActions([act_new, act_open, act_save, act_saveas])
         file_menu.addSeparator()
         file_menu.addAction(act_exit)
 
@@ -556,9 +559,19 @@ class EditorMainWindow(QMainWindow):
         # 3단계 실패는 seed_demo_scene()이 단계별로 이미 로그를 남기므로 여기서는 잡지 않는다
         # (잡을 예외는 인자 누락 같은 호출 순서 버그뿐이고, 그건 드러나야 한다).
         if not getattr(self, '_demo_scene_seeded', False):
-            seed_demo_scene(editor_api, registry, self._log_engine)
             self._demo_scene_seeded = True
-            self._instantiate_loaded_scene(editor_api, registry)
+            project = current_project()
+            if project.is_sample:
+                # 샘플 프로젝트: 프로젝트 개념 이전과 같은 데모 월드(코드 시드 + scene.json).
+                seed_demo_scene(editor_api, registry, self._log_engine)
+                self._instantiate_loaded_scene(editor_api, registry)
+            else:
+                start = project.start_scene_path
+                if start and start.is_file():
+                    self._load_scene_file(start)
+                else:
+                    self._new_scene_in_world()
+            self._update_title()
 
     def _instantiate_loaded_scene(self, editor_api, registry):
         """이미 파싱해 둔 scene.json 오브젝트를 ECS 엔티티로 만든다 (scene_instantiation.py 참고)."""
@@ -756,10 +769,13 @@ class EditorMainWindow(QMainWindow):
                 try:
                     # 월드 플레이 시작
                     if self._world:
+                        # ScriptComponent의 모듈은 프로젝트 scripts/에서 import된다.
+                        self._add_project_scripts_to_path()
                         self._world.Play()
                         # Sound Lite Phase 6 - 액션 재생 시작(§2.4). 액션 경로가 상대
-                        # 경로면 engine/assets 기준으로 푼다.
-                        assets_dir = os.path.join(os.path.dirname(_EDITOR_DIR), "assets")
+                        # 경로면 현재 프로젝트의 assets 폴더 기준으로 푼다(Player도 같은 규칙,
+                        # runtime/python/runtime_bootstrap.py).
+                        assets_dir = str(current_project().assets_dir)
                         started = self._scene_playback.start(self._world.GetRegistry(), assets_dir)
                         if started:
                             self.status.log(f"액션 재생 시작: {started}개")
@@ -831,7 +847,9 @@ class EditorMainWindow(QMainWindow):
     # ----------------------------------------------------------------
 
     def _load_default_scene(self):
-        """기본 씬 로드"""
+        """기본 씬 로드 (샘플 프로젝트 전용 — 다른 프로젝트는 시작 씬 파일을 엔진이 불러온다)"""
+        if not current_project().is_sample:
+            return
         # cwd(현재 작업 디렉터리)가 아니라 이 파일 위치(_EDITOR_DIR) 기준 상대경로로
         # 계산해야 한다 — "engine/editor"에서 실행하든 다른 곳에서 실행하든
         # 항상 "engine/assets/scene.json"을 가리키게 함.
@@ -851,20 +869,11 @@ class EditorMainWindow(QMainWindow):
         self.setWindowTitle(window_title)
         self.resize(window_width, window_height)
         
-        # 엔진 설정
-        asset_root = self.config_manager.get("paths", "assetRoot", default="./")
-        shader_root = self.config_manager.get("paths", "shaderRoot", default="./assets/shaders/")
-        
-        # PathResolver 초기화
-        if not HAS_ENGINE:
-            print("[Editor] 엔진 모듈이 없어 PathResolver를 초기화하지 않았습니다")
-        else:
-            try:
-                from engine_binding import binding as ge_python
-                ge_python.PathResolver.Init(asset_root, shader_root)
-                print(f"[Editor] PathResolver initialized: {asset_root}, {shader_root}")
-            except Exception as e:
-                print(f"[Editor] PathResolver initialization failed: {e}")
+        # 엔진의 에셋 기준 폴더는 config.json의 paths가 아니라 현재 프로젝트에서 정한다
+        # (viewport.py가 엔진을 만들 때, project_actions._switch_project가 프로젝트를 바꿀 때).
+        # 예전에는 여기서 quarterflying.PathResolver.Init을 불렀는데, 그 바인딩은 존재하지 않아 매번
+        # "module 'quarterflying' has no attribute 'PathResolver'"로 실패했고, C++의 PathResolver도
+        # 엔진 어디에서도 쓰이지 않는다(셰이더는 C++ 코드에 문자열로 들어 있다).
 
     def _on_scene_loaded(self, scene_data):
         """씬 로드 완료 처리"""

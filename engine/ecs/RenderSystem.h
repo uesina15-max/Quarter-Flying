@@ -90,6 +90,13 @@ namespace Engine
         // 대체된다.
         void RegisterMesh(uint32_t meshHandle, std::shared_ptr<Mesh> mesh);
 
+        // 에셋 기준 폴더를 바꾼다(에디터에서 다른 프로젝트를 열 때). 메시·텍스처 캐시는 상대 경로가
+        // 키라서 같이 비워야 하는데, 텍스처 해제는 GL 호출이라 이 엔진의 GL 컨텍스트가 current일 때만
+        // 해야 한다. 에디터에는 엔진(GL 컨텍스트)이 여럿 있어서 Python에서 부른 시점의 current
+        // 컨텍스트는 남의 것일 수 있다. 그래서 여기서는 예약만 하고 다음 Update(TickFrame 안)에서 바꾼다.
+        void SetAssetRoot(std::string assetRoot);
+        const std::string& GetAssetRoot() const { return assetRoot_; }
+
         // 이 컴포넌트를 그릴 때 쓸 meshHandle (클래스 주석의 해석 정책). 경로 메시는 첫 호출 때
         // 로드되므로 GL 컨텍스트가 current인 상태(Update 안)에서 불러야 한다.
         uint32_t ResolveMeshHandle(const RenderableComponent& renderable);
@@ -111,6 +118,9 @@ namespace Engine
         std::shared_ptr<Mesh> defaultCubeMesh_;
 
         std::string assetRoot_;
+        std::string pendingAssetRoot_;
+        bool assetRootChangePending_ = false;
+        void ApplyPendingAssetRoot();
         MeshLoader meshLoader_;
         std::unordered_map<std::string, uint32_t> pathHandles_;  // meshPath -> 핸들 (실패는 0)
 

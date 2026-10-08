@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include "../core/Utf8Path.h"
 
 namespace Engine
 {
@@ -13,7 +14,7 @@ namespace Engine
 
     std::string Shader::readFile(const std::string& path)
     {
-        std::ifstream file(path);
+        std::ifstream file(PathFromUtf8(path));
         std::stringstream ss;
         ss << file.rdbuf();
         return ss.str();

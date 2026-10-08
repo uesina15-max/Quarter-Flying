@@ -23,6 +23,11 @@
 namespace Engine {
 
 static std::mutex g_LogMutex;
+static LogLevel g_MinLevel = LogLevel::Trace;   // Logger.h SetMinLevel 주석 참고
+
+void Logger::SetMinLevel(LogLevel level) { g_MinLevel = level; }
+LogLevel Logger::GetMinLevel() { return g_MinLevel; }
+bool Logger::IsLoggable(LogLevel level) { return level >= g_MinLevel; }
 
 void Logger::Initialize() {
 }

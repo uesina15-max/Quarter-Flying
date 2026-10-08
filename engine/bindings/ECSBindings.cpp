@@ -8,6 +8,8 @@
 #include "../ecs/CameraSystem.h"
 #include "../ecs/Hierarchy.h"
 #include "../core/logging/Logger.h"
+#include "../core/CommandManager.h"
+#include "../scene/SceneIO.h"
 #include <pybind11/stl.h>
 #include <nlohmann/json.hpp>
 #include <vector>
@@ -290,7 +292,39 @@ void RegisterWorldBindings(pybind11::module_& m) {
         // 누락되어 에디터의 Play/Pause/Stop이 항상 AttributeError로 실패하고 있었다.
         .def("Play",  &World::Play)
         .def("Pause", &World::Pause)
-        .def("Stop",  &World::Stop);
+        .def("Stop",  &World::Stop)
+        // 씬 파일 저장/불러오기(docs/GAME_BUILD_PLAN.md Phase 1, scene/SceneIO.h).
+        // 실패하면 원인 메시지를 담은 RuntimeError를 던진다 - None/False를 돌려주면 호출부가 확인을
+        // 빠뜨렸을 때 조용히 "저장된 줄 아는" 상태가 되기 때문이다.
+        // 반환값은 경고 표시용 dict: {"entity_count": int, "unregistered_components"/"unknown_components": [str]}.
+        .def("SaveScene", [](World& self, const std::string& path) {
+            auto result = SaveSceneToFile(*self.GetRegistry(), path);
+            if (!result) throw std::runtime_error(result.error().message);
+            py::dict report;
+            report["entity_count"] = result->entityCount;
+            report["unregistered_components"] = result->unregisteredComponents;
+            return report;
+        }, py::arg("path"))
+        // 빈 씬으로 시작(File > New Scene). LoadScene과 같은 이유로 Edit 상태에서만 허용한다.
+        .def("NewScene", [](World& self) {
+            if (self.GetEditorState() != World::EditorState::Edit)
+                throw std::runtime_error("NewScene: stop Play mode before starting a new scene");
+            self.GetRegistry()->Clear();
+            CommandManager::GetInstance().Clear();
+        })
+        .def("LoadScene", [](World& self, const std::string& path) {
+            // Play 중에 불러오면 Stop이 Play 시작 시점의 스냅샷으로 되돌려 버려, 불러온 씬이 사라진다.
+            if (self.GetEditorState() != World::EditorState::Edit)
+                throw std::runtime_error("LoadScene: stop Play mode before loading a scene");
+            auto result = LoadSceneFromFile(*self.GetRegistry(), path);
+            if (!result) throw std::runtime_error(result.error().message);
+            // 엔티티가 통째로 바뀌었으므로 이전 씬을 가리키는 Undo 기록은 무효다(World::Stop과 같은 처리).
+            CommandManager::GetInstance().Clear();
+            py::dict report;
+            report["entity_count"] = result->entityCount;
+            report["unknown_components"] = result->unknownComponents;
+            return report;
+        }, py::arg("path"));
 }
 
 void RegisterECSBindings(pybind11::module_& m) {

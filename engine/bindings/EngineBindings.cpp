@@ -118,7 +118,11 @@ void RegisterEngineBindings(pybind11::module_& m) {
         .def_readwrite("windowTitle",  &EngineConfig::windowTitle)
         .def_readwrite("windowWidth",  &EngineConfig::windowWidth)
         .def_readwrite("windowHeight", &EngineConfig::windowHeight)
-        .def_readwrite("assetRoot",    &EngineConfig::assetRoot);
+        .def_readwrite("assetRoot",    &EngineConfig::assetRoot)
+        .def_readwrite("showDebugGrid",   &EngineConfig::showDebugGrid)
+        .def_readwrite("scriptHotReload", &EngineConfig::scriptHotReload)
+        .def_readwrite("windowFullscreen", &EngineConfig::windowFullscreen)
+        .def_readwrite("logFrameInterval", &EngineConfig::logFrameInterval);
 
     // ============================================================
     // Engine
@@ -148,6 +152,8 @@ void RegisterEngineBindings(pybind11::module_& m) {
         .def("GetActiveWorld",&Engine::GetActiveWorld,
              py::return_value_policy::reference)
         .def("SetActiveWorld",&Engine::SetActiveWorld)
+        .def("SetAssetRoot",  &Engine::SetAssetRoot, py::arg("asset_root"))
+        .def("GetAssetRoot",  &Engine::GetAssetRoot)
         .def("CreateWorld",   &Engine::CreateWorld,
              py::return_value_policy::reference)
         // Motion Mixer 프리뷰 (Phase 4A, 착수 계약서 §C11)

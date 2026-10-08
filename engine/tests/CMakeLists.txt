@@ -53,6 +53,11 @@ file(GLOB_RECURSE PREFAB_SOURCES
     "../prefab/*.cpp"
 )
 
+file(GLOB_RECURSE SCENE_SOURCES
+    "../scene/*.h"
+    "../scene/*.cpp"
+)
+
 # =============================================================================
 # Test executable — Active Unit & Property Tests
 # =============================================================================
@@ -92,6 +97,10 @@ add_executable(SimpleEngineTests
     TransactionTests.cpp
     RotateScaleEntityCommandTests.cpp
     CreateDestroyEntityCommandTests.cpp
+    DuplicateEntityCommandTests.cpp
+    SceneIOTests.cpp
+    GameConfigTests.cpp
+    ../runtime/GameConfig.cpp
     AddRemoveComponentCommandTests.cpp
     EditorCommandIntegrationTests.cpp
 
@@ -101,6 +110,7 @@ add_executable(SimpleEngineTests
     ../editor/commands/ScaleEntityCommand.cpp
     ../editor/commands/CreateEntityCommand.cpp
     ../editor/commands/DestroyEntityCommand.cpp
+    ../editor/commands/DuplicateEntityCommand.cpp
     ../editor/commands/AddComponentCommand.cpp
     ../editor/commands/RemoveComponentCommand.cpp
     ../editor/commands/InstantiatePrefabCommand.cpp
@@ -165,6 +175,7 @@ add_executable(SimpleEngineTests
 ${RENDERER_SOURCES}
     ${ANIMATION_SOURCES}
     ${PREFAB_SOURCES}
+    ${SCENE_SOURCES}
 )
 
 # Link Google Test, RapidCheck, and engine dependencies
@@ -176,6 +187,9 @@ ${RENDERER_SOURCES}
 target_link_libraries(SimpleEngineTests PRIVATE gtest rapidcheck fmt::fmt glm::glm nlohmann_json::nlohmann_json glew_s tinyobjloader)
 # STB_INCLUDE_DIR: ASSET_SOURCES의 TextureImporter.cpp가 stb_image.h를 쓴다.
 target_include_directories(SimpleEngineTests PRIVATE ${GLEW_TRUE_INCLUDE_DIR} ${STB_INCLUDE_DIR})
+# ScriptSystem.cpp는 pybind11/Python이 필요해 위 ECS_SOURCES에서 빠져 있다. Engine.cpp가 World에
+# ScriptSystem을 등록하는 부분도 같은 이유로 이 타깃에서만 컴파일하지 않는다(core/Engine.cpp).
+target_compile_definitions(SimpleEngineTests PRIVATE QF_NO_PYTHON_SCRIPTING)
 
 # Definitions
 target_compile_definitions(SimpleEngineTests PRIVATE ENABLE_TESTS)

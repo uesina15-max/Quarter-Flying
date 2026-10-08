@@ -11,6 +11,8 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include "../core/logging/Logger.h"
+#include "../core/Utf8Path.h"
+#include <fstream>
 #include <unordered_map>
 #include "ObjLoaderHelper.h"
 
@@ -89,7 +91,16 @@ namespace Engine
         std::vector<tinyobj::material_t> materials;
         std::string warn, err;
 
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path.c_str()))
+        // tinyobj의 파일 이름 오버로드는 std::ifstream(const char*)로 열어서 경로를 ANSI로 해석한다.
+        // 한글 폴더의 메시가 "Failed to load obj"로 실패하지 않도록 UTF-8 경로로 직접 열어 스트림을 넘긴다
+        // (core/Utf8Path.h). .mtl은 원래부터 읽지 않았다(기준 폴더를 넘기지 않아 작업 폴더에서 찾았음).
+        std::ifstream objStream(PathFromUtf8(path), std::ios::binary);
+        if (!objStream)
+        {
+            Logger::Error("Failed to load obj: {} - cannot open file", path);
+            return nullptr;
+        }
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, &objStream, nullptr))
         {
             Logger::Error("Failed to load obj: {} - {}", path, err);
             return nullptr;

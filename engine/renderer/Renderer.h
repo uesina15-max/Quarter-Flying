@@ -93,6 +93,9 @@ namespace Engine
         // 에디터 카메라로 볼 때만 그린다(Engine::SetViewCamera가 켜고 끔). 게임 화면에는 나오지 않는다.
         DebugLineBuffer& GetDebugLineBuffer() { return debugLines; }
         void SetDrawEditorGizmos(bool draw) { drawEditorGizmos = draw; }
+        // 디버그 그리드 표시(EngineConfig::showDebugGrid). 기즈모와 달리 뷰 카메라와 무관하게 그려지므로
+        // 게임 실행 파일에서는 이 플래그로 끈다.
+        void SetDrawDebugGrid(bool draw) { drawDebugGrid = draw; }
         bool IsDrawingEditorGizmos() const { return drawEditorGizmos; }
         MotionPreviewState* GetMotionPreviewState() const { return motionPreviewState; }
 
@@ -164,6 +167,7 @@ namespace Engine
         // 에디터 기즈모 (GetDebugLineBuffer 주석 참고)
         DebugLineBuffer debugLines;
         bool drawEditorGizmos = false;
+        bool drawDebugGrid = true;
         
         // Feature flags
         bool frameInProgress;

@@ -126,6 +126,11 @@ namespace Engine
         std::string GetEntityName(Entity entity) const;   // 이름이 없으면 "Entity_<id>"를 만들어 돌려준다
         bool HasEntityName(Entity entity) const;           // SetEntityName으로 명시적으로 설정된 이름이 있는가
 
+        // 이 엔티티에 붙은 컴포넌트의 C++ 타입 이름(접두사 "struct "/"class "와 네임스페이스를 뗀 이름,
+        // 예: "HierarchyComponent"). ComponentRegistry(리플렉션)의 이름과 같은 꼴이라 둘을 비교해
+        // "붙어는 있는데 리플렉션에 등록되지 않아 저장되지 않는 컴포넌트"를 찾는 데 쓴다(scene/SceneIO.cpp).
+        std::vector<std::string> GetComponentTypeNames(Entity entity) const;
+
         bool HasTransformComponent(Entity entity) const;
         TransformComponent* GetTransformComponent(Entity entity);
 

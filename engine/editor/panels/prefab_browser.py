@@ -27,12 +27,13 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 from style.theme import COLORS
+from project import current_project
 
-# engine/editor/panels/prefab_browser.py 기준 engine/assets/prefabs/
-_PREFAB_ASSETS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "assets", "prefabs",
-)
+# 경로는 import 시점에 고정하지 않고 쓰는 순간 현재 프로젝트에서 받는다(editor/project/project.py).
+# 예전에는 이 파일 위치 기준 engine/assets/...를 상수로 계산해 두어서, 다른 프로젝트를 열 수 없었다
+# (docs/GAME_BUILD_PLAN.md §1.2 항목 3).
+def _prefab_dir() -> str:
+    return str(current_project().prefabs_dir)
 
 
 def _read_prefab_display_name(path: str) -> str:
@@ -123,10 +124,10 @@ class PrefabBrowserPanel(QWidget):
     def refresh(self):
         """assets/prefabs/*.prefab.json 재스캔."""
         self.list_widget.clear()
-        if not os.path.isdir(_PREFAB_ASSETS_DIR):
+        if not os.path.isdir(_prefab_dir()):
             return
-        for filename in sorted(f for f in os.listdir(_PREFAB_ASSETS_DIR) if f.endswith(".prefab.json")):
-            path = os.path.join(_PREFAB_ASSETS_DIR, filename)
+        for filename in sorted(f for f in os.listdir(_prefab_dir()) if f.endswith(".prefab.json")):
+            path = os.path.join(_prefab_dir(), filename)
             item = QListWidgetItem(f"📦  {_read_prefab_display_name(path)}")
             item.setData(Qt.UserRole, path)
             item.setToolTip(path)

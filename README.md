@@ -95,10 +95,11 @@ QuarterFlying/
 - [ROADMAP.md](ROADMAP.md): 진행 상황
 - [docs/REVIEW_BASED_IMPROVEMENT_PLAN.md](docs/REVIEW_BASED_IMPROVEMENT_PLAN.md): 개선안
 - [docs/INGAME_CAMERA_PLAN.md](docs/INGAME_CAMERA_PLAN.md): 카메라 기능 계획
+- [docs/GAME_BUILD_PLAN.md](docs/GAME_BUILD_PLAN.md): 게임 빌드(Build Game) 기능 계획
+- [docs/CODE_REVIEW_2026-10-07.md](docs/CODE_REVIEW_2026-10-07.md): 전체 코드 리뷰(2026-10-07)
 - [docs/ARCHITECTURE_COUPLING_AUDIT.md](docs/ARCHITECTURE_COUPLING_AUDIT.md): 모듈 결합도 점검
-- [docs/ARCHITECTURE_KO.md](docs/ARCHITECTURE_KO.md)
 - [docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md](docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md)
-- 보관 문서: [docs/archive/legacy/](docs/archive/legacy/)
+- 보관 문서(현재 코드와 맞지 않을 수 있음): [docs/archive/](docs/archive/), [docs/archive/legacy/](docs/archive/legacy/)
 
 ## 라이선스
 

@@ -2,6 +2,7 @@
 #include "../../ecs/ECSRegistry.h"
 #include "../../prefab/PrefabInstanceComponent.h"
 #include "EntitySnapshot.h"
+#include "../../core/Utf8Path.h"
 
 namespace Engine
 {
@@ -92,7 +93,8 @@ std::expected<void, EngineError> InstantiatePrefabCommand::Apply()
     }
     if (auto* meta = registry_->GetComponent<PrefabInstanceComponent>(spawnedEntity_))
     {
-        meta->prefabPath          = prefabPath_.string();
+        // UTF-8로 저장한다. path.string()은 ANSI로 바꾸다가 한글 경로에서 예외를 던졌다(core/Utf8Path.h).
+        meta->prefabPath          = Utf8FromPath(prefabPath_);
         meta->sourcePrefabVersion = loadedAsset_->version;
     }
 

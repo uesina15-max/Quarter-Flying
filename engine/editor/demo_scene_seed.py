@@ -21,8 +21,13 @@ import os
 from typing import Callable, List, NamedTuple
 
 from engine_binding import binding as ge_python
+from project import current_project
 
-_ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+# 경로는 import 시점에 고정하지 않고 쓰는 순간 현재 프로젝트에서 받는다(editor/project/project.py).
+# 예전에는 이 파일 위치 기준 engine/assets/...를 상수로 계산해 두어서, 다른 프로젝트를 열 수 없었다
+# (docs/GAME_BUILD_PLAN.md §1.2 항목 3).
+def _assets_dir() -> str:
+    return str(current_project().assets_dir)
 
 
 class SeedResult(NamedTuple):
@@ -71,7 +76,7 @@ def _seed_barrel_prefab(editor_api, registry) -> str:
     # 프리팹 시스템 Phase 2 실측 검증용 (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 2).
     # 원점의 수동 생성 "Test Cube"와 나란히 놓아서, 프리팹에서 스폰된 엔티티도 같은
     # RenderSystem 경로로 똑같이 그려지는지 한 화면에서 비교 확인한다.
-    prefab_path = os.path.join(_ASSETS_DIR, "prefabs", "Barrel.prefab.json")
+    prefab_path = os.path.join(_assets_dir(), "prefabs", "Barrel.prefab.json")
     entity = editor_api.instantiate_prefab(prefab_path, ge_python.Vec3(3.0, 0.0, 0.0))
     return f"entity id={entity.id}"
 
@@ -80,7 +85,7 @@ def _seed_lamp_prefab(editor_api, registry) -> str:
     # 프리팹 Phase 5(계층) 검증용: 엔티티 4개(Lamp -> Pole, Lamp -> Head -> Bulb)짜리 v2 프리팹.
     # Scene Hierarchy에 트리로 보이고, Lamp를 움직이면 Pole/Head/Bulb가 같이 움직여야 한다.
     # 그리드 윗면(y=1) 위, Test Cube(0,1.5,5) 왼쪽에 둔다.
-    prefab_path = os.path.join(_ASSETS_DIR, "prefabs", "Lamp.prefab.json")
+    prefab_path = os.path.join(_assets_dir(), "prefabs", "Lamp.prefab.json")
     entity = editor_api.instantiate_prefab(prefab_path, ge_python.Vec3(-4.0, 1.5, 5.0))
     return f"entity id={entity.id}"
 
@@ -117,7 +122,7 @@ def _seed_fire_prefab(editor_api, registry) -> str:
     # §4.4의 "이펙트 하나 = 프리팹 하나로 두면 저장/스폰이 공짜로 따라온다"가 실제로
     # 성립하는지(= 프리팹에서 나온 이펙트도 똑같이 시뮬레이션되고 그려지는지)를 한 화면에서
     # 확인한다.
-    fire_path = os.path.join(_ASSETS_DIR, "prefabs", "Fire.prefab.json")
+    fire_path = os.path.join(_assets_dir(), "prefabs", "Fire.prefab.json")
     entity = editor_api.instantiate_prefab(fire_path, ge_python.Vec3(6.0, 0.0, 0.0))
     return f"entity id={entity.id}"
 

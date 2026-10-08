@@ -30,6 +30,15 @@ struct EngineConfig
     // "assets/models/..." 형태로 engine/ 기준이기 때문).
     std::string assetRoot;
 
+    // 디버그 그리드를 그릴지. 에디터에서는 켜고, 게임 실행 파일(Player)에서는 끈다.
+    // 그리드는 뷰 카메라와 상관없이 그려지므로(Renderer::Render), 끄지 않으면 게임 화면에도 나온다
+    // (docs/GAME_BUILD_PLAN.md §3.5).
+    bool showDebugGrid;
+
+    // 스크립트를 인스턴스화할 때마다 모듈을 다시 불러올지(ScriptSystem). 에디터에서 스크립트를
+    // 고친 뒤 Play를 다시 누르면 반영되게 하는 기능이라, 게임 실행 파일에서는 끈다.
+    bool scriptHotReload;
+
     EngineConfig()
         : windowTitle("Quarter Flying")
         , windowWidth(kDefaultWindowWidth)
@@ -38,6 +47,8 @@ struct EngineConfig
         , frameAllocatorSize(16 * 1024 * 1024) // 16 MB
         , numWorkerThreads(0) // 0 = auto-detect
         , logFrameInterval(60) // Log every 60 frames
+        , showDebugGrid(true)
+        , scriptHotReload(true)
     {}
 };
 

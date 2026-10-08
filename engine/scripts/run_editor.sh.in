@@ -1,6 +1,9 @@
 #!/bin/bash
-cd "@CMAKE_CURRENT_BINARY_DIR@"
-python3 editor/main.py
+# 에디터 실행 스크립트(설치 폴더 루트). 설치 폴더 기준으로 동작한다(빌드 폴더에 의존하지 않음).
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE"
+export PYTHONPATH="$HERE/bin:$PYTHONPATH"
+python3 "$HERE/editor/main.py"
 if [ $? -ne 0 ]; then
     echo "Error running editor"
     exit 1

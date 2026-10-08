@@ -1,4 +1,5 @@
 #include "Reflection.h"
+#include "../core/Utf8Path.h"
 #include <fstream>
 #include "Components.h"
 #include "ScriptComponent.h"
@@ -120,7 +121,7 @@ namespace Engine {
     }
 
     void SaveSnapshotToFile(const nlohmann::json& snapshot, const std::string& filepath) {
-        std::ofstream file(filepath);
+        std::ofstream file(PathFromUtf8(filepath));
         if (file.is_open()) {
             file << snapshot.dump(4);
             file.close();

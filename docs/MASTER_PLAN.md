@@ -10,7 +10,7 @@
 - **이 문서(`docs/MASTER_PLAN.md`)** — 제품/전략 관점의 장기 우선순위. "기술 데모에서 실사용 가능한 제작 도구로" 가기 위해 뭘 순서대로 만들어야 하는가.
 - **[ROADMAP.md](../ROADMAP.md)** — 세션별로 실제 검증된 진행 기록(ground truth). "지금 뭐가 실제로 되고 뭐가 안 되는가"를 실행 결과·스크린샷·테스트 통과 여부로 기록한다. 이 마스터플랜의 각 항목이 실제로 착수되면 ROADMAP.md에 상세 실행 기록이 남는다 — **상태를 확인할 때는 이 문서가 아니라 ROADMAP.md를 먼저 봐야 한다.**
 - **[docs/MOTION_MIXER_IMPLEMENTATION_PLAN.md](MOTION_MIXER_IMPLEMENTATION_PLAN.md)**, **[docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md](PYTHON_BINDING_IMPLEMENTATION_PLAN.md)** — 개별 기능의 상세 설계/Phase 분해. 이 마스터플랜에서는 "P1.5" 한 줄로만 요약되는 작업의 실제 API 시그니처·JSON 포맷·테스트 명세가 여기 있다.
-- **`PLAN.md`, `PROBLEM_ANALYSIS_REPORT.md`, `UNUSED_AND_LEGACY_REPORT.md`(저장소 루트)** — 더 오래된 진단 문서. ROADMAP.md §3(P3)에 이미 기록돼 있듯, 이번 세션들에서 검증된 사실과 상당 부분 어긋나거나 이미 해소됐을 가능성이 있어 우선순위가 낮다.
+- **`PLAN.md`, `PROBLEM_ANALYSIS_REPORT.md`, `UNUSED_AND_LEGACY_REPORT.md`(2026-10-07 저장소 루트에서 `docs/archive/`로 이동)** — 더 오래된 진단 문서. ROADMAP.md §3(P3)에 이미 기록돼 있듯, 이번 세션들에서 검증된 사실과 상당 부분 어긋나거나 이미 해소됐을 가능성이 있어 우선순위가 낮다.
 
 이 문서 자체는 사용자가 제시한 외부 리뷰 정리본을 기반으로 하되, 저장소를 직접 조사해 확인 가능한 부분(§6.1, §6.2)은 실측으로 교정했다.
 
@@ -47,7 +47,7 @@
 | 순위 | 축 | 항목 | 현재 상태 |
 |---|---|---|---|
 | **P0-a** | 유지보수 기반 | 저장소 구조 정리(아티팩트 제거), 문서 체계 통합, CI/CD, 테스트 커버리지 + Python smoke test | ⬜ 미착수 (테스트 스위트 자체는 373개 존재·통과, CI 자동화는 없음) |
-| **P0-b** | Core Game Runtime | 에디터 분리형 독립 런타임 패키징, 씬 라이프사이클(`LoadScene`), 프리팹 인스턴스, ECS 컴포넌트/스크립팅, 물리·입력 매핑, 기본 에셋 임포터 | ⬜ 대부분 미착수. ECS 컴포넌트/스크립팅은 `ScriptSystem`(Python 라이프사이클 훅 + hot reload)로 일부 확보. **ECS→실제 렌더링 경로는 2026-08-18에 확보됨**(ROADMAP.md §6) — 이 항목은 원래 P0-b 소관이 아니라 렌더링 기반(§2의 "3D 뷰포트 실제 렌더링" P0 블로커) 쪽이었는데, 결과적으로 "기본 에셋 임포터"의 전제 조건이 이걸로 갖춰졌다 |
+| **P0-b** | Core Game Runtime | 에디터 분리형 독립 런타임 패키징, 씬 라이프사이클(`LoadScene`), 프리팹 인스턴스, ECS 컴포넌트/스크립팅, 물리·입력 매핑, 기본 에셋 임포터 | 🟨 **에디터 분리형 독립 런타임 패키징·씬 저장/불러오기는 2026-10-07 구현**(게임 실행 파일 + Player 템플릿 + Build Game, [GAME_BUILD_PLAN.md](GAME_BUILD_PLAN.md) §9 — 깨끗한 PC 검증과 인게임 UI 선행 과제는 남음). 나머지는 대부분 미착수. ECS 컴포넌트/스크립팅은 `ScriptSystem`(Python 라이프사이클 훅 + hot reload)로 일부 확보. **ECS→실제 렌더링 경로는 2026-08-18에 확보됨**(ROADMAP.md §6) — 이 항목은 원래 P0-b 소관이 아니라 렌더링 기반(§2의 "3D 뷰포트 실제 렌더링" P0 블로커) 쪽이었는데, 결과적으로 "기본 에셋 임포터"의 전제 조건이 이걸로 갖춰졌다 |
 | **P1** | Production Pipeline | **배포 빌드/패키징**, **에셋 import/reimport + 참조 관리**, **플레이 디버그·프로파일러**, 애니메이션 스테이트 머신, UI 시스템(Canvas), 3D 오디오, 머티리얼 에디터, Save/Load | ⬜ 미착수. 단, "애니메이션 스테이트 머신"의 하위 기반(스켈레톤/키프레임/레이어 블렌딩)은 Motion Mixer Phase 1~5로 이미 확보(ROADMAP.md §P1.5) — 남은 건 상태 전이 그래프(FSM) 자체 |
 | **P2** | Tool UX & 차별화 | Python API 강화(핫 리로드·에러 위치 표시), Undo/Redo, 에셋 브라우저, 프리팹 베리언트, 프레임 프로파일러, GPU Instancing / BVH Culling | Undo/Redo는 `CommandManager`로 이미 존재(범위 확인 필요). **GPU Instancing은 2026-08-18에 실제로 연결·검증됨**(`InstancedBatchManager` + `RenderSystem` + `SceneMeshRenderer`, 실제 큐브 렌더링 스크린샷 확인) — 아래 참고 |
 | **P3** | Advanced | NavMesh, Terrain, 네트워킹, Vulkan, 멀티플랫폼 확장 | ⬜ 미착수 |
@@ -112,7 +112,7 @@
 원문 리뷰는 "Native C++ GUI와 Python/Qt GUI 혼재가 P0-a에서 방향을 확정해야 하는데 어느 표에도 없다"고 지적했다. 저장소를 확인한 결과 **이 결정은 이미 2026-07-28에 내려졌고 실행까지 끝났다**:
 
 - [`docs/archive/legacy/FINAL_SINGLE_GUI_REPORT.md`](archive/legacy/FINAL_SINGLE_GUI_REPORT.md)("단일 GUI 통합 최종 보고서", 완료 상태) — **PySide6(Qt Widgets)를 단일 GUI로 선택**하고, 기존 GLFW 기반 독립 실행형 메인 앱을 제거(`BUILD_LEGACY_MAIN` CMake 플래그 뒤로 옵션화)해서 `engine/editor/main.py`(Python/PySide6)가 유일한 진입점이 되도록 정리함.
-- 실제로 `engine/app/`(GLFW 메인)은 저장소에서 완전히 제거됐고(`engine/ARCHIVE_INFO.md`에 아카이브 경위 기록), ImGui 통합은 `docs/ARCHITECTURE_KO.md`에 설계 문서로만 언급될 뿐 실제 코드(`ImGuiLayer.h/cpp` 등)는 저장소 어디에도 없다 — 문서와 실물이 어긋난 사례(ROADMAP.md §3 P3의 "오래된 문서 불신뢰" 경고와 같은 종류).
+- 실제로 `engine/app/`(GLFW 메인)은 저장소에서 완전히 제거됐고(`docs/archive/ARCHIVE_INFO.md`에 아카이브 경위 기록), ImGui 통합은 `docs/archive/ARCHITECTURE_KO.md`에 설계 문서로만 언급될 뿐 실제 코드(`ImGuiLayer.h/cpp` 등)는 저장소 어디에도 없다 — 문서와 실물이 어긋난 사례(ROADMAP.md §3 P3의 "오래된 문서 불신뢰" 경고와 같은 종류).
 
 **결론**: GUI는 PySide6로 이미 단일화되어 있고 재론할 필요 없음. 원문이 이 항목을 "미해결"로 본 건 `FINAL_SINGLE_GUI_REPORT.md`가 `docs/archive/legacy/`에 있어서 리뷰 작성 시점에 놓쳤을 가능성이 크다 — 문서 체계 정리(P0-a) 시 이 보고서를 `docs/archive/`에서 꺼내 이 마스터플랜에 링크해두는 정도만 하면 됨(아카이브 자체는 유지 — "완료된 결정의 기록"으로서 가치가 있다).
 
@@ -139,4 +139,4 @@ ROADMAP.md §6(버그 4)에서 발견: 같은 프로세스 안에 `EngineViewpor
 - `docs/archive/legacy/FINAL_SINGLE_GUI_REPORT.md` (GUI 단일화 결정 기록)
 - `engine/asset/AssetHandle.h` (프리팹 구현 현황 확인)
 - `engine/ecs/ScriptSystem.cpp` (Python 핫 리로드 기존 구현 확인)
-- `engine/ARCHIVE_INFO.md` (레거시 GLFW 메인 제거 경위)
+- `docs/archive/ARCHIVE_INFO.md` (레거시 GLFW 메인 제거 경위, 2026-10-07 `engine/`에서 이동)

@@ -1,6 +1,6 @@
 # ge_python 바인딩/더미 모드 구현 계획서
 
-> **참고**: 이 문서의 Phase 1~6은 [engine/editor/PHASE1_TECHNICAL_VERIFICATION.md](../engine/editor/PHASE1_TECHNICAL_VERIFICATION.md), [PHASE2_FUNCTIONAL_MIGRATION.md](../engine/editor/PHASE2_FUNCTIONAL_MIGRATION.md), [PHASE3_LEGACY_REMOVAL.md](../engine/editor/PHASE3_LEGACY_REMOVAL.md)에서 이미 사용 중인 "Phase 1/2/3"(GLFW → PySide6 GUI 통합)과는 **별개의 번호 체계**다. 두 문서 세트를 함께 참조할 때 혼동하지 않도록 주의한다.
+> **참고**: 이 문서의 Phase 1~6은 [PHASE1_TECHNICAL_VERIFICATION.md](archive/legacy/PHASE1_TECHNICAL_VERIFICATION.md), [PHASE2_FUNCTIONAL_MIGRATION.md](archive/legacy/PHASE2_FUNCTIONAL_MIGRATION.md), [PHASE3_LEGACY_REMOVAL.md](archive/legacy/PHASE3_LEGACY_REMOVAL.md)(2026-10-07 `engine/editor/`에서 `docs/archive/legacy/`로 이동)에서 이미 사용 중인 "Phase 1/2/3"(GLFW → PySide6 GUI 통합)과는 **별개의 번호 체계**다. 두 문서 세트를 함께 참조할 때 혼동하지 않도록 주의한다.
 
 > **개정 이력**: 1차 검토에서 "5개 파일이 무가드로 import한다"는 서술을 실제 코드 대비 정정했고, 2차 검토에서 (1) 임시 패턴을 거치지 않고 공통 래퍼로 바로 가는 순서, (2) 대상 파일 누락, (3) 바인딩 API 미확인 상태를 리스크가 아닌 선결 조건으로 재분류, (4) 더미 객체의 타입 계약(Protocol), (5) 이름 변경을 맨 뒤로, (6) 측정 가능한 검증 기준을 반영해 Phase 순서를 전면 재구성했다.
 
@@ -183,7 +183,7 @@
 **작업 항목**
 - [x] cmake가 정상 실행되는 빌드 환경을 확보한다 — CMake 4.3.3 / VS Build Tools 2022 / Python 3.14는 이미 설치돼 있었고 PATH만 누락된 상태였음(재설치 불필요).
 - [x] `ge_python` 타겟을 빌드해 `.pyd` 산출물을 생성한다 — `engine/build/Release/ge_python.cp314-win_amd64.pyd` 생성 확인. `--config Debug`는 `python3XX_d.lib` 부재로 링크 실패하므로 `--config Release` 사용.
-- [x] `import ge_python; help(ge_python)`으로 실제 노출 심볼을 전수 확인하고 기록한다 — [ge_python_api_dump_20260810.txt](ge_python_api_dump_20260810.txt) (861줄).
+- [x] `import ge_python; help(ge_python)`으로 실제 노출 심볼을 전수 확인하고 기록한다 — [ge_python_api_dump_20260810.txt](archive/ge_python_api_dump_20260810.txt) (861줄, 2026-10-07 `docs/archive/`로 이동).
 
 **실제로는 "빌드 확인" 이상이 필요했다.** `.pyd`가 지금까지 없었던 진짜 이유는 툴체인 미설정이 아니라 **엔진 코어(특히 `renderer/`)가 오랫동안 컴파일된 적이 없어 보이는 상태**였기 때문이다. 실제로 고쳐야 했던 항목(전부 git 커밋으로 분리 기록됨, `86bd2f8`/`1b1682a`/`36ec29c`):
 - CMake 스코프 버그(FetchContent 결과가 함수 밖으로 전파 안 됨), `std::hash` 네임스페이스 오류, `InstanceData` static_assert 미완성 타입/패딩 계산 오류, `SortBatchesForRendering` 중복 선언, `unique_ptr` 역참조 누락 2건(`CleanupStaleBatches`, `SortBatchesForRendering` 구현부)
@@ -195,7 +195,7 @@
 - pybind11 바인딩 자체의 버그 2건: `EditorBindings.cpp`의 `ECSRegistry` 불완전 타입, `CommandManager`의 암묵적 삭제 복사 생성자 판정 시 MSVC eager-instantiation
 
 **산출물**
-- 실제 `ge_python` API 목록: [docs/ge_python_api_dump_20260810.txt](ge_python_api_dump_20260810.txt) (3.2절 Protocol 정의의 입력).
+- 실제 `ge_python` API 목록: [docs/archive/ge_python_api_dump_20260810.txt](archive/ge_python_api_dump_20260810.txt) (3.2절 Protocol 정의의 입력).
 - 확인된 핵심 시그니처:
   - `Engine.InitializeFromWindowHandle(self, hwnd: int, config: EngineConfig) -> None`
   - `EngineConfig`: `windowWidth`, `windowHeight`, `windowTitle` 3개 필드만 노출(에디터 쪽 `config_manager.py`가 참조하는 `numWorkerThreads`/`logFrameInterval` 등은 **바인딩에 없음** — Protocol 설계 시 주의).

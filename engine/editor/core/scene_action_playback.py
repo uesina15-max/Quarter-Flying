@@ -23,7 +23,7 @@ from typing import Callable, List, Optional
 
 from core.action_data import ActionData, EventType, load_action
 from core.action_playback import ActionPlaybackCursor, events_of_type
-from core.sound_player import SoundPlayer, collect_clip_paths, resolve_clip_path
+from core.sound_player import SoundPlayer, collect_clip_paths, default_sound_player, resolve_clip_path
 
 COMPONENT_NAME = "ActionPlayerComponent"
 
@@ -52,7 +52,8 @@ class ScenePlaybackController:
     def __init__(self,
                  sound_player: Optional[SoundPlayer] = None,
                  action_loader: Callable[[str], ActionData] = load_action):
-        self._sound = sound_player if sound_player is not None else SoundPlayer()
+        # 기본값: 에디터(Qt 있음)에서는 SoundPlayer, Player(Qt 없음)에서는 NullSoundPlayer.
+        self._sound = sound_player if sound_player is not None else default_sound_player()
         self._load_action = action_loader
         self._entries: List[_Entry] = []
         self._registry = None                  # start()에서 받은 registry (Camera 이벤트 처리용)

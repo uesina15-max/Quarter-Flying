@@ -4,9 +4,11 @@
 #include "../renderer/InstancedBatchManager.h"
 #include "../renderer/Mesh.h"
 #include "../core/logging/Logger.h"
+#include "../core/Utf8Path.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <filesystem>
+#include <iterator>
 
 namespace Engine
 {
@@ -44,7 +46,7 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
 
         const std::string fullPath = assetRoot_.empty()
             ? renderable.texturePath
-            : (std::filesystem::path(assetRoot_) / renderable.texturePath).generic_string();
+            : GenericUtf8FromPath(PathFromUtf8(assetRoot_) / PathFromUtf8(renderable.texturePath));  // core/Utf8Path.h
 
         LoadedTexture loaded;
         if (textureLoader_)
@@ -78,7 +80,7 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
 
         const std::string fullPath = assetRoot_.empty()
             ? renderable.meshPath
-            : (std::filesystem::path(assetRoot_) / renderable.meshPath).generic_string();
+            : GenericUtf8FromPath(PathFromUtf8(assetRoot_) / PathFromUtf8(renderable.meshPath));  // core/Utf8Path.h
 
         std::shared_ptr<Mesh> mesh = meshLoader_(fullPath);
         if (!mesh)
@@ -165,8 +167,32 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
         return defaultCubeMesh_;
     }
 
+    void RenderSystem::SetAssetRoot(std::string assetRoot)
+    {
+        pendingAssetRoot_ = std::move(assetRoot);
+        assetRootChangePending_ = true;
+    }
+
+    void RenderSystem::ApplyPendingAssetRoot()
+    {
+        if (!assetRootChangePending_) return;
+        assetRootChangePending_ = false;
+        assetRoot_ = std::move(pendingAssetRoot_);
+        pendingAssetRoot_.clear();
+        // 경로 메시 핸들과 그 메시, 텍스처를 버린다. 다음 Update에서 새 기준 폴더로 다시 불러온다.
+        for (auto it = meshRegistry_.begin(); it != meshRegistry_.end();)
+        {
+            it = (it->first >= kPathHandleBase) ? meshRegistry_.erase(it) : std::next(it);
+        }
+        pathHandles_.clear();
+        textures_.clear();
+        nextPathHandle_ = kPathHandleBase;
+        Logger::Info("RenderSystem - asset root changed to '{}'", assetRoot_);
+    }
+
     void RenderSystem::Update(ECSRegistry& registry, float /*deltaTime*/)
     {
+        ApplyPendingAssetRoot();
         if (batchManager_)
         {
             auto* renderables = registry.GetComponentArray<RenderableComponent>();

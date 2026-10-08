@@ -497,9 +497,14 @@ namespace Engine
         {
             self = reinterpret_cast<Win32Platform*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
         }
+        // DefWindowProcW를 명시한다. 증상: 독립 실행 창(게임 실행 파일)의 제목 표시줄에 "Player Smoke Test"
+        // 대신 첫 글자 "P"만 나왔다. 원인: 이 프로젝트는 UNICODE를 정의하지 않아 DefWindowProc 매크로가
+        // DefWindowProcA로 풀렸고, 유니코드 클래스(RegisterClassExW)로 만든 창의 WM_NCCREATE/WM_SETTEXT를
+        // ANSI로 처리해 UTF-16 제목을 첫 0바이트에서 잘랐다. 에디터는 Qt 창에 임베드되어 제목 표시줄이
+        // 없으므로 드러나지 않았다.
         if (!self)
         {
-            return DefWindowProc(hwnd, msg, wParam, lParam);
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
 
         if (auto res = HandleWindowLifecycleMessage(self, hwnd, msg, wParam, lParam))
@@ -515,7 +520,7 @@ namespace Engine
             return *res;
         }
 
-        return DefWindowProc(hwnd, msg, wParam, lParam);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     std::optional<LRESULT> Win32Platform::HandleWindowLifecycleMessage(Win32Platform* self, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)

@@ -1,0 +1,14 @@
+{
+  "format": "quarterflying.scene",
+  "version": 1,
+  "entities": [
+    { "uuid": 1, "name": "Main Camera", "components": {
+        "TransformComponent": { "position": [0.0, 2.0, 6.0], "rotation": [-15.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0] },
+        "CameraComponent": { "isMainCamera": true, "fov": 60.0, "nearPlane": 0.1, "farPlane": 100.0, "priority": 0 } } },
+    { "uuid": 2, "name": "Cube", "components": {
+        "TransformComponent": { "position": [0.0, 0.0, 0.0], "rotation": [0.0, 30.0, 0.0], "scale": [1.0, 1.0, 1.0] },
+        "RenderableComponent": { "meshPath": "" } } },
+    { "uuid": 3, "name": "Script", "components": {
+        "ScriptComponent": { "module_name": "smoke_script", "class_name": "SmokeScript" } } }
+  ]
+}
