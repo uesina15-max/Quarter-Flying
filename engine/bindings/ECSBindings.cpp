@@ -7,6 +7,7 @@
 #include "../ecs/Reflection.h"
 #include "../ecs/CameraSystem.h"
 #include "../ecs/Hierarchy.h"
+#include "../ecs/ScriptContext.h"
 #include "../core/logging/Logger.h"
 #include "../core/CommandManager.h"
 #include "../scene/SceneIO.h"
@@ -97,10 +98,9 @@ void RegisterComponentBindings(pybind11::module_& m) {
     // RenderableComponent
     py::class_<RenderableComponent>(m, "RenderableComponent")
         .def(py::init<>())
-        .def_readwrite("mesh_handle",     &RenderableComponent::meshHandle)
         .def_readwrite("mesh_path",       &RenderableComponent::meshPath)
+        .def_readwrite("material_path",   &RenderableComponent::materialPath)
         .def_readwrite("texture_path",    &RenderableComponent::texturePath)
-        .def_readwrite("material_handle", &RenderableComponent::materialHandle)
         .def_readwrite("cast_shadows",    &RenderableComponent::castShadows);
 
     // CameraComponent
@@ -312,22 +312,25 @@ void RegisterWorldBindings(pybind11::module_& m) {
             self.GetRegistry()->Clear();
             CommandManager::GetInstance().Clear();
         })
-        .def("LoadScene", [](World& self, const std::string& path) {
+        // project_root: 컴포넌트의 프로젝트 경로(prefabPath)를 정규화할 기준(scene/SceneIO.h). 에디터는 현재 프로젝트 폴더를 넘긴다.
+        .def("LoadScene", [](World& self, const std::string& path, const std::string& projectRoot) {
             // Play 중에 불러오면 Stop이 Play 시작 시점의 스냅샷으로 되돌려 버려, 불러온 씬이 사라진다.
             if (self.GetEditorState() != World::EditorState::Edit)
                 throw std::runtime_error("LoadScene: stop Play mode before loading a scene");
-            auto result = LoadSceneFromFile(*self.GetRegistry(), path);
+            auto result = LoadSceneFromFile(*self.GetRegistry(), path, projectRoot);
             if (!result) throw std::runtime_error(result.error().message);
             // 엔티티가 통째로 바뀌었으므로 이전 씬을 가리키는 Undo 기록은 무효다(World::Stop과 같은 처리).
             CommandManager::GetInstance().Clear();
             py::dict report;
             report["entity_count"] = result->entityCount;
             report["unknown_components"] = result->unknownComponents;
+            report["warnings"] = result->warnings;
             return report;
-        }, py::arg("path"));
+        }, py::arg("path"), py::arg("project_root") = std::string());
 }
 
 void RegisterECSBindings(pybind11::module_& m) {
+    namespace py = pybind11;
     // [IMPORTANT] pybind11 하드 디펜던시 순서 강제!
     // ECSRegistry는 Entity와 Component 타입을 메서드 시그니처에서 사용하고,
     // World는 ECSRegistry를 반환하므로 반드시 아래 순서대로 호출되어야 합니다.
@@ -336,6 +339,19 @@ void RegisterECSBindings(pybind11::module_& m) {
     RegisterRegistryBindings(m);   // 3. ECSRegistry (Entity 및 Component 의존)
     RegisterActiveCameraBindings(m); // 3-1. 활성 카메라 선택 (ECSRegistry, Entity 의존)
     RegisterWorldBindings(m);      // 4. World (ECSRegistry 의존)
+
+    // 5. 게임 스크립트 문맥(ecs/ScriptContext.h, docs/USABILITY_IMPROVEMENT_PLAN.md G1). 스크립트 훅이 실행되는
+    //    동안의 레지스트리. 그 밖에서 부르면 조용히 None을 주지 않고 원인을 적은 예외를 낸다.
+    py::module_ script = m.def_submodule("script", "Context for game scripts (valid inside ScriptComponent hooks)");
+    script.def("registry", []() -> ECSRegistry& {
+        ECSRegistry* registry = ScriptContext::CurrentRegistry();
+        if (!registry) {
+            throw std::runtime_error(
+                "quarterflying.script.registry: no script is running. It is only available inside "
+                "ScriptComponent hooks (on_create/on_update/on_destroy) while the engine updates the world");
+        }
+        return *registry;
+    }, py::return_value_policy::reference);
 }
 
 } // namespace Bindings

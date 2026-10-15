@@ -8,6 +8,7 @@
 #include "../renderer/RenderMode.h"
 #include "../animation/MotionPreviewState.h"
 #include "../input/InputState.h"
+#include "../input/InputActions.h"
 #include "EngineError.h"
 #include "EngineConfig.h"
 #include <memory>
@@ -99,6 +100,11 @@ namespace Engine
         uint64_t GetFrameCount() const { return frameCount; }
 
         IPlatform* GetPlatform() const { return platform.get(); }
+
+        // 입력 액션 맵(docs/USABILITY_IMPROVEMENT_PLAN.md G0a). TickFrame이 프레임당 한 번 Update하고,
+        // 게임 시스템·스크립트가 액션 이름으로 읽는다. 파일 불러오기(LoadActions)는 호출하는 쪽(에디터/Player)이 한다.
+        InputActions& GetInputActions() { return inputActions; }
+        const InputActions& GetInputActions() const { return inputActions; }
         WindowHandle GetMainWindow() const { return mainWindow; }
 
         // Motion Mixer 프리뷰 (Phase 4A, 착수 계약서 §C11) - Renderer 서브시스템으로 그대로 위임.
@@ -114,6 +120,9 @@ namespace Engine
         // Test-only method to access frame allocator state
         #ifdef ENABLE_TESTS
         FrameAllocator* GetFrameAllocatorForTesting() { return frameAllocator.get(); }
+        // 입력 라우팅(DispatchInputEvent)을 플랫폼·GL 없이 검사하기 위한 진입점.
+        bool DispatchInputEventForTesting(const InputEvent& event) { return DispatchInputEvent(event); }
+        const InputState& GetInputStateForTesting() const { return inputState; }
         #endif
 
     private:
@@ -122,6 +131,15 @@ namespace Engine
 
         // glViewport + 기본 카메라 종횡비 갱신 (WindowResize 이벤트 처리 공통 로직).
         void HandleWindowResize(uint32_t width, uint32_t height);
+
+        // 입력 이벤트 하나를 처리한다. 플랫폼 큐(Player 창)와 외부 큐(에디터 Qt) 두 경로가 모두
+        // 여기를 거친다 - 이벤트 종류별 처리가 한 곳에만 있어야 두 경로의 동작이 어긋나지 않는다.
+        // false를 돌려주면 창이 닫힌 것이다(이번 프레임을 끝낸다).
+        bool DispatchInputEvent(const InputEvent& event);
+
+        // 포커스 상실(InputEventType::FocusLost)의 단일 처리 지점. 이벤트가 직접 상태를 바꾸지 않고,
+        // 여기서 정리 루틴을 하나씩 부른다(docs/USABILITY_IMPROVEMENT_PLAN.md E-2).
+        void HandleFocusLost();
 
     private:
         // Core systems
@@ -171,6 +189,7 @@ namespace Engine
 
         // 이번 프레임 입력 상태. 게임 System(CameraRigSystem 등)이 포인터로 읽는다(InputState.h).
         InputState inputState;
+        InputActions inputActions;
 
         // Input queue (Thread-safe between external UI thread and internal TickFrame thread)
         std::mutex inputMutex;

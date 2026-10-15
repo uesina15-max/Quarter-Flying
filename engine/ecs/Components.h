@@ -31,22 +31,51 @@ namespace Engine
     };
 
     // Renderable Component
+    // 그릴 것. 에셋 참조는 전부 프로젝트 기준 경로다(docs/USABILITY_IMPROVEMENT_PLAN.md R-4, 결정 2026-10-15).
+    // 스키마 _version 2: 예전 meshHandle·materialHandle(정수 핸들)과 roughness·metallic이 빠졌다. 핸들은 다음 세션에
+    // 의미가 없어서(런타임에 배정됨) 파일·스냅샷에 저장할 수 없었고, 경로와 핸들 두 가지 지정 방법이 공존했다.
+    // 옛 파일의 그 키들은 불러올 때 무시된다(Reflection.cpp의 파일 로드 훅이 0이 아닌 meshHandle을 경고).
     struct RenderableComponent
     {
-        uint32_t meshHandle;
-        uint32_t materialHandle;
         bool castShadows;
-        // 에셋 루트(EngineConfig::assetRoot) 기준 메시 파일 경로(예: "assets/models/cube.obj").
-        // 비어 있지 않으면 meshHandle보다 우선한다 - RenderSystem::ResolveMeshHandle 참고.
+        // 메시. 파일 경로(예: "assets/models/cube.obj") 또는 코드가 RenderSystem::RegisterMesh로 등록한 이름.
+        // 비어 있으면 절차적 유닛 큐브 - RenderSystem::ResolveMeshHandle 참고.
         std::string meshPath;
-        // 에셋 루트 기준 텍스처 파일 경로(예: "assets/textures/checker.png"). 비어 있으면 텍스처 없이
-        // 인스턴스 색만으로 그린다. 로드/업로드는 RenderSystem::ResolveTexture가 처음 볼 때 한 번 한다.
+        // 머티리얼 파일(*.material.json, asset/MaterialAsset.h). 비어 있으면 기본 머티리얼(흰색, roughness 0.6, metallic 0).
+        std::string materialPath;
+        // 인스턴스별 텍스처 덮어쓰기. 비어 있으면 머티리얼의 texture를 쓴다. 로드는 RenderSystem::ResolveTexture가 경로당 한 번.
         std::string texturePath;
+        // 인스턴스별 tint(R-2, 결정 2026-10-15). 최종 색 = 머티리얼 baseColor x 이 값 (x 텍스처). 새 컴포넌트는 흰색.
+        // 이 필드가 없는 옛 파일은 불러올 때 예전 모습(텍스처 없으면 회색 0.75/0.75/0.78)으로 채운다.
+        // 인스턴스 데이터로 가므로 색이 달라도 배치가 갈라지지 않는다.
+        Vec3 baseColor;
 
         RenderableComponent()
-            : meshHandle(0)
-            , materialHandle(0)
-            , castShadows(true)
+            : castShadows(true)
+            , baseColor(1.0f, 1.0f, 1.0f)
+        {}
+    };
+
+    // 방향광 하나(docs/USABILITY_IMPROVEMENT_PLAN.md R-1). 씬 파일에 저장되어 에디터와 Player가 같은 조명을 쓴다.
+    // 여러 개 켜져 있으면 priority가 가장 높은 것, 같으면 UUID가 가장 작은 것 하나만 쓴다(SelectSceneLighting).
+    // 엔티티 id가 아니라 UUID로 고르는 이유: id는 씬을 불러올 때 다시 매겨지지만 UUID는 파일에 저장된다.
+    // 라이트가 하나도 없으면 예전 고정값(SceneLighting::Default)으로 그린다.
+    struct DirectionalLightComponent
+    {
+        Vec3 direction;         // 빛이 나아가는 방향(월드). 길이는 상관없다(0이면 무효 - 경고 후 기본값)
+        Vec3 color;
+        float intensity;
+        float ambient;          // 주변광 비율
+        int priority;
+        bool enabled;
+
+        DirectionalLightComponent()
+            : direction(-0.4f, -1.0f, -0.35f)   // SceneLighting::Default와 같은 빛
+            , color(1.0f, 1.0f, 1.0f)
+            , intensity(1.0f)
+            , ambient(0.25f)
+            , priority(0)
+            , enabled(true)
         {}
     };
 

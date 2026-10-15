@@ -42,6 +42,9 @@ class BuildSettingsDialog(QDialog):
         self.sp_width = QSpinBox(); self.sp_width.setRange(320, 7680); self.sp_width.setValue(b.window_width)
         self.sp_height = QSpinBox(); self.sp_height.setRange(240, 4320); self.sp_height.setValue(b.window_height)
         self.chk_fullscreen = QCheckBox("전체 화면"); self.chk_fullscreen.setChecked(b.fullscreen)
+        self.chk_cursor_lock = QCheckBox("커서 잠금"); self.chk_cursor_lock.setChecked(b.cursor_lock)
+        self.chk_cursor_lock.setToolTip("게임 시작 시 커서를 창 안에 가두고 숨깁니다. 포커스를 잃으면 풀리고, 창을 클릭하면 "
+                                        "다시 잠깁니다. 스크립트에서 quarterflying.input.set_cursor_locked로 바꿀 수 있습니다.")
         self.ed_include = QLineEdit(", ".join(b.include_dirs))
         self.ed_include.setPlaceholderText("예: assets/prefabs  (스크립트가 실행 중에 직접 여는 파일이 있는 폴더)")
         self.ed_output = QLineEdit(b.output_dir)
@@ -52,6 +55,7 @@ class BuildSettingsDialog(QDialog):
         out_layout.addWidget(self.ed_output); out_layout.addWidget(btn_browse)
         size_row = QWidget(); size_layout = QHBoxLayout(size_row); size_layout.setContentsMargins(0, 0, 0, 0)
         size_layout.addWidget(self.sp_width); size_layout.addWidget(self.sp_height); size_layout.addWidget(self.chk_fullscreen)
+        size_layout.addWidget(self.chk_cursor_lock)
 
         form = QFormLayout()
         form.addRow("게임 이름", self.ed_name)
@@ -80,6 +84,7 @@ class BuildSettingsDialog(QDialog):
         b.window_width = self.sp_width.value()
         b.window_height = self.sp_height.value()
         b.fullscreen = self.chk_fullscreen.isChecked()
+        b.cursor_lock = self.chk_cursor_lock.isChecked()
         b.include_dirs = [d.strip() for d in self.ed_include.text().split(",") if d.strip()]
         b.output_dir = self.ed_output.text().strip()
         try:

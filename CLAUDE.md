@@ -18,7 +18,6 @@
 - **Smart App Control 차단 (2026-09-30)**: 새로 빌드한 `quarterflying.*.pyd`가 import 시 `DLL load failed ... 애플리케이션 제어 정책에서 이 파일을 차단했습니다`로 막힐 때가 있다. 이벤트 로그 `Microsoft-Windows-CodeIntegrity/Operational`에 3033/3077("Enterprise signing level")로 남는다. 바이너리별 평판 판정이라 소스 변경 없이 다시 링크하면(예: `touch engine/bindings/PythonModule.cpp` 후 `quarterflying` 타겟 재빌드) 새 해시로 통과한 적이 있다. 보안 설정 자체를 끄지는 않는다.
 - 엔진 코어(특히 `renderer/`)는 오랫동안 컴파일된 적이 없었던 것으로 보이는 다수의 선존재 버그를 포함하고 있었습니다. 자세한 내용은 `docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md`의 Phase 1 기록과 git 커밋 로그를 참고하십시오.
 - **게임 빌드(2026-10-07, `docs/GAME_BUILD_PLAN.md`)**: 게임 실행 파일은 `quarterflying_player` 타깃, Build Game이 복사하는 템플릿은 `cmake --build . --config Release --target player_template`(기본 빌드에 포함되지 않음 — 표준 라이브러리 zip을 다시 만들어 느리다)로 `engine/build/runtime/win-x64`에 만든다. Player·엔진·Python 파일을 고치면 템플릿을 다시 만들어야 Build Game에 반영된다. 템플릿 검증은 `ctest -C Release -R player_template_smoke`, Build Game 테스트는 `engine/editor`에서 `python gamebuild/test_game_builder.py`.
-- **완제품 에디터(2026-10-08)**: `cmake --build . --config Release --target editor_app` → `build/app/Quarter Flying/`(`Quarter Flying.exe` + `_internal/` DLL·.pyd + `assets/` + `runtime/win-x64/`). Python·PySide6·VS 없는 PC에서 실행되는 배포본이다. `cmake --install` 결과를 `build/app_stage`에 만든 뒤 `engine/packaging/build_editor_app.py`가 전용 venv(`build/packaging_venv`, 버전은 `packaging/requirements.txt`에 고정)의 PyInstaller로 묶는다. exe에서만 필요한 시작 준비(작업 폴더, 로그 파일 `%LOCALAPPDATA%\QuarterFlying\logs\editor.log`, 게임 스크립트용으로 Player 템플릿의 표준 라이브러리 연결)는 `editor/frozen_app.py`에 있다. 에디터 Python에 새 서드파티 패키지를 쓰면 `requirements.txt`에도 넣어야 exe에 들어간다. 재현 절차·확인 방법·문제 해결은 `docs/EDITOR_APP_BUILD_GUIDE.md`.
 - **경로 문자열은 UTF-8이다(2026-10-07)**: C++에서 경로 문자열(`std::string`)을 파일 경로로 쓸 때는 `core/Utf8Path.h`의 `PathFromUtf8`/`Utf8FromPath`를 거친다. `std::filesystem::path(std::string)`, `path.string()`, `ifstream(const char*)`, `fopen`, `stbi_load`는 Windows에서 ANSI로 해석해서, 한글 폴더에서 "No mapping for the Unicode character exists in the target multi-byte code page." 예외나 파일 열기 실패가 난다. 경로가 ASCII뿐인 테스트에서는 드러나지 않으므로, 경로를 다루는 테스트에는 한글 경로를 넣는다.
 
 ## 코드 품질 관례 (2026-08-29 확정)
@@ -92,6 +91,44 @@ Phase 1~4 기록(컴파일 → 유닛 테스트 → 실제 에디터 실행 3단
 잘못 그려짐" 증상을 냈을 것이다 — 지금은 이 경우를 감지해 로그를 남기고 그리기를
 건너뛴다.
 
+### 4. 원인 추적과 영향 범위가 설계 단계에서 드러나게 한다 (2026-10-15 확정)
+
+기능을 추가하거나 바꿀 때는 (a) 버그가 났을 때 원인이 있는 모듈을 바로 짚을 수 있고,
+(b) 그 변경이 영향을 주는 코드의 범위를 미리 알 수 있게 설계한다. 관례 1~3이 "버그가 난 뒤"의
+기록이라면, 이것은 "만들기 전"의 설계 기준이다.
+
+**원인 추적 — 경계에서 갈리게 만든다**
+
+- 한 기능의 진입점은 한 곳에 둔다. 같은 변환·판정 규칙이 여러 곳에 흩어지면 한 곳만
+  빠뜨려도 같은 버그가 다시 난다(사례: 엔티티 id 변환 7곳 → `engine_binding.to_entity()` 하나,
+  `docs/ARCHITECTURE_COUPLING_AUDIT.md` §3.2).
+- 모듈 경계에서는 순수 데이터를 주고받는다(예: 렌더러는 ECS 컴포넌트가 아니라 구조체를 받는다).
+  그러면 "값을 만든 쪽이 틀렸나, 쓴 쪽이 틀렸나"를 경계의 값 하나로 가를 수 있다.
+- 단계가 여러 개인 처리는 실패를 **자기 단계 이름**으로 남긴다. 여러 단계를 바깥 try 하나로
+  묶지 않는다(사례: `main._connect_engine_later()` 3단계 분리, 같은 문서 §3.3).
+- 로그에는 출처 태그를 붙인다(C++ `"<모듈>: ..."`, 에디터는 모듈별 태그). 같은 실패를 매 프레임
+  반복해서 찍지 않고 처음 한 번 + 원인을 남긴다.
+- 의존 방향은 `docs/ARCHITECTURE_COUPLING_AUDIT.md` §2.2·§3.1 그래프를 따른다. 새 역방향 의존이
+  필요하면 그 문서에 이유를 먼저 적는다.
+
+**영향 범위 — 계획서에 미리 적는다**
+
+새 기능·변경을 계획서(`docs/*_PLAN.md`)에 올릴 때 항목마다 아래를 적는다. 구현이 끝나면
+실제와 다른 곳을 고쳐 둔다.
+
+1. **바뀌는 곳** — 모듈·파일.
+2. **영향받는 곳** — 바뀌는 코드를 부르거나 그 결과를 읽는 곳. 특히 이 저장소에서 놓치기 쉬운
+   경로: Python 바인딩(`bindings/`), 리플렉션 등록(`ecs/Reflection.cpp` → Inspector·스냅샷·
+   Undo·프리팹·씬 파일에 자동 전파), 저장 형식(`*.scene.json`, `*.prefab.json`, `project.json`,
+   `game.json`), Build Game 수집 규칙, Player(`runtime/`)와 Player 템플릿 재빌드.
+3. **호환성** — 저장 형식이 바뀌는지. 리플렉션 필드 **추가**는 옛 파일에서 기본값으로 읽히므로
+   호환된다(`Reflection.h`의 `data.contains` 분기). 이름 변경·의미 변경·삭제는 형식 `version`을
+   올리고 옛 파일 처리 방법을 적는다.
+4. **고장 시 갈리는 지점** — 이 기능이 틀리게 동작할 때 어느 경계의 어떤 값·로그를 보면 원인
+   모듈을 가를 수 있는지.
+5. **회귀 확인** — 영향받는 곳마다 어떤 테스트(또는 실제 실행)가 그것을 지키는지. 없으면 추가할
+   테스트를 적는다.
+
 ## 알려진 버그 (2026-08-10, 에디터 실제 실행으로 발견)
 
 > 아래 기록은 2026-08-10 시점 그대로 보존한다(`ge_python.pyd`는 당시 이름 — 2026-08-20에 `quarterflying.pyd`로 개명됨, 위 "빌드 환경 메모" 참고). 이 버그를 재현할 때는 현재 파일명(`quarterflying.*.pyd`)을 기준으로 확인할 것.
@@ -105,3 +142,5 @@ Phase 1~4 기록(컴파일 → 유닛 테스트 → 실제 에디터 실행 3단
 
 - **`InstanceData`(renderer/InstancedBatchManager.h) GPU 레이아웃 미검증**: 컴파일 에러 수정 과정에서 `_padding[3]`(12바이트, 104바이트 총합 → 16의 배수 아님)를 `_padding[1]`(4바이트, 96바이트 → 16의 배수)로 바꿨습니다. `SetupInstanceVAO()`의 stride/offset은 `sizeof`/`offsetof` 기반이라 이 변경에 자동으로 맞으므로 컴파일·링크 관점에서는 안전합니다. 다만 이 렌더러 코드 자체가 **실행되어 검증된 적이 없어 보이므로**(빌드조차 최근까지 안 됐음), 인스턴스 렌더링을 실제로 화면에 띄워보기 전까지는 GPU 쪽 레이아웃이 의도대로 맞는지 확인된 상태가 아닙니다. 나중에 인스턴스 렌더링이 이상하게 보이면 이 지점부터 의심하십시오.
   - **2026-09-30 부분 검증**: 인스턴스 100개(큐브 그리드)가 각자의 model 행렬 위치에 올바르게 그려지는 것을 화면에서 확인했다. 따라서 `model` 필드 레이아웃은 맞다. 다만 `color`/`roughness`/`metallic`은 모든 인스턴스가 같은 고정값이라, 인스턴스별 값이 제대로 전달되는지는 아직 미검증이다.
+  - **2026-10-15 `color` 검증 (실제 실행, 화면 캡처)**: `RenderableComponent.baseColor`(R-2)로 같은 배치의 큐브 3개에 빨강·초록·파랑을 주자 한 화면에 각자 다른 색으로 그려졌다(에디터와 빌드한 게임 모두, `docs/USABILITY_IMPROVEMENT_PLAN.md` §5.9). `roughness`/`metallic`은 인스턴스 데이터로 전달되지만 셰이더가 아직 읽지 않으므로 여전히 화면으로는 검증할 수 없다.
+  - **2026-10-15 `roughness`/`metallic` 검증 (실제 실행, 화면 캡처)**: 머티리얼 에셋(R-4) 뒤로 셰이더가 두 값을 읽는다. 같은 메시·같은 색에서 머티리얼의 roughness만 0.6 → 1.0으로 바꾸면 반사 그라데이션이 사라졌다(다른 픽셀 5.06%, 잡음 0.30%). metallic 1(Gold)은 확산이 줄어 어둡게 그려졌다(`docs/USABILITY_IMPROVEMENT_PLAN.md` §5.11). 이로써 `InstanceData`의 인스턴스별 필드는 모두 화면으로 확인됐다. 흰색처럼 확산만으로 이미 1.0에 닿는 색에서는 반사가 잘려 roughness 차이가 보이지 않는다. 비교할 때는 중간 밝기 색을 쓴다.

@@ -200,8 +200,8 @@ TEST_F(ComponentCommandTest, RemoveComponent_ApplyThenUndo_RestoresAllFields)
 TEST_F(ComponentCommandTest, RemoveComponent_ApplyThenUndo_RestoresRenderableFields)
 {
     RenderableComponent rc;
-    rc.meshHandle     = 42;
-    rc.materialHandle = 99;
+    rc.meshPath     = "assets/models/a.obj";
+    rc.materialPath = "assets/materials/m.material.json";
     rc.castShadows    = false;
     registry_.AddComponent(entity_, rc);
 
@@ -211,8 +211,8 @@ TEST_F(ComponentCommandTest, RemoveComponent_ApplyThenUndo_RestoresRenderableFie
 
     const RenderableComponent* restored = registry_.GetComponent<RenderableComponent>(entity_);
     ASSERT_NE(restored, nullptr);
-    EXPECT_EQ(restored->meshHandle, 42u);
-    EXPECT_EQ(restored->materialHandle, 99u);
+    EXPECT_EQ(restored->meshPath, "assets/models/a.obj");
+    EXPECT_EQ(restored->materialPath, "assets/materials/m.material.json");
     EXPECT_FALSE(restored->castShadows);
 }
 

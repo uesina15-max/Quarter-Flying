@@ -26,7 +26,13 @@ namespace Engine
     //   NotSupported        - 이 엔진보다 새 버전의 씬 파일이다
 
     inline constexpr const char* kSceneFormatName = "quarterflying.scene";
-    inline constexpr int kSceneFormatVersion = 1;
+    // 버전 이력 (docs/USABILITY_IMPROVEMENT_PLAN.md X-1a, 결정 2026-10-15):
+    //   1 - PrefabInstanceComponent.prefabPath는 절대 경로.
+    //   2 - prefabPath는 프로젝트 상대 경로가 정규 형식(core/ProjectPath.h). 필드 추가가 아니라 기존 필드의
+    //       의미가 바뀐 것이라 버전을 올렸다 - 버전이 같으면 파일만 보고 어느 의미인지 구분할 수 없다.
+    //   불러오기는 1과 2를 모두 받는다. 어느 버전이든 프로젝트 안을 가리키는 절대 경로는 상대 경로로 정규화하고
+    //   (파일 로드 업그레이드 훅, ecs/Reflection.h), 저장은 항상 최신 버전으로 한다.
+    inline constexpr int kSceneFormatVersion = 2;
 
     struct SceneSaveReport
     {
@@ -43,6 +49,8 @@ namespace Engine
         // 파일에 있지만 이 엔진에 등록되지 않은 컴포넌트 이름. DeserializeRegistry는 이런 컴포넌트를
         // 말없이 건너뛰므로, 여기서 따로 모아 경고한다.
         std::vector<std::string> unknownComponents;
+        // 파일 로드 업그레이드 중 생긴 경고(예: 프로젝트 밖을 가리키는 프리팹 경로).
+        std::vector<std::string> warnings;
     };
 
     // 레지스트리 → 씬 문서(JSON). report가 있으면 미등록 컴포넌트를 채운다.
@@ -58,5 +66,12 @@ namespace Engine
     // 경로는 UTF-8 문자열이다(Python에서 넘어오는 한글 경로를 그대로 받기 위해).
     // 저장은 "<path>.tmp"에 먼저 쓰고 이름을 바꾼다 — 저장 도중 실패해도 기존 파일이 깨지지 않는다.
     std::expected<SceneSaveReport, EngineError> SaveSceneToFile(ECSRegistry& registry, const std::string& path);
-    std::expected<SceneLoadReport, EngineError> LoadSceneFromFile(ECSRegistry& registry, const std::string& path);
+    // projectRoot(UTF-8)가 있으면 컴포넌트의 프로젝트 경로를 정규화한다(UpgradeSceneDocument). 에디터는 현재 프로젝트
+    // 폴더를, Player는 assetRoot(빌드 출력 폴더)를 넘긴다. 비어 있으면 경로를 건드리지 않는다.
+    std::expected<SceneLoadReport, EngineError> LoadSceneFromFile(ECSRegistry& registry, const std::string& path,
+                                                                  const std::string& projectRoot = "");
+
+    // 파일에서 읽은 씬 문서를 지금 형식으로 고친다(엔티티마다 UpgradeComponentsFromFile). 헤더가 깨진 문서는
+    // 건드리지 않는다 - 그런 문서는 ApplySceneDocument의 검사가 원인을 적어 거절한다. 경고는 warnings에 더한다.
+    void UpgradeSceneDocument(nlohmann::json& doc, const std::string& projectRoot, std::vector<std::string>* warnings);
 }

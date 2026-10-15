@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <string>
 #include "../ecs/ECSRegistry.h"
 #include "../ecs/Components.h"
 
@@ -499,8 +500,8 @@ RC_GTEST_PROP(ECSRegistry, ComponentRoundtripRenderable, ())
     
     // Create component with random data
     RenderableComponent originalRenderable;
-    originalRenderable.meshHandle = meshHandle;
-    originalRenderable.materialHandle = materialHandle;
+    originalRenderable.meshPath = std::to_string(meshHandle);
+    originalRenderable.materialPath = std::to_string(materialHandle);
     originalRenderable.castShadows = castShadows;
     
     // Add component
@@ -509,8 +510,8 @@ RC_GTEST_PROP(ECSRegistry, ComponentRoundtripRenderable, ())
     // Retrieve component and verify data matches
     RenderableComponent* retrieved = registry.GetComponent<RenderableComponent>(entity);
     RC_ASSERT(retrieved != nullptr);
-    RC_ASSERT(retrieved->meshHandle == originalRenderable.meshHandle);
-    RC_ASSERT(retrieved->materialHandle == originalRenderable.materialHandle);
+    RC_ASSERT(retrieved->meshPath == originalRenderable.meshPath);
+    RC_ASSERT(retrieved->materialPath == originalRenderable.materialPath);
     RC_ASSERT(retrieved->castShadows == originalRenderable.castShadows);
     
     // Verify HasComponent returns true
@@ -551,8 +552,8 @@ RC_GTEST_PROP(ECSRegistry, ComponentRoundtripMultiple, ())
     
     // Create and add RenderableComponent
     RenderableComponent renderable;
-    renderable.meshHandle = meshHandle;
-    renderable.materialHandle = materialHandle;
+    renderable.meshPath = std::to_string(meshHandle);
+    renderable.materialPath = std::to_string(materialHandle);
     registry.AddComponent(entity, renderable);
     
     // Verify both components exist and have correct data
@@ -563,8 +564,8 @@ RC_GTEST_PROP(ECSRegistry, ComponentRoundtripMultiple, ())
     RC_ASSERT(t->position.x == posX);
     RC_ASSERT(t->position.y == posY);
     RC_ASSERT(t->position.z == posZ);
-    RC_ASSERT(r->meshHandle == meshHandle);
-    RC_ASSERT(r->materialHandle == materialHandle);
+    RC_ASSERT(r->meshPath == std::to_string(meshHandle));
+    RC_ASSERT(r->materialPath == std::to_string(materialHandle));
     
     // Remove TransformComponent
     registry.RemoveComponent<TransformComponent>(entity);
@@ -574,8 +575,8 @@ RC_GTEST_PROP(ECSRegistry, ComponentRoundtripMultiple, ())
     RenderableComponent* rAfter = registry.GetComponent<RenderableComponent>(entity);
     RC_ASSERT(tAfter == nullptr);
     RC_ASSERT(rAfter != nullptr);
-    RC_ASSERT(rAfter->meshHandle == meshHandle);
-    RC_ASSERT(rAfter->materialHandle == materialHandle);
+    RC_ASSERT(rAfter->meshPath == std::to_string(meshHandle));
+    RC_ASSERT(rAfter->materialPath == std::to_string(materialHandle));
     
     // Remove RenderableComponent
     registry.RemoveComponent<RenderableComponent>(entity);
@@ -665,8 +666,8 @@ RC_GTEST_PROP(ECSRegistry, ComponentMemoryContiguityRenderable, ())
         auto castShadows = *rc::gen::arbitrary<bool>();
         
         RenderableComponent renderable;
-        renderable.meshHandle = meshHandle;
-        renderable.materialHandle = materialHandle;
+        renderable.meshPath = std::to_string(meshHandle);
+        renderable.materialPath = std::to_string(materialHandle);
         renderable.castShadows = castShadows;
         registry.AddComponent(entity, renderable);
     }
@@ -776,8 +777,8 @@ RC_GTEST_PROP(ECSRegistry, EntityDestructionComponentCleanup, ())
     registry.AddComponent(entity, transform);
     
     RenderableComponent renderable;
-    renderable.meshHandle = meshHandle;
-    renderable.materialHandle = materialHandle;
+    renderable.meshPath = std::to_string(meshHandle);
+    renderable.materialPath = std::to_string(materialHandle);
     renderable.castShadows = castShadows;
     registry.AddComponent(entity, renderable);
     
@@ -821,8 +822,8 @@ RC_GTEST_PROP(ECSRegistry, EntityDestructionComponentCleanupMultipleEntities, ()
         registry.AddComponent(entity, transform);
         
         RenderableComponent renderable;
-        renderable.meshHandle = i * 100;
-        renderable.materialHandle = i * 200;
+        renderable.meshPath = std::to_string(i * 100);
+        renderable.materialPath = std::to_string(i * 200);
         renderable.castShadows = (i % 2 == 0);
         registry.AddComponent(entity, renderable);
     }
@@ -862,8 +863,8 @@ RC_GTEST_PROP(ECSRegistry, EntityDestructionComponentCleanupMultipleEntities, ()
             RC_ASSERT(t->position.x == static_cast<float>(i));
             RC_ASSERT(t->position.y == static_cast<float>(i * 2));
             RC_ASSERT(t->position.z == static_cast<float>(i * 3));
-            RC_ASSERT(r->meshHandle == i * 100);
-            RC_ASSERT(r->materialHandle == i * 200);
+            RC_ASSERT(r->meshPath == std::to_string(i * 100));
+            RC_ASSERT(r->materialPath == std::to_string(i * 200));
             RC_ASSERT(r->castShadows == (i % 2 == 0));
         }
     }
@@ -893,7 +894,7 @@ RC_GTEST_PROP(ECSRegistry, EntityDestructionComponentCleanupSequential, ())
         registry.AddComponent(entity, transform);
         
         RenderableComponent renderable;
-        renderable.meshHandle = i;
+        renderable.meshPath = std::to_string(i);
         registry.AddComponent(entity, renderable);
     }
     
@@ -924,7 +925,7 @@ RC_GTEST_PROP(ECSRegistry, EntityDestructionComponentCleanupSequential, ())
         RC_ASSERT(t != nullptr);
         RC_ASSERT(r != nullptr);
         RC_ASSERT(t->position.x == static_cast<float>(i));
-        RC_ASSERT(r->meshHandle == i);
+        RC_ASSERT(r->meshPath == std::to_string(i));
     }
 }
 

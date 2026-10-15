@@ -1,0 +1,44 @@
+{
+  "actions": {
+    "Jump": {
+      "bindings": [
+        "Key:Space"
+      ],
+      "type": "button"
+    },
+    "MoveX": {
+      "bindings": [
+        {
+          "negative": "Key:A",
+          "positive": "Key:D"
+        },
+        {
+          "negative": "Key:Left",
+          "positive": "Key:Right"
+        }
+      ],
+      "type": "axis"
+    },
+    "MoveY": {
+      "bindings": [
+        {
+          "negative": "Key:S",
+          "positive": "Key:W"
+        },
+        {
+          "negative": "Key:Down",
+          "positive": "Key:Up"
+        }
+      ],
+      "type": "axis"
+    },
+    "Sprint": {
+      "bindings": [
+        "Key:Shift"
+      ],
+      "type": "button"
+    }
+  },
+  "format": "quarterflying.input-actions",
+  "version": 1
+}

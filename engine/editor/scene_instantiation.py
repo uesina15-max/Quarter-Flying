@@ -93,6 +93,11 @@ def expand_scene_objects(scene_objects) -> List[SceneEntitySpec]:
     return specs
 
 
+# R-2 이전 RenderSystem의 고정 인스턴스 색(engine/ecs/Reflection.cpp의 RenderableComponent 파일 로드 훅과 같은 값).
+LEGACY_UNTEXTURED_COLOR = [0.75, 0.75, 0.78]
+LEGACY_TEXTURED_COLOR = [1.0, 1.0, 1.0]
+
+
 def instantiate_scene(editor_api, registry, specs: Sequence[SceneEntitySpec],
                       log: Callable[[str], None]) -> List[InstantiateResult]:
     """명세마다 엔티티 하나(Transform + Renderable{meshPath})를 만든다. 하나가 실패해도 계속한다."""
@@ -115,6 +120,10 @@ def instantiate_scene(editor_api, registry, specs: Sequence[SceneEntitySpec],
             renderable = {"meshPath": spec.mesh_path}
             if spec.texture_path:
                 renderable["texturePath"] = spec.texture_path
+            # 색을 명시한다(USABILITY_IMPROVEMENT_PLAN R-2). RenderableComponent의 새 기본색은 흰색이라, 빼면 텍스처 없는
+            # 그리드가 하얗게 바뀐다. 값은 R-2 이전의 고정값과 같다(텍스처 있으면 흰색, 없으면 회색) - scene.json의
+            # "material"은 예전에도 화면에 쓰이지 않았고, 대체 경로의 화면이 Demo.scene.json과 같아야 하므로 지금도 쓰지 않는다.
+            renderable["baseColor"] = LEGACY_TEXTURED_COLOR if spec.texture_path else LEGACY_UNTEXTURED_COLOR
             registry.SetComponentJson(entity, "RenderableComponent", json.dumps(renderable))
             results.append(InstantiateResult(spec.name, True, ""))
         except Exception as e:

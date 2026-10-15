@@ -3,16 +3,20 @@
 #include "../../prefab/PrefabInstanceComponent.h"
 #include "EntitySnapshot.h"
 #include "../../core/Utf8Path.h"
+#include "../../core/ProjectPath.h"
+#include "../../core/logging/Logger.h"
 
 namespace Engine
 {
 
 InstantiatePrefabCommand::InstantiatePrefabCommand(ECSRegistry* registry,
                                                      std::filesystem::path prefabPath,
-                                                     std::optional<Vec3> position)
+                                                     std::optional<Vec3> position,
+                                                     std::string projectRoot)
     : registry_(registry)
     , prefabPath_(std::move(prefabPath))
     , position_(position)
+    , projectRoot_(std::move(projectRoot))
     , spawnedEntity_()
 {
 }
@@ -29,7 +33,7 @@ std::expected<void, EngineError> InstantiatePrefabCommand::Apply()
         // First Apply: load the prefab file once and spawn a brand new entity.
         // §2.7: SpawnInto is atomic — on failure nothing is left in the registry,
         // so we can just propagate the error as-is.
-        auto loaded = PrefabAsset::LoadFromFile(prefabPath_);
+        auto loaded = PrefabAsset::LoadFromFile(ResolveProjectPath(Utf8FromPath(prefabPath_), projectRoot_), projectRoot_);
         if (!loaded)
         {
             return std::unexpected(loaded.error());
@@ -94,7 +98,16 @@ std::expected<void, EngineError> InstantiatePrefabCommand::Apply()
     if (auto* meta = registry_->GetComponent<PrefabInstanceComponent>(spawnedEntity_))
     {
         // UTF-8로 저장한다. path.string()은 ANSI로 바꾸다가 한글 경로에서 예외를 던졌다(core/Utf8Path.h).
-        meta->prefabPath          = Utf8FromPath(prefabPath_);
+        // 프로젝트 상대 경로로 기록한다(씬 version 2의 정규 형식, scene/SceneIO.h). 예전에는 받은 절대 경로를 그대로
+        // 기록해서, 씬 파일에 이 PC의 경로가 들어가고 프로젝트를 옮기면 Revert가 파일을 찾지 못했다.
+        bool inside = true;
+        meta->prefabPath = NormalizeProjectPath(Utf8FromPath(prefabPath_), projectRoot_, &inside);
+        if (!inside)
+        {
+            Logger::Warning("InstantiatePrefabCommand: prefab '{}' is outside the project folder '{}'; "
+                            "recording the absolute path (Revert breaks if the project moves)",
+                            meta->prefabPath, projectRoot_);
+        }
         meta->sourcePrefabVersion = loadedAsset_->version;
     }
 

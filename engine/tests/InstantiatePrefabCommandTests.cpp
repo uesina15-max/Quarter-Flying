@@ -30,13 +30,13 @@ namespace
             "name": "TestPrefab",
             "components": {
                 "TransformComponent": {"_version": 1, "position": [0,0,0], "rotation": [0,0,0], "scale": [1,1,1]},
-                "RenderableComponent": {"_version": 1, "meshHandle": 3, "materialHandle": 0, "castShadows": true}
+                "RenderableComponent": {"_version": 2, "meshPath": "assets/models/three.obj", "castShadows": true}
             }
         })";
         return path;
     }
 
-    // "RenderableComponent.meshHandle" is a string instead of a number -> the
+    // "RenderableComponent.castShadows" is a string instead of a bool -> the
     // GE_BEGIN_COMPONENT-generated deserialize throws json::type_error, which
     // PrefabAsset::ApplyToEntity's DeserializePrefabComponents step turns into a
     // controlled EngineError (same mechanism exercised in PrefabAssetTests.cpp).
@@ -48,7 +48,7 @@ namespace
             "version": 1,
             "name": "BadPrefab",
             "components": {
-                "RenderableComponent": {"_version": 1, "meshHandle": "not-a-number", "materialHandle": 0, "castShadows": true}
+                "RenderableComponent": {"_version": 2, "castShadows": "not-a-bool"}
             }
         })";
         return path;
@@ -83,7 +83,7 @@ TEST_F(InstantiatePrefabCommandTest, Apply_ValidPrefab_CreatesEntityWithComponen
 
     RenderableComponent* r = registry.GetComponent<RenderableComponent>(e);
     ASSERT_NE(r, nullptr);
-    EXPECT_EQ(r->meshHandle, 3u);
+    EXPECT_EQ(r->meshPath, "assets/models/three.obj");
 
     PrefabInstanceComponent* meta = registry.GetComponent<PrefabInstanceComponent>(e);
     ASSERT_NE(meta, nullptr);
@@ -145,7 +145,7 @@ TEST_F(InstantiatePrefabCommandTest, UndoThenRedo_RestoresSameUUIDAndComponents_
 
     RenderableComponent* r = registry.GetComponent<RenderableComponent>(redone);
     ASSERT_NE(r, nullptr);
-    EXPECT_EQ(r->meshHandle, 3u);
+    EXPECT_EQ(r->meshPath, "assets/models/three.obj");
 
     PrefabInstanceComponent* meta = registry.GetComponent<PrefabInstanceComponent>(redone);
     ASSERT_NE(meta, nullptr);
@@ -249,4 +249,37 @@ TEST_F(InstantiatePrefabCommandTest, Apply_NullRegistry_ReturnsNotInitialized)
     auto result = cmd.Apply();
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code, EngineErrorCode::NotInitialized);
+}
+
+// ─── 프로젝트 상대 경로 (USABILITY_IMPROVEMENT_PLAN X-1a) ─────────────────────────
+
+#include "../core/Utf8Path.h"
+
+TEST_F(InstantiatePrefabCommandTest, Apply_WithProjectRoot_RecordsRelativePath)
+{
+    const auto root = std::filesystem::temp_directory_path() / "qf_instantiate_rel" / PathFromUtf8("한글 프로젝트");
+    std::filesystem::create_directories(root / "assets" / "prefabs");
+    const auto source = WriteValidPrefabFile("instantiate_rel_source.prefab.json");
+    const auto inProject = root / "assets" / "prefabs" / PathFromUtf8("통.prefab.json");
+    std::filesystem::copy_file(source, inProject, std::filesystem::copy_options::overwrite_existing);
+
+    InstantiatePrefabCommand cmd(&registry, inProject, std::nullopt, Utf8FromPath(root));
+    ASSERT_TRUE(cmd.Apply().has_value());
+    auto* meta = registry.GetComponent<PrefabInstanceComponent>(cmd.GetSpawnedEntity());
+    ASSERT_NE(meta, nullptr);
+    EXPECT_EQ(meta->prefabPath, "assets/prefabs/통.prefab.json");
+}
+
+TEST_F(InstantiatePrefabCommandTest, Apply_RelativePathWithProjectRoot_LoadsFromProject)
+{
+    const auto root = std::filesystem::temp_directory_path() / "qf_instantiate_rel2";
+    std::filesystem::create_directories(root / "assets" / "prefabs");
+    std::filesystem::copy_file(WriteValidPrefabFile("instantiate_rel2_source.prefab.json"),
+                               root / "assets" / "prefabs" / "b.prefab.json",
+                               std::filesystem::copy_options::overwrite_existing);
+
+    InstantiatePrefabCommand cmd(&registry, "assets/prefabs/b.prefab.json", std::nullopt, Utf8FromPath(root));
+    ASSERT_TRUE(cmd.Apply().has_value());
+    EXPECT_EQ(registry.GetComponent<PrefabInstanceComponent>(cmd.GetSpawnedEntity())->prefabPath,
+              "assets/prefabs/b.prefab.json");
 }

@@ -229,3 +229,113 @@ TEST(SceneIOTest, Save_NonAsciiPath_Works)
     ASSERT_TRUE(result.has_value()) << result.error().message;
     EXPECT_EQ(loaded.GetEntityName(loaded.GetEntityByUUID(source.GetUUID(e))), "한글 이름");
 }
+
+// ─── 씬 version 2: 프리팹 경로를 프로젝트 상대 경로로 (USABILITY_IMPROVEMENT_PLAN X-1a) ─────────
+
+#include "../prefab/PrefabInstanceComponent.h"
+#include "../core/Utf8Path.h"
+
+namespace
+{
+    std::filesystem::path MakeProjectRoot(const std::string& utf8Name)
+    {
+        const auto root = TempScenePath(utf8Name);
+        std::filesystem::create_directories(root / "assets" / "prefabs");
+        return root;
+    }
+
+    nlohmann::json SceneWithPrefabInstance(int version, const std::string& prefabPath)
+    {
+        return {
+            {"format", kSceneFormatName}, {"version", version},
+            {"entities", nlohmann::json::array({
+                { {"uuid", 777}, {"name", "Barrel"}, {"components", {
+                    {"PrefabInstanceComponent", { {"prefabPath", prefabPath}, {"sourcePrefabVersion", 1} }}
+                }} }
+            })}
+        };
+    }
+
+    std::string LoadedPrefabPath(ECSRegistry& registry)
+    {
+        Entity e = registry.GetEntityByUUID(777);
+        auto* meta = registry.GetComponent<PrefabInstanceComponent>(e);
+        return meta ? meta->prefabPath : std::string("<no PrefabInstanceComponent>");
+    }
+}
+
+TEST(SceneIOTest, SavesVersion2)
+{
+    ECSRegistry registry;
+    registry.CreateEntity();
+    EXPECT_EQ(BuildSceneDocument(registry)["version"], 2);
+}
+
+TEST(SceneIOTest, Version1AbsolutePrefabPath_InsideProject_LoadsAsRelative_AndSavesAsV2)
+{
+    const auto root = MakeProjectRoot("v1 한글 프로젝트");
+    const std::string abs = Utf8(root / "assets" / "prefabs" / PathFromUtf8("통.prefab.json"));
+    const auto path = root / "scenes" / "old.scene.json";
+    WriteText(path, SceneWithPrefabInstance(1, abs).dump());
+
+    ECSRegistry loaded;
+    auto result = LoadSceneFromFile(loaded, Utf8(path), Utf8(root));
+    ASSERT_TRUE(result.has_value()) << result.error().message;
+    EXPECT_TRUE(result->warnings.empty());
+    EXPECT_EQ(LoadedPrefabPath(loaded), "assets/prefabs/통.prefab.json");
+
+    // 다시 저장하면 v2 + 상대 경로
+    ASSERT_TRUE(SaveSceneToFile(loaded, Utf8(path)).has_value());
+    std::ifstream in(path, std::ios::binary);
+    nlohmann::json saved;
+    in >> saved;
+    EXPECT_EQ(saved["version"], 2);
+    EXPECT_EQ(saved["entities"][0]["components"]["PrefabInstanceComponent"]["prefabPath"], "assets/prefabs/통.prefab.json");
+}
+
+TEST(SceneIOTest, Version2AbsolutePrefabPath_IsAccepted_AndNormalized)
+{
+    // 손으로 고친 파일이나 옛 도구 출력: v2인데 절대 경로가 들어 있어도 거절하지 않는다.
+    const auto root = MakeProjectRoot("v2abs");
+    const auto path = root / "scenes" / "hand.scene.json";
+    WriteText(path, SceneWithPrefabInstance(2, Utf8(root / "assets" / "prefabs" / "a.prefab.json")).dump());
+    ECSRegistry loaded;
+    auto result = LoadSceneFromFile(loaded, Utf8(path), Utf8(root));
+    ASSERT_TRUE(result.has_value()) << result.error().message;
+    EXPECT_EQ(LoadedPrefabPath(loaded), "assets/prefabs/a.prefab.json");
+}
+
+TEST(SceneIOTest, PrefabPathOutsideProject_IsKept_WithWarning)
+{
+    const auto root = MakeProjectRoot("inproj");
+    const std::string outside = Utf8(TempScenePath("다른 폴더/x.prefab.json"));
+    const auto path = root / "scenes" / "out.scene.json";
+    WriteText(path, SceneWithPrefabInstance(1, outside).dump());
+    ECSRegistry loaded;
+    auto result = LoadSceneFromFile(loaded, Utf8(path), Utf8(root));
+    ASSERT_TRUE(result.has_value()) << result.error().message;
+    EXPECT_EQ(LoadedPrefabPath(loaded), outside);
+    ASSERT_EQ(result->warnings.size(), 1u);
+    EXPECT_NE(result->warnings[0].find("outside the project folder"), std::string::npos) << result->warnings[0];
+}
+
+TEST(SceneIOTest, NoProjectRoot_LeavesPrefabPathUntouched)
+{
+    const auto root = MakeProjectRoot("noroot");
+    const std::string abs = Utf8(root / "assets" / "prefabs" / "a.prefab.json");
+    const auto path = root / "scenes" / "noroot.scene.json";
+    WriteText(path, SceneWithPrefabInstance(1, abs).dump());
+    ECSRegistry loaded;
+    ASSERT_TRUE(LoadSceneFromFile(loaded, Utf8(path)).has_value());
+    EXPECT_EQ(LoadedPrefabPath(loaded), abs);
+}
+
+TEST(SceneIOTest, PieSnapshot_DoesNotRunFileUpgrade)
+{
+    // Play/Stop 스냅샷(DeserializeRegistry)은 파일 로더가 아니므로 업그레이드 훅을 부르지 않는다.
+    const auto root = MakeProjectRoot("pie");
+    const std::string abs = Utf8(root / "assets" / "prefabs" / "a.prefab.json");
+    ECSRegistry registry;
+    DeserializeRegistry(registry, SceneWithPrefabInstance(2, abs));
+    EXPECT_EQ(LoadedPrefabPath(registry), abs);
+}

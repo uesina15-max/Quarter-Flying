@@ -3,6 +3,9 @@
 #include "System.h"
 #include "Components.h"
 #include "Hierarchy.h"   // ComposeWorldMatrix / ComputeWorldMatrix (예전엔 여기 선언돼 있었다)
+#include "../renderer/SceneLighting.h"
+#include "../asset/MaterialAsset.h"   // MaterialData(순수 데이터). 파일 읽기는 주입된 로더가 한다
+#include <optional>
 #include <glm/mat4x4.hpp>
 #include <functional>
 #include <memory>
@@ -24,6 +27,33 @@ namespace Engine
     // shaderId/passType/materialLayout/features는 기본값.
     InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture = 0);
 
+    // 씬 조명 선택 규칙의 유일한 구현(docs/USABILITY_IMPROVEMENT_PLAN.md R-1). RenderSystem이 매 프레임 부르고,
+    // 테스트도 이것을 직접 부른다(GL 없음).
+    //  1. 후보: enabled == true인 DirectionalLightComponent
+    //  2. priority가 가장 높은 것, 같으면 UUID가 가장 작은 것("첫 번째"는 ECS 순회 순서라 저장·불러오기·복제 뒤에
+    //     바뀔 수 있다. UUID는 씬 파일에 저장되므로 에디터와 Player가 같은 라이트를 고른다)
+    //  3. 후보가 없거나 direction이 0이면 SceneLighting::Default()(라이트 도입 전과 같은 화면)
+    struct SceneLightingSelection
+    {
+        SceneLighting lighting = SceneLighting::Default();
+        Entity entity;                 // 고른 라이트(없으면 IsValid() == false)
+        size_t candidateCount = 0;     // 켜진 라이트 수(2 이상이면 나머지는 무시됨)
+        bool invalidDirection = false; // 고른 라이트의 direction이 0이라 기본 방향을 썼다
+    };
+    SceneLightingSelection SelectSceneLighting(ECSRegistry& registry);
+
+    // 머티리얼 합성 규칙의 유일한 구현(R-4). 배치 키에 넣지 않는다(색·roughness·metallic이 달라도 같은 배치).
+    //  색 = 머티리얼 baseColor x 컴포넌트 baseColor, roughness·metallic = 머티리얼(없으면 0.6 / 0.0),
+    //  텍스처 경로 = 컴포넌트 texturePath가 있으면 그것, 없으면 머티리얼 texture(EffectiveTexturePath).
+    struct InstanceMaterial
+    {
+        glm::vec3 color;
+        float roughness;
+        float metallic;
+    };
+    InstanceMaterial MakeInstanceMaterial(const RenderableComponent& renderable, const MaterialData* material = nullptr);
+    const std::string& EffectiveTexturePath(const RenderableComponent& renderable, const MaterialData* material);
+
     /// <summary>
     /// ROADMAP.md P0-2("Scene Editor 3D 뷰포트가 실제로 그리는지 확인")의 핵심 - ECS의
     /// TransformComponent+RenderableComponent를 실제 draw call로 옮기는 첫 System.
@@ -34,13 +64,17 @@ namespace Engine
     /// 바로 이것 - 실행된 적이 없으니 검증도 안 된 상태였다). 이 System이 그 둘을 잇는다.
     ///
     /// 메시 해석 정책(ResolveMeshHandle):
-    ///  1. RenderableComponent.meshPath가 있으면 그 파일(에셋 루트 기준 상대경로)을 이 System이
-    ///     처음 볼 때 한 번 로드하고, 내부 핸들(kPathHandleBase 이상)에 캐시한다. 경로는 직렬화에
-    ///     안전해서 프리팹/PIE 스냅샷/Inspector 편집이 그대로 동작한다. 런타임에 배정되는
-    ///     meshHandle 정수는 다음 세션에 의미가 없다.
-    ///  2. meshPath가 비어 있으면 meshHandle을 쓴다. RegisterMesh()된 메시가 없으면 절차적 유닛
-    ///     큐브로 대체한다("파이프라인이 살아있는가"를 보기 위한 기존 동작).
-    ///  3. 경로 로드에 실패하면 경고를 한 번 남기고(경로 포함) 큐브로 대체한다.
+    ///  1. meshPath가 RegisterMesh()로 등록한 이름이면 그 메시를 쓴다(파일을 찾지 않는다).
+    ///  2. 아니면 그 파일(에셋 루트 기준 상대경로)을 이 System이 처음 볼 때 한 번 로드하고, 내부
+    ///     핸들(kPathHandleBase 이상)에 캐시한다. 경로·이름은 직렬화에 안전해서 프리팹/PIE 스냅샷/
+    ///     Inspector 편집이 그대로 동작한다. 내부 핸들 정수는 파일에 저장하지 않는다(R-4 이전의
+    ///     RenderableComponent.meshHandle은 다음 세션에 의미가 없어서 스키마 2에서 뺐다).
+    ///  3. meshPath가 비어 있으면 절차적 유닛 큐브("파이프라인이 살아있는가"를 보기 위한 기존 동작).
+    ///  4. 경로 로드에 실패하면 경고를 한 번 남기고(경로 포함) 큐브로 대체한다.
+    ///
+    /// 머티리얼(ResolveMaterial, R-4): materialPath 파일을 경로당 한 번 읽는다. 실패하면 경고 한 번 후
+    /// 기본 머티리얼(roughness 0.6, metallic 0 = 머티리얼 도입 전 화면). 합성 규칙은 MakeInstanceMaterial
+    /// 하나에 있다.
     ///
     /// 텍스처(ResolveTexture): RenderableComponent.texturePath가 있으면 TextureLoader로 경로당 한 번
     /// 로드한다. 실패하면 경고를 한 번 남기고 텍스처 없이 그린다(흰색 대신 원래 색 - "텍스처가 안 붙었다"는
@@ -75,9 +109,11 @@ namespace Engine
         // 전체 경로를 받아 텍스처를 만든다. 비워 두면 텍스처를 쓰지 않는다(texturePath는 경고 후 무시).
         using TextureLoader = std::function<LoadedTexture(const std::string& fullPath)>;
 
+        // lightingTarget: 매 Update에 씬 조명(SelectSceneLighting 결과)을 써 넣을 곳. 보통 Renderer가 소유한다.
+        // nullptr이면 조명을 고르지 않는다(유닛테스트).
         explicit RenderSystem(InstancedBatchManager* batchManager,
                               std::string assetRoot = {}, MeshLoader meshLoader = {},
-                              TextureLoader textureLoader = {});
+                              TextureLoader textureLoader = {}, SceneLighting* lightingTarget = nullptr);
 
         void Update(ECSRegistry& registry, float deltaTime) override;
 
@@ -86,9 +122,17 @@ namespace Engine
         // GL 자원을 직접 건드리는 System을 병렬 스케줄러에 맡기지 않는다(위 클래스 주석 참고).
         bool CanRunInParallel() const override { return false; }
 
-        // 명시적으로 특정 meshHandle에 실제 메시를 등록한다(파일 로드 등). 없으면 기본 큐브로
-        // 대체된다.
-        void RegisterMesh(uint32_t meshHandle, std::shared_ptr<Mesh> mesh);
+        // 코드가 만든 메시를 이름으로 등록한다. RenderableComponent.meshPath에 그 이름을 쓰면 파일 대신 이 메시를 쓴다.
+        // 이름은 경로처럼 저장·스냅샷에 안전하다(예전에는 정수 핸들로 등록해서 Undo·Play/Stop을 지나면 의미가 없어졌다).
+        // 에셋 기준 폴더가 바뀌어도 유지된다. 같은 이름으로 다시 등록하면 바꾼다.
+        void RegisterMesh(const std::string& name, std::shared_ptr<Mesh> mesh);
+
+        // 머티리얼 파일 로더(보통 Engine이 asset/MaterialAsset의 LoadMaterialFile을 넣는다). 전체 경로를 받는다.
+        // 비워 두면 materialPath는 경고 후 무시된다(텍스처 로더와 같은 방식).
+        using MaterialLoader = std::function<Result<MaterialData>(const std::string& fullPath)>;
+        void SetMaterialLoader(MaterialLoader loader) { materialLoader_ = std::move(loader); }
+        // materialPath -> 머티리얼(경로당 한 번 로드, 실패는 경고 한 번 후 nullptr = 기본 머티리얼).
+        const MaterialData* ResolveMaterial(const std::string& materialPath);
 
         // 에셋 기준 폴더를 바꾼다(에디터에서 다른 프로젝트를 열 때). 메시·텍스처 캐시는 상대 경로가
         // 키라서 같이 비워야 하는데, 텍스처 해제는 GL 호출이라 이 엔진의 GL 컨텍스트가 current일 때만
@@ -104,8 +148,10 @@ namespace Engine
         // 이 컴포넌트를 그릴 때 바인딩할 GL 텍스처(0 = 없음/실패). 경로당 한 번 로드하고 캐시한다.
         // 텍스처도 GL 자원이라 ResolveMeshHandle과 같이 Update 안에서 불러야 한다.
         uint32_t ResolveTexture(const RenderableComponent& renderable);
+        uint32_t ResolveTexture(const std::string& texturePath);
 
-        // 경로 기반 메시에 배정하는 내부 핸들의 시작값. 명시적 RegisterMesh 핸들은 이보다 작아야 한다.
+        // 경로 기반 메시에 배정하는 내부 핸들의 시작값. RegisterMesh(이름)가 배정하는 핸들은 이보다 작다
+        // (에셋 기준 폴더가 바뀌면 이 값 이상만 비운다 - 코드가 등록한 메시는 남는다).
         static constexpr uint32_t kPathHandleBase = 0x40000000u;
 
     private:
@@ -113,6 +159,11 @@ namespace Engine
         std::shared_ptr<Mesh> CreateUnitCubeMesh();
 
         InstancedBatchManager* batchManager_;
+        SceneLighting* lightingTarget_ = nullptr;
+        // 직전 프레임에 고른 라이트(로그는 선택이 바뀔 때만 남긴다 - 매 프레임 같은 경고가 쌓이지 않게).
+        uint64_t lastLightUuid_ = ~0ull;
+        size_t lastLightCandidates_ = ~size_t(0);
+        void UpdateLighting(ECSRegistry& registry);
 
         std::unordered_map<uint32_t, std::shared_ptr<Mesh>> meshRegistry_;
         std::shared_ptr<Mesh> defaultCubeMesh_;
@@ -125,6 +176,10 @@ namespace Engine
         std::unordered_map<std::string, uint32_t> pathHandles_;  // meshPath -> 핸들 (실패는 0)
 
         TextureLoader textureLoader_;
+        MaterialLoader materialLoader_;
+        std::unordered_map<std::string, std::optional<MaterialData>> materials_;   // materialPath -> (실패는 nullopt)
+        std::unordered_map<std::string, uint32_t> registeredMeshes_;              // RegisterMesh 이름 -> 핸들
+        uint32_t nextRegisteredHandle_ = 1;   // 0 = 절차적 큐브, 등록 메시는 1부터, 경로 메시는 kPathHandleBase부터
         std::unordered_map<std::string, LoadedTexture> textures_;  // texturePath -> 텍스처 (실패는 glId 0)
         uint32_t nextPathHandle_ = kPathHandleBase;  // 지연 생성 - 실제로 필요해지기 전엔 GL 호출 없음
 

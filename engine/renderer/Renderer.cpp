@@ -330,7 +330,7 @@ namespace Engine
         if (renderMode == RenderMode::Scene && sceneMeshRenderer && sceneMeshRenderer->IsInitialized()
             && instancedBatchManager && mainCamera)
         {
-            sceneMeshRenderer->Render(*instancedBatchManager, *mainCamera);
+            sceneMeshRenderer->Render(*instancedBatchManager, *mainCamera, sceneLighting);
 
             // 불투명 다음에 투명(VFX Lite 구현 계획서 §2.2 확정 ③). 배치 사이의 순서는
             // InstancedBatchManager가 보장하지 않으므로, 불투명 → 파티클 순서는 여기

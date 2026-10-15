@@ -17,18 +17,24 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QFrame
-)
+    QPushButton, QSizePolicy, QFrame, QCheckBox, QComboBox)
 from PySide6.QtCore import Qt, Signal, QTimer, QRect, QPointF
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush
 
-from core.action_data import ActionData, EventType
+from core.action_data import ActionData, EventType, SectionRole, SECTION_ROLE_COLORS
 from core.action_playback import ActionPlaybackCursor, events_of_type
 from core.sound_player import SoundPlayer, collect_clip_paths, resolve_clip_path
 from panels.motion_mixer import MotionMixerPanel
 from style.theme import COLORS
 
 from engine_binding import binding as ge_python, HAS_ENGINE
+
+
+# 섹션 역할별 2D 프리뷰 표현(A-5). emphasize: 팔을 크게 휘두르고 무기를 그린다. 역할을 추가하면 여기에 행만 더한다.
+ROLE_PREVIEW_STYLES = {
+    SectionRole.ATTACK: {"emphasize": True},
+}
+DEFAULT_ROLE_STYLE = {"emphasize": False}
 
 
 class PreviewCanvas(QWidget):
@@ -79,15 +85,17 @@ class PreviewCanvas(QWidget):
         # 기본 위치 (화면 중앙)
         cx = w / 2
         
-        # 공격 섹션일 경우 좀 더 역동적으로
-        is_attack = False
+        # 현재 섹션의 역할에 따른 표시(A-5). 예전에는 role이 "Attack"일 때만 "ATTACK PHASE" 문구와 강조를 하드코딩했다.
+        # 역할별 표현은 ROLE_PREVIEW_STYLES 표 하나에서 정하고, 표에 없는 역할은 기본 스타일(강조 없음)로 그린다.
+        current_section = None
         speed_mult = 1.0
         for sec in self._action.sections:
             if sec.start_frame <= self._current_frame <= sec.end_frame:
-                if sec.role.value == "Attack":
-                    is_attack = True
+                current_section = sec
                 speed_mult = sec.speed
                 break
+        style = ROLE_PREVIEW_STYLES.get(current_section.role, DEFAULT_ROLE_STYLE) if current_section else DEFAULT_ROLE_STYLE
+        is_attack = style["emphasize"]
 
         # 간단한 수학 함수로 포즈 계산
         time_angle = t * math.pi * 2 * speed_mult
@@ -147,9 +155,9 @@ class PreviewCanvas(QWidget):
         p.setPen(QColor("#ffffff"))
         p.drawText(10, 20, f"Frame: {self._current_frame} / {self._action.total_frames}")
         
-        if is_attack:
-            p.setPen(QColor("#ff4444"))
-            p.drawText(10, 40, "ATTACK PHASE")
+        if current_section is not None:
+            p.setPen(QColor(SECTION_ROLE_COLORS.get(current_section.role, "#cccccc")).lighter(160))
+            p.drawText(10, 40, f"{current_section.name}  ({current_section.role.value}, x{current_section.speed:g})")
 
 
 class AnimationPreviewPanel(QWidget):
@@ -232,11 +240,24 @@ class AnimationPreviewPanel(QWidget):
         self.lbl_frame = QLabel("0 / 0")
         self.lbl_frame.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 12px; margin-left: 10px;")
 
+        # 반복·배속(A-5). 배속은 미리보기 재생 속도만 바꾼다(액션 데이터의 fps·섹션 speed는 그대로).
+        self.chk_loop = QCheckBox("반복")
+        self.chk_loop.setChecked(True)
+        self.chk_loop.toggled.connect(self._on_loop_toggled)
+        self.cb_rate = QComboBox()
+        for label, rate in (("0.5x", 0.5), ("1x", 1.0), ("2x", 2.0)):
+            self.cb_rate.addItem(label, rate)
+        self.cb_rate.setCurrentIndex(1)
+        self.cb_rate.currentIndexChanged.connect(lambda _: self._apply_rate())
+
         c_layout.addStretch()
         c_layout.addWidget(self.btn_prev)
         c_layout.addWidget(self.btn_play)
         c_layout.addWidget(self.btn_next)
         c_layout.addWidget(self.lbl_frame)
+        c_layout.addSpacing(12)
+        c_layout.addWidget(self.chk_loop)
+        c_layout.addWidget(self.cb_rate)
         c_layout.addStretch()
 
         layout.addWidget(ctrl)
@@ -258,11 +279,11 @@ class AnimationPreviewPanel(QWidget):
 
         # 액션이 바뀌면 이전 액션의 소리를 끌고 가지 않는다.
         self._sound.clear()
-        self._cursor = ActionPlaybackCursor(action, loop=True) if action else None
+        self._cursor = ActionPlaybackCursor(action, loop=self.chk_loop.isChecked()) if action else None
 
         self.set_current_frame(0)
         if action:
-            self._timer.setInterval(1000 // (action.fps if action.fps > 0 else 30))
+            self._apply_rate()
             # §5.3 - 여기서 한 번만 로드한다. 재생 중에는 파일을 건드리지 않는다.
             clips = collect_clip_paths(action, base_dir)
             if clips:
@@ -305,13 +326,18 @@ class AnimationPreviewPanel(QWidget):
         self._viewport_slot_layout.addWidget(self._shared_viewport)
 
     def activate_motion_preview(self):
-        """Motion 모드로 전환하고, 아직 아무것도 안 실려있으면 샘플을 자동 로드한다."""
+        """Motion 모드로 전환한다. 비어 있으면 비어 있는 채로 시작한다(샘플은 "샘플 불러오기" 버튼).
+
+        예전에는 아무것도 안 실려 있으면 sample/idle/attack을 자동으로 채웠다. 그래서 빈 상태로 시작할 수 없었고,
+        샘플 파일이 없는 사용자 프로젝트에서는 Motion Editor를 열 때마다 "샘플 자산 파일을 찾을 수 없습니다"
+        오류가 떴다(docs/USABILITY_IMPROVEMENT_PLAN.md A-3).
+        """
         if not HAS_ENGINE or self._shared_viewport is None or not getattr(self._shared_viewport, "initialized", False):
             return
         self._shared_viewport.engine.SetRenderMode(ge_python.RenderMode.Motion)
         preview = self._get_preview_state()
         if preview is not None and not preview.HasSkeleton():
-            self.mixer_panel.load_default_sample()
+            self.mixer_panel.show_empty_hint()
 
     def deactivate_motion_preview(self):
         """Scene 모드로 되돌린다 (Motion Editor를 벗어날 때 main.py가 호출)."""
@@ -322,7 +348,10 @@ class AnimationPreviewPanel(QWidget):
     def _on_play_toggle(self):
         if not self._action:
             return
-            
+        if not self._is_playing and self._cursor is not None and self._cursor.finished:
+            self._cursor.seek(0)       # 끝난 뒤 다시 누르면 처음부터
+            self.set_current_frame(0)
+
         self._is_playing = not self._is_playing
         if self._is_playing:
             self.btn_play.setText("⏸")
@@ -332,6 +361,27 @@ class AnimationPreviewPanel(QWidget):
             self._timer.stop()
             # 일시정지한 순간 울리던 소리가 계속 나면 "멈췄는데 소리가 난다"가 된다.
             self._sound.stop_all()
+
+    def playback_interval_ms(self) -> int:
+        fps = self._action.fps if self._action and self._action.fps > 0 else 30
+        rate = float(self.cb_rate.currentData() or 1.0)
+        return max(1, int(round(1000.0 / (fps * rate))))
+
+    def _apply_rate(self):
+        self._timer.setInterval(self.playback_interval_ms())
+
+    def _on_loop_toggled(self, loop: bool):
+        if self._action is None:
+            return
+        frame = self._current_frame
+        self._cursor = ActionPlaybackCursor(self._action, loop=loop)
+        self._cursor.seek(frame)
+
+    def _stop_playing(self):
+        self._is_playing = False
+        self.btn_play.setText("▶")
+        self._timer.stop()
+        self._sound.stop_all()
 
     def _on_tick(self):
         if not self._action:
@@ -354,6 +404,8 @@ class AnimationPreviewPanel(QWidget):
         self.frame_changed.emit(next_frame)
 
         self._play_sounds(fired)
+        if self._cursor.finished:      # 반복을 끈 상태로 끝까지 갔다
+            self._stop_playing()
 
     def _play_sounds(self, fired_events):
         """발화된 이벤트 중 Sound만 재생한다.

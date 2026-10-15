@@ -14,8 +14,8 @@ namespace Engine
     /// 방법이 없었다(docs/INGAME_CAMERA_PLAN.md C6).
     ///
     /// 사용 순서(Engine::TickFrame): BeginFrame() -> 이번 프레임 이벤트마다 Apply() -> System들이 읽기.
-    /// "이번 프레임에 얼마나 움직였나"(마우스 이동량, 휠)는 BeginFrame에서 0으로 돌아가고,
-    /// "지금 눌려 있나"(키, 버튼)는 Up 이벤트가 올 때까지 유지된다.
+    /// "이번 프레임에 얼마나 움직였나"(마우스 이동량, 휠)와 "이번 프레임에 눌렀나/뗐나"(엣지)는
+    /// BeginFrame에서 비워지고, "지금 눌려 있나"(키, 버튼)는 Up 이벤트가 올 때까지 유지된다.
     /// </summary>
     class InputState
     {
@@ -25,6 +25,15 @@ namespace Engine
 
         bool IsKeyDown(KeyCode key) const;
         bool IsMouseButtonDown(MouseButton button) const;
+
+        // 이번 프레임에 안 눌림 -> 눌림 / 눌림 -> 안 눌림으로 바뀐 적이 있나. 한 프레임 안에 눌렀다 떼면
+        // 둘 다 true다(IsKeyDown은 false). 이미 눌린 키의 Down 이벤트(Win32 WM_KEYDOWN 자동 반복)는
+        // 엣지가 아니다. ReleaseAll()은 엣지를 만들지 않고, 그 프레임에 쌓인 엣지도 지운다 - 포커스 상실로
+        // "뗀 순간" 동작이 발동하면 안 되기 때문이다(docs/USABILITY_IMPROVEMENT_PLAN.md E-2). InputActions가 액션 엣지를 여기서 계산한다.
+        bool WasKeyPressed(KeyCode key) const;
+        bool WasKeyReleased(KeyCode key) const;
+        bool WasMouseButtonPressed(MouseButton button) const;
+        bool WasMouseButtonReleased(MouseButton button) const;
         float GetMouseDeltaX() const { return mouseDeltaX_; }
         float GetMouseDeltaY() const { return mouseDeltaY_; }
         float GetWheelDelta() const { return wheelDelta_; }   // 휠 한 칸 = 1.0 (앞으로 굴리면 +)
@@ -41,7 +50,11 @@ namespace Engine
     private:
         static constexpr size_t kKeyCount = 256;
         std::array<bool, kKeyCount> keys_{};
+        std::array<bool, kKeyCount> keysPressed_{};    // 이번 프레임 엣지(BeginFrame에서 비움)
+        std::array<bool, kKeyCount> keysReleased_{};
         std::array<bool, 3> mouseButtons_{};
+        std::array<bool, 3> mouseButtonsPressed_{};
+        std::array<bool, 3> mouseButtonsReleased_{};
         std::array<float, 3> dragDeltaX_{};
         std::array<float, 3> dragDeltaY_{};
         float mouseDeltaX_ = 0.0f;

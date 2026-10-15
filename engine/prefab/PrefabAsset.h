@@ -104,6 +104,9 @@ namespace Engine
         static std::expected<PrefabAsset, EngineError> FromJson(const nlohmann::json& json);
 
         std::expected<void, EngineError> SaveToFile(const std::filesystem::path& path) const;
-        static std::expected<PrefabAsset, EngineError> LoadFromFile(const std::filesystem::path& path);
+        // 파일에서 읽을 때만 컴포넌트별 파일 로드 업그레이드 훅을 적용한다(ecs/Reflection.h FileLoadContext).
+        // projectRoot(UTF-8)는 프로젝트 경로 정규화 기준이다. FromJson(메모리의 JSON)은 훅을 적용하지 않는다.
+        static std::expected<PrefabAsset, EngineError> LoadFromFile(const std::filesystem::path& path,
+                                                                    const std::string& projectRoot = "");
     };
 }

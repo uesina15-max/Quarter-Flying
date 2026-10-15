@@ -3,13 +3,15 @@
 #include "../../prefab/PrefabInstanceComponent.h"
 #include "../../ecs/Hierarchy.h"
 #include "../../core/Utf8Path.h"
+#include "../../core/ProjectPath.h"
 
 namespace Engine
 {
 
-RevertPrefabInstanceCommand::RevertPrefabInstanceCommand(ECSRegistry* registry, Entity entity)
+RevertPrefabInstanceCommand::RevertPrefabInstanceCommand(ECSRegistry* registry, Entity entity, std::string projectRoot)
     : registry_(registry)
     , entity_(entity)
+    , projectRoot_(std::move(projectRoot))
 {
 }
 
@@ -39,10 +41,17 @@ std::expected<void, EngineError> RevertPrefabInstanceCommand::Apply()
         // §2.9: if the source file is missing/unreadable, the entity must be left
         // completely untouched — LoadFromFile failing here means we return before
         // ApplyToEntity is ever called.
-        auto loaded = PrefabAsset::LoadFromFile(PathFromUtf8(meta->prefabPath));   // UTF-8로 저장됨
+        // prefabPath는 프로젝트 상대 경로(씬 version 2) 또는 옛 절대 경로다. 해석 규칙은 core/ProjectPath.h 한 곳.
+        const std::filesystem::path resolved = ResolveProjectPath(meta->prefabPath, projectRoot_);
+        auto loaded = PrefabAsset::LoadFromFile(resolved, projectRoot_);
         if (!loaded)
         {
-            return std::unexpected(loaded.error());
+            // 어느 단계가 틀렸는지 가를 수 있게 저장된 값·기준 폴더·최종 경로를 모두 남긴다(상대 경로인데 기준 폴더가
+            // 비었거나 다른 프로젝트면 최종 경로가 엉뚱한 곳을 가리킨다).
+            EngineError err = loaded.error();
+            err.message += " (stored prefabPath='" + meta->prefabPath + "', project root='" + projectRoot_ +
+                           "', resolved='" + Utf8FromPath(resolved) + "')";
+            return std::unexpected(err);
         }
         loadedAsset_ = std::move(loaded.value());
 

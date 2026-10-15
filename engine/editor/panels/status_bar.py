@@ -55,6 +55,13 @@ class StatusBar(QWidget):
 
         layout.addWidget(self._make_separator())
 
+        # 모드(Edit / Play / Pause) - 지금 키 입력이 에디터와 게임 중 어디로 가는지 판단하는 기준이라 항상 보인다.
+        self.lbl_mode = self._make_label("EDIT")
+        layout.addWidget(self.lbl_mode)
+        self.set_mode("Edit")
+
+        layout.addWidget(self._make_separator())
+
         # FPS
         self.lbl_fps = self._make_label("FPS: --")
         layout.addWidget(self.lbl_fps)
@@ -144,6 +151,13 @@ class StatusBar(QWidget):
             self.lbl_engine_status.setStyleSheet(
                 f"color: {COLORS['accent_danger']}; font-size: 10px; font-weight: bold; padding: 0px 6px;"
             )
+
+    _MODE_COLORS = {"Edit": "text_secondary", "Play": "accent_green", "Pause": "accent_orange"}
+
+    def set_mode(self, mode: str):
+        color = COLORS.get(self._MODE_COLORS.get(mode, "text_secondary"), COLORS['text_secondary'])
+        self.lbl_mode.setText({"Edit": "■ EDIT", "Play": "▶ PLAY", "Pause": "⏸ PAUSE"}.get(mode, mode))
+        self.lbl_mode.setStyleSheet(f"color: {color}; font-size: 10px; font-weight: bold; padding: 0px 6px;")
 
     def set_entity_count(self, count: int):
         self._entity_count = count

@@ -106,7 +106,7 @@
 | 순위 | 항목 | 이유 |
 |------|------|------|
 | **P0** | ROADMAP 앞부분을 "현재 상태" 표 하나로 다시 쓴다 | ROADMAP이 의사결정의 근거인데 시차가 크다(예: 해결된 scene.json 브리지가 "미구현"으로 남아 있음). |
-| **P1** | `meshHandle` / `meshPath`를 하나로 합친다 | 호출부·직렬화·Inspector가 단순해진다. |
+| **P1** | `meshHandle` / `meshPath`를 하나로 합친다 | 호출부·직렬화·Inspector가 단순해진다. **2026-10-15 해결**(`USABILITY_IMPROVEMENT_PLAN.md` R-4): `RenderableComponent` 스키마 2에서 `meshHandle`·`materialHandle`을 빼고 경로 필드(`meshPath`·`materialPath`·`texturePath`)로 통일했다. 코드가 만든 메시는 `RegisterMesh(이름)`으로 등록하고 `meshPath`에 그 이름을 쓴다. |
 | **P1** | RenderGraph를 실제 프레임 경로에 넣을지, 테스트 대상 인프라로만 둘지 정한다 | 지금은 게임 실행 중 패스가 0개다. 그래프와 즉시 모드가 이중으로 존재하는 상태를 정리한다. |
 | **P2** | 남은 계층 직접 쓰기 경로(폴백, `SetComponentJson`)를 정리하고 `Hierarchy.h` 주석을 현재 코드에 맞춘다 | Inspector 경로는 이미 통일되었다. |
 | **P2** | `ResourceState`에 Copy·Present 등을 추가하고, D3D12 상태 매핑 헤더를 둔다 | 백엔드 확장 준비. 이전에 논의된 D3D12 매핑 설계가 있다면 그것과 맞춘다(문서 위치는 기록되어 있지 않음). |

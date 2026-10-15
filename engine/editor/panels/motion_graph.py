@@ -1,17 +1,17 @@
 """
 editor/panels/motion_graph.py
 
-Motion Graph Panel — Speed & Acceleration Curve 표시기.
+Motion Graph Panel — 섹션별 재생 속도 배율 표시기.
 
-역할:
-  - 선택된 ActionData의 섹션별 속도(speed)를 기반으로 커브를 그림.
-  - 실제 FBX가 연동되면 본(Bone)의 실제 속도 데이터를 시각화할 위치.
-  - 현재는 각 섹션의 배율(speed)을 기반으로 보간된 그래프를 표시.
+선택된 ActionData의 섹션마다 speed(재생 속도 배율)를 계단 모양으로 그린다. 데이터에 있는 값만 그린다.
+
+예전에는 섹션 안에서 sin 곡선으로 "속도"를, 그 차이로 "가속도"를 지어내서 그렸다. 섹션에는 배율 하나뿐이고
+본의 실제 속도 데이터는 어디에도 없는데, 그래프는 실제 측정값처럼 보였다(조용히 틀린 결과,
+docs/USABILITY_IMPROVEMENT_PLAN.md A-2). 본 속도 분석이 필요해지면 클립 데이터에서 계산해 따로 그린다.
 """
 
 from __future__ import annotations
 
-import math
 from typing import Optional
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QSizePolicy
@@ -73,55 +73,35 @@ class GraphCanvas(QWidget):
             color.setAlpha(30)
             p.fillRect(x1, 0, x2 - x1, h, color)
         
-        # 커브 데이터 생성 (더미 곡선)
-        # 1. 속도 곡선 (노란색)
-        # 2. 가속도 곡선 (주황색)
-        
-        points_speed = []
-        points_accel = []
-        
-        max_speed = 3.0 # 최대 3배속으로 가정하여 Y축 스케일링
-        
-        for frame in range(total_frames + 1):
-            x = (frame / total_frames) * w
-            
-            # 현재 프레임이 속한 섹션 찾기
-            current_speed = 1.0
+        if not self._action.sections:
+            p.setPen(QColor("#556677"))
+            p.drawText(self.rect(), Qt.AlignCenter, "섹션 없음 — 표시할 속도 배율이 없습니다")
+            self._draw_playhead(p, total_frames, w, h)
+            return
+
+        # 섹션 speed(배율)를 계단 모양으로. 섹션 밖은 1.0(기본 배율, core/action_data.py ActionSection.speed).
+        max_speed = max(2.0, max(sec.speed for sec in self._action.sections) * 1.1)
+
+        def speed_at(frame):
             for sec in self._action.sections:
                 if sec.start_frame <= frame <= sec.end_frame:
-                    # 섹션 중간부분에서 최고 속도가 되도록 곡선 깎기
-                    sec_len = max(1, sec.end_frame - sec.start_frame)
-                    t = (frame - sec.start_frame) / sec_len
-                    # sin 함수로 부드러운 곡선 만들기
-                    curve = math.sin(t * math.pi) 
-                    # 기본 0.5에서 시작해 최고점에서 sec.speed에 도달하도록
-                    current_speed = 0.5 + (sec.speed - 0.5) * curve
-                    break
-                    
-            # 화면 Y 좌표로 변환 (아래쪽이 0)
-            normalized_speed = min(1.0, current_speed / max_speed)
-            y_speed = h - (normalized_speed * h * 0.8) # 상단 여백 20%
-            points_speed.append(QPointF(x, y_speed))
-            
-            # 가속도 (속도의 변화량, 대충 미분)
-            if frame > 0:
-                prev_y = points_speed[-2].y()
-                # 변화량이 클수록 가속도가 큼. 중간 지점(h/2)을 0으로 잡음
-                accel = (prev_y - y_speed) * 2 
-                y_accel = (h / 2) - accel
-                y_accel = max(10, min(h - 10, y_accel))
-                points_accel.append(QPointF(x, y_accel))
-            else:
-                points_accel.append(QPointF(x, h/2))
+                    return sec.speed
+            return 1.0
 
-        # 가속도 곡선 그리기
-        if len(points_accel) > 1:
-            path_accel = QPainterPath()
-            path_accel.moveTo(points_accel[0])
-            for pt in points_accel[1:]:
-                path_accel.lineTo(pt)
-            p.setPen(QPen(QColor(255, 120, 0, 150), 1.5))
-            p.drawPath(path_accel)
+        def y_of(speed):
+            return h - (min(speed, max_speed) / max_speed) * h * 0.8   # 상단 여백 20%
+
+        points_speed = []
+        for frame in range(total_frames + 1):
+            x = (frame / total_frames) * w
+            y = y_of(speed_at(frame))
+            if points_speed and abs(points_speed[-1].y() - y) > 1e-6:
+                points_speed.append(QPointF(x, points_speed[-1].y()))   # 값이 바뀌는 자리에서 수직으로
+            points_speed.append(QPointF(x, y))
+
+        # 기준선 1.0x
+        p.setPen(QPen(QColor("#2e4d6b"), 1, Qt.DashLine))
+        p.drawLine(0, int(y_of(1.0)), w, int(y_of(1.0)))
 
         # 속도 곡선 그리기
         if len(points_speed) > 1:
@@ -144,17 +124,17 @@ class GraphCanvas(QWidget):
             p.setPen(QPen(QColor(0, 212, 255, 255), 2))
             p.drawPath(path_speed)
 
-        # 현재 재생 헤드
+        self._draw_playhead(p, total_frames, w, h)
+
+        # 범례
+        p.setPen(QColor(0, 212, 255, 255))
+        p.drawText(10, 20, f"── 섹션 재생 속도 배율 (점선 = 1.0x, 위쪽 끝 = {max_speed:.1f}x)")
+
+    def _draw_playhead(self, p, total_frames, w, h):
         px = int((self._current_frame / total_frames) * w)
         p.setPen(QPen(QColor("#ffffff"), 1))
         p.drawLine(px, 0, px, h)
-        
-        # 범례 표시
-        p.setPen(QColor(0, 212, 255, 255))
-        p.drawText(10, 20, "── Speed")
-        p.setPen(QColor(255, 120, 0, 255))
-        p.drawText(10, 35, "── Accel")
-        
+
     def mousePressEvent(self, event):
         if not self._action or self._action.total_frames <= 0:
             return

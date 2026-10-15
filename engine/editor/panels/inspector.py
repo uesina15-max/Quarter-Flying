@@ -431,6 +431,13 @@ class InspectorPanel(QWidget):
         h.setContentsMargins(10, 4, 10, 4)
         self.lbl_entity_name = QLabel("No Selection")
         h.addWidget(self.lbl_entity_name)
+        h.addStretch()
+        # 컴포넌트 추가(E-6). 목록은 엔진에 등록된 컴포넌트(GetRegisteredComponents)에서 만든다 - 여기에 이름을
+        # 하드코딩하면 새 컴포넌트(예: DirectionalLightComponent)를 추가할 때마다 이 메뉴를 고쳐야 한다.
+        self.btn_add_component = QPushButton("＋ Component")
+        self.btn_add_component.setEnabled(False)
+        self.btn_add_component.clicked.connect(self._show_add_component_menu)
+        h.addWidget(self.btn_add_component)
         layout.addWidget(self.name_bar)
 
         scroll = QScrollArea()
@@ -442,8 +449,56 @@ class InspectorPanel(QWidget):
         scroll.setWidget(self.scroll_content)
         layout.addWidget(scroll)
 
+    # 메뉴에 내지 않는 컴포넌트: 다른 기능이 관리하는 메타데이터(프리팹 인스턴스 표시는 Instantiate/Create Prefab이 붙인다).
+    _NOT_USER_ADDABLE = {_PREFAB_INSTANCE_COMPONENT_NAME}
+
+    def addable_components(self, entity_id: int):
+        """이 엔티티에 아직 없는, 사용자가 붙일 수 있는 등록 컴포넌트 이름(정렬)."""
+        if not (self.registry and HAS_ENGINE) or entity_id < 0:
+            return []
+        entity = to_entity(entity_id)
+        names = []
+        for c in self.registry.GetRegisteredComponents():
+            if c in self._NOT_USER_ADDABLE:
+                continue
+            existing = self.registry.GetComponentJson(entity, c)
+            if not existing or existing == "{}":
+                names.append(c)
+        return sorted(names)
+
+    def add_component(self, entity_id: int, comp_name: str):
+        """EditorAPI 명령으로 붙인다(Undo 가능)."""
+        if self.editor_api is None:
+            raise RuntimeError("EditorAPI가 연결되지 않아 컴포넌트를 추가할 수 없습니다")
+        self.editor_api.add_component(to_entity(entity_id), comp_name)
+        self._refresh_inspector(entity_id)
+
+    def _show_add_component_menu(self):
+        from PySide6.QtWidgets import QMenu
+        entity_id = self._current_entity_id
+        menu = QMenu(self)
+        names = self.addable_components(entity_id)
+        if not names:
+            menu.addAction("(추가할 수 있는 컴포넌트 없음)").setEnabled(False)
+        for name in names:
+            menu.addAction(name, lambda n=name: self._on_add_component(entity_id, n))
+        menu.exec(self.btn_add_component.mapToGlobal(self.btn_add_component.rect().bottomLeft()))
+
+    def _on_add_component(self, entity_id: int, comp_name: str):
+        try:
+            self.add_component(entity_id, comp_name)
+        except Exception as e:
+            print(f"[Inspector] 컴포넌트 추가 실패 ({comp_name}): {e}")
+            self.prefab_revert_status.emit(f"컴포넌트 추가 실패: {e}")
+
+    def _update_add_button(self):
+        self.btn_add_component.setEnabled(
+            bool(self.registry and self.editor_api and HAS_ENGINE) and self._current_entity_id >= 0
+            and not self._play_mode)
+
     def set_play_mode(self, is_playing: bool):
         self._play_mode = is_playing
+        self._update_add_button()
         # 위젯 Read-Only 반영
         for i in range(self.scroll_layout.count()):
             item = self.scroll_layout.itemAt(i)
@@ -460,10 +515,12 @@ class InspectorPanel(QWidget):
     def on_entity_selected(self, entity_id: int):
         self._current_entity_id = entity_id
         self._refresh_inspector(entity_id)
+        self._update_add_button()
 
     @Slot()
     def on_entity_deselected(self):
         self._current_entity_id = -1
+        self._update_add_button()
         while self.scroll_layout.count() > 1:
             item = self.scroll_layout.takeAt(0)
             if item.widget():

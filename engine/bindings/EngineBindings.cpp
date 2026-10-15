@@ -1,30 +1,37 @@
 #include "Bindings.h"
 #include "../core/Engine.h"
 #include "../core/Types.h"
-#include "../core/logging/Logger.h"
 #include "../ecs/World.h"
+#include <pybind11/stl.h>
 #include <stdexcept>
 
 namespace Engine {
 namespace Bindings {
 
+namespace {
+    // quarterflying.input.* 공통: 지금 프레임을 돌리는 엔진의 액션 맵. 프레임 밖(에디터 UI 코드 등)에서
+    // 부르면 조용히 0을 돌려주지 않고 원인을 적은 예외를 낸다 - 0이 돌아오면 "키가 안 먹는다"로만 보인다.
+    InputActions& CurrentInputActions(const char* api) {
+        InputActions* actions = InputActions::Current();
+        if (!actions) {
+            throw std::runtime_error(std::string("quarterflying.input.") + api +
+                ": no engine frame is running. Input can only be read from game scripts while the engine "
+                "updates the world (ScriptComponent on_create/on_update, inside Engine.TickFrame)");
+        }
+        return *actions;
+    }
+
+    pybind11::dict LoadReportToDict(const InputActionsLoadReport& report) {
+        pybind11::dict d;
+        d["file_missing"] = report.fileMissing;
+        d["action_count"] = report.actionCount;
+        d["warnings"] = report.warnings;
+        return d;
+    }
+}
+
 void RegisterEngineBindings(pybind11::module_& m) {
     namespace py = pybind11;
-
-    // ============================================================
-    // Logging
-    // ============================================================
-    // 기본값(Trace)이면 렌더러가 매 프레임 여러 줄을 찍어서, 콘솔 없는 설치판 에디터의
-    // 로그 파일이 분당 수 MB씩 커졌다. Player(PlayerMain.cpp)처럼 에디터도 시작할 때 낮춘다.
-    py::enum_<LogLevel>(m, "LogLevel")
-        .value("Trace", LogLevel::Trace)
-        .value("Info", LogLevel::Info)
-        .value("Warning", LogLevel::Warning)
-        .value("Error", LogLevel::Error)
-        .value("Fatal", LogLevel::Fatal);
-    m.def("set_log_level", &Logger::SetMinLevel, py::arg("level"),
-          "엔진 로그의 최소 레벨을 정한다(엔진 DLL 전체에 적용).");
-    m.def("get_log_level", &Logger::GetMinLevel);
 
     // ============================================================
     // Input Enums
@@ -39,6 +46,7 @@ void RegisterEngineBindings(pybind11::module_& m) {
         .value("MouseWheel",     InputEventType::MouseWheel)
         .value("WindowClose",    InputEventType::WindowClose)
         .value("WindowResize",   InputEventType::WindowResize)
+        .value("FocusLost",      InputEventType::FocusLost)
         .export_values();
 
     // 예전에는 A/W/S/D/Escape만 바인딩돼 있었고, viewport.py는 모르는 키를 전부 A로 보냈다.
@@ -181,7 +189,52 @@ void RegisterEngineBindings(pybind11::module_& m) {
         .def("GetViewCamera", &Engine::GetViewCamera)
         .def("SetEditorCameraView", &Engine::SetEditorCameraView,
              py::arg("eye_x"), py::arg("eye_y"), py::arg("eye_z"),
-             py::arg("target_x"), py::arg("target_y"), py::arg("target_z"));
+             py::arg("target_x"), py::arg("target_y"), py::arg("target_z"))
+        // 입력 액션 맵 파일(docs/USABILITY_IMPROVEMENT_PLAN.md G0b). 형식은 C++(InputActions)만 안다 - 에디터는
+        // 파일을 직접 파싱하지 않고 이 함수들을 부른다. 거절된 파일은 RuntimeError(기존 맵은 그대로).
+        .def("LoadInputActions", [](Engine& self, const std::string& path) {
+            auto report = self.GetInputActions().LoadActions(path);
+            if (!report) throw std::runtime_error(report.error().message);
+            return LoadReportToDict(*report);
+        }, py::arg("path"))
+        .def("SaveInputActions", [](Engine& self, const std::string& path) {
+            auto result = self.GetInputActions().SaveActions(path);
+            if (!result) throw std::runtime_error(result.error().message);
+        }, py::arg("path"))
+        .def("GetInputActionsJson", [](Engine& self) {
+            return self.GetInputActions().ToJson().dump(2);
+        })
+        // 편집(Input Actions 패널, G2). def_json은 파일의 actions 항목 하나와 같은 모양의 JSON 문자열이다. 모양이 틀려
+        // 건너뛴 바인딩은 경고 목록으로, 액션 자체가 거절되면(타입 없음 등) RuntimeError로 돌려준다. 파서는 C++ 하나뿐이다.
+        .def("SetInputActionJson", [](Engine& self, const std::string& name, const std::string& defJson) {
+            nlohmann::json def;
+            try { def = nlohmann::json::parse(defJson); }
+            catch (const nlohmann::json::parse_error& e) {
+                throw std::runtime_error(std::string("action '") + name + "': JSON syntax error: " + e.what());
+            }
+            auto warnings = self.GetInputActions().SetActionJson(name, def);
+            if (!warnings) throw std::runtime_error(warnings.error().message);
+            return *warnings;
+        }, py::arg("name"), py::arg("def_json"))
+        .def("RemoveInputAction", [](Engine& self, const std::string& name) {
+            return self.GetInputActions().RemoveAction(name);
+        }, py::arg("name"));
+
+    // 게임 스크립트용 입력 읽기. 바인딩은 C++ 규칙을 그대로 노출만 한다(합성·엣지 규칙은 InputActions.h).
+    py::module_ input = m.def_submodule("input", "Input actions for game scripts (read during the engine frame)");
+    input.def("get_axis", [](const std::string& name) { return CurrentInputActions("get_axis").GetAxis(name); },
+              py::arg("name"));
+    input.def("is_down", [](const std::string& name) { return CurrentInputActions("is_down").IsDown(name); },
+              py::arg("name"));
+    input.def("was_pressed", [](const std::string& name) { return CurrentInputActions("was_pressed").WasPressed(name); },
+              py::arg("name"));
+    input.def("was_released", [](const std::string& name) { return CurrentInputActions("was_released").WasReleased(name); },
+              py::arg("name"));
+    input.def("has_action", [](const std::string& name) { return CurrentInputActions("has_action").HasAction(name); },
+              py::arg("name"));
+    // 커서 잠금 요청(IPlatform 주석). 적용은 엔진이 프레임 끝에 하고, 창에 포커스가 있을 때만 걸린다.
+    input.def("set_cursor_locked", [](bool locked) { CurrentInputActions("set_cursor_locked").RequestCursorLock(locked); },
+              py::arg("locked"));
 }
 
 } // namespace Bindings

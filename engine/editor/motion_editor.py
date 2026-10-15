@@ -143,34 +143,85 @@ class MotionEditorWidget(QWidget):
     # ── 외부에서 호출할 Actions (메뉴바 등에서 연결) ─────────────────────────
 
     def do_import_fbx(self):
-        QMessageBox.information(self, "Import FBX", "1단계에서는 더미 뷰어를 사용합니다.\nFBX 파싱은 다음 단계에서 연동됩니다.")
+        # 메뉴 항목은 꺼져 있다(main.py, A-1). 다른 곳에서 직접 부르더라도 지원하지 않는다는 사실만 알린다.
+        QMessageBox.information(self, "Import FBX",
+                                "FBX 가져오기는 아직 지원하지 않습니다.\n"
+                                "스켈레톤·클립은 JSON(*.skeleton.json, *.clip.json)으로 assets/motion에 넣어 쓰세요.")
+
+    # ── 액션 파일 (A-4) ─────────────────────────────────────────────────────
+    # 최근 파일 목록은 에디터 설정(config.json)이다 - main.py가 recent_store(get/set을 가진 ConfigManager)를 넣어 준다.
+    recent_store = None
+    MAX_RECENT = 8
+
+    @staticmethod
+    def _actions_dir() -> str:
+        from project import current_project
+        return str(current_project().actions_dir)
+
+    def recent_actions(self) -> list:
+        if self.recent_store is None:
+            return []
+        items = self.recent_store.get("motion", "recentActions", default=[]) or []
+        return [p for p in items if isinstance(p, str)]
+
+    def _remember_recent(self, path: str):
+        if self.recent_store is None:
+            return
+        path = os.path.abspath(path)
+        items = [p for p in self.recent_actions() if os.path.normcase(p) != os.path.normcase(path)]
+        self.recent_store.set("motion", "recentActions", value=([path] + items)[: self.MAX_RECENT])
+
+    def do_new_action(self):
+        self.motion_list._on_add()
 
     def do_save_action(self):
+        """이미 파일이 있는 액션은 그 파일에 바로 저장한다(대화상자 없음). 예전에는 저장할 때마다 대화상자가 떴고 기본
+        폴더도 없어서(작업 폴더 기준) 매번 위치를 다시 골라야 했다. 새 액션은 Save As로 넘어간다."""
         if not self._current_action:
             QMessageBox.warning(self, "저장 불가", "선택된 액션이 없습니다.")
-            return
-            
-        filepath, _ = QFileDialog.getSaveFileName(
-            self, "액션 저장", f"{self._current_action.name}.action.json", "Action Files (*.action.json)"
-        )
-        if filepath:
-            try:
-                save_action(self._current_action, filepath)
-                QMessageBox.information(self, "저장 완료", f"'{filepath}' 에 저장되었습니다.")
-            except Exception as e:
-                QMessageBox.critical(self, "저장 실패", str(e))
+            return False
+        if not self._current_action.source_path:
+            return self.do_save_action_as()
+        return self._save_to(self._current_action.source_path)
 
-    def do_load_action(self):
-        filepath, _ = QFileDialog.getOpenFileName(
-            self, "액션 열기", "", "Action Files (*.action.json)"
-        )
-        if filepath:
-            try:
-                action = load_action(filepath)
-                # 현재 목록에 추가
-                actions = self.motion_list.get_actions()
-                actions.append(action)
-                self.motion_list.set_actions(actions)
-                self.motion_list.select_action(action)
-            except Exception as e:
-                QMessageBox.critical(self, "열기 실패", str(e))
+    def do_save_action_as(self):
+        if not self._current_action:
+            QMessageBox.warning(self, "저장 불가", "선택된 액션이 없습니다.")
+            return False
+        os.makedirs(self._actions_dir(), exist_ok=True)
+        default = os.path.join(self._actions_dir(), f"{self._current_action.name}.action.json")
+        filepath, _ = QFileDialog.getSaveFileName(self, "액션 저장", default, "Action Files (*.action.json)")
+        if not filepath:
+            return False
+        return self._save_to(filepath)
+
+    def _save_to(self, filepath: str) -> bool:
+        try:
+            save_action(self._current_action, filepath)
+        except Exception as e:
+            QMessageBox.critical(self, "저장 실패", f"{filepath}\n{e}")
+            return False
+        self._remember_recent(filepath)
+        self.status_message(f"액션 저장: {os.path.basename(filepath)}")
+        return True
+
+    def do_load_action(self, filepath: str = ""):
+        if not filepath:
+            filepath, _ = QFileDialog.getOpenFileName(self, "액션 열기", self._actions_dir(), "Action Files (*.action.json)")
+        if not filepath:
+            return None
+        try:
+            action = load_action(filepath)
+        except Exception as e:
+            QMessageBox.critical(self, "열기 실패", f"{filepath}\n{e}")
+            return None
+        actions = self.motion_list.get_actions()
+        actions.append(action)
+        self.motion_list.set_actions(actions)
+        self.motion_list.select_action(action)
+        self._remember_recent(filepath)
+        return action
+
+    def status_message(self, text: str):
+        """main.py가 상태바로 바꿔 끼운다. 기본은 콘솔."""
+        print(f"[MotionEditor] {text}")

@@ -1,0 +1,7 @@
+{
+  "format": "quarterflying.material",
+  "version": 1,
+  "baseColor": [0.8, 0.12, 0.1],
+  "roughness": 0.95,
+  "metallic": 0.0
+}

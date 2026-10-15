@@ -222,6 +222,7 @@ int main(int argc, char** argv)
         engineConfig.windowWidth = cfg->windowWidth;
         engineConfig.windowHeight = cfg->windowHeight;
         engineConfig.windowFullscreen = cfg->fullscreen;
+        engineConfig.cursorLock = cfg->cursorLock;
         engineConfig.numWorkerThreads = cfg->numWorkerThreads;
         engineConfig.logFrameInterval = cfg->logFrameInterval;
         engineConfig.assetRoot = ToUtf8(assetRoot);
@@ -242,8 +243,31 @@ int main(int argc, char** argv)
         }
         engine.SetActiveWorld(world);
 
+        // 3-1. 입력 액션 맵(docs/USABILITY_IMPROVEMENT_PLAN.md G0b). 에디터가 프로젝트를 열 때 부르는 것과 같은
+        // InputActions::LoadActions를 쓴다. 문제가 있어도 게임은 시작한다 - 조작이 안 되는 원인은 로그에 남긴다.
+        if (!cfg->inputActions.empty())
+        {
+            const fs::path actionsPath = (gameDir / FromUtf8(cfg->inputActions)).lexically_normal();
+            auto report = engine.GetInputActions().LoadActions(ToUtf8(actionsPath));
+            if (!report)
+            {
+                Engine::Logger::Error("Player - input actions were not loaded (game controls will read 0): {}",
+                                      report.error().message);
+            }
+            else
+            {
+                Engine::Logger::Info("Player - input actions: {} loaded from '{}'{}", report->actionCount,
+                                     ToUtf8(actionsPath), report->fileMissing ? " (file missing)" : "");
+            }
+        }
+        else
+        {
+            Engine::Logger::Info("Player - game.json has no 'inputActions'; starting without an input action map");
+        }
+
         // 4. 시작 씬
-        auto loaded = Engine::LoadSceneFromFile(*world->GetRegistry(), ToUtf8(startScene));
+        // assetRoot = 빌드 출력에서의 프로젝트 폴더(프로젝트 상대 경로를 그대로 복사한다, game_builder._output_relpath).
+        auto loaded = Engine::LoadSceneFromFile(*world->GetRegistry(), ToUtf8(startScene), ToUtf8(assetRoot));
         if (!loaded)
         {
             engine.Shutdown();

@@ -10,25 +10,34 @@
       "params": {
         "clip": "../sfx/Blip.wav",
         "volume": 0.8,
-        "volumeVar": 0.15
+        "volumeVar": 0.1
       }
     },
     {
-      "frame": 15,
+      "frame": 12,
       "type": "Sound",
       "params": {
-        "clip": "../sfx/Blip.wav",
-        "volume": 0.8,
-        "volumeVar": 0.15
+        "clip": "../sfx/Whoosh.wav",
+        "volume": 0.7,
+        "volumeVar": 0.1
+      }
+    },
+    {
+      "frame": 18,
+      "type": "Sound",
+      "params": {
+        "clip": "../sfx/Hit.wav",
+        "volume": 0.9,
+        "volumeVar": 0.1
       }
     },
     {
       "frame": 25,
       "type": "Sound",
       "params": {
-        "clip": "../sfx/Blip.wav",
-        "volume": 0.8,
-        "volumeVar": 0.15
+        "clip": "../sfx/Coin.wav",
+        "volume": 0.7,
+        "volumeVar": 0.1
       }
     }
   ],

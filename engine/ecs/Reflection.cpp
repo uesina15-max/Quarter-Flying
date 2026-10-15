@@ -1,5 +1,8 @@
 #include "Reflection.h"
 #include "../core/Utf8Path.h"
+#include "../core/ProjectPath.h"
+#include "../core/logging/Logger.h"
+#include <fmt/format.h>
 #include <fstream>
 #include "Components.h"
 #include "ScriptComponent.h"
@@ -22,6 +25,34 @@ namespace Engine {
     void ComponentRegistry::Register(const ComponentInfo& info) {
         GetComponentsMap()[info.name] = info;
         GetComponentsByHashMap()[info.typeHash] = info;
+    }
+
+    bool ComponentRegistry::SetFileUpgrader(const std::string& name, ComponentFileUpgrader upgrader) {
+        auto& byName = GetComponentsMap();
+        auto it = byName.find(name);
+        if (it == byName.end()) {
+            return false;
+        }
+        it->second.upgradeFromFile = upgrader;
+        // 해시 맵에는 ComponentInfo가 따로 복사돼 있다(Register). 한쪽만 바꾸면 조회 경로에 따라 훅이 보였다 안 보였다 한다.
+        auto& byHash = GetComponentsByHashMap();
+        auto hit = byHash.find(it->second.typeHash);
+        if (hit != byHash.end()) {
+            hit->second.upgradeFromFile = std::move(upgrader);
+        }
+        return true;
+    }
+
+    void UpgradeComponentsFromFile(nlohmann::json& components, const FileLoadContext& ctx) {
+        if (!components.is_object()) {
+            return;
+        }
+        for (auto& [name, data] : components.items()) {
+            const ComponentInfo* info = ComponentRegistry::GetComponentInfo(name);
+            if (info && info->upgradeFromFile && data.is_object()) {
+                info->upgradeFromFile(data, ctx);
+            }
+        }
     }
 
     const ComponentInfo* ComponentRegistry::GetComponentInfo(StringHash hash) {
@@ -136,12 +167,40 @@ namespace Engine {
         GE_END_COMPONENT(TransformComponent)
 
         GE_BEGIN_COMPONENT(RenderableComponent)
-            GE_FIELD(RenderableComponent, meshHandle, Int, "Mesh Handle")
-            GE_FIELD(RenderableComponent, materialHandle, Int, "Material Handle")
+            info.version = 2;   // R-4: meshHandle·materialHandle·roughness·metallic 제거, materialPath 추가(Components.h)
             GE_FIELD(RenderableComponent, castShadows, Bool, "Cast Shadows")
             GE_FIELD(RenderableComponent, meshPath, String, "Mesh Path")
-            GE_FIELD(RenderableComponent, texturePath, String, "Texture Path")
+            GE_FIELD(RenderableComponent, materialPath, String, "Material Path")
+            GE_FIELD(RenderableComponent, texturePath, String, "Texture Path (override)")
+            GE_FIELD(RenderableComponent, baseColor, Vec3, "Base Color (tint)")
         GE_END_COMPONENT(RenderableComponent)
+
+        // 옛 파일(baseColor 필드가 없음)의 모습 보존(R-2, 결정 2026-10-15). 예전 RenderSystem은 텍스처가 없으면
+        // 회색(0.75, 0.75, 0.78), 있으면 흰색을 인스턴스 색으로 썼다. 새 기본값(흰색)을 그대로 쓰면 텍스처 없는 옛
+        // 오브젝트가 전부 하얗게 바뀐다. 파일 로더에서만 부른다(ecs/Reflection.h FileLoadContext) - AddComponent({})나
+        // 일부 필드만 담은 SetComponentJson에서 "키 없음"은 레거시가 아니라 기본값/그대로 둠이다.
+        ComponentRegistry::SetFileUpgrader("RenderableComponent",
+            [](nlohmann::json& data, const FileLoadContext& ctx) {
+                // 스키마 1(R-4 이전): 정수 meshHandle은 파일에 저장해도 다음 세션에 의미가 없다(런타임 배정). 0이 아니면
+                // 그 값으로 무엇을 가리켰는지 알 수 없으므로 경고만 하고 버린다 - 메시는 meshPath로 지정한다.
+                const int schema = data.contains("_version") && data["_version"].is_number_integer() ? data["_version"].get<int>() : 1;
+                if (schema < 2 && data.contains("meshHandle") && data["meshHandle"].is_number_integer()
+                    && data["meshHandle"].get<int>() != 0) {
+                    const std::string message = fmt::format(
+                        "{} file (version {}): RenderableComponent.meshHandle {} is no longer supported (handles are not "
+                        "stable across sessions); ignored - set meshPath instead",
+                        ctx.fileKind, ctx.fileVersion, data["meshHandle"].get<int>());
+                    Logger::Warning("Reflection: {}", message);
+                    if (ctx.warnings) ctx.warnings->push_back(message);
+                }
+                if (data.contains("baseColor")) {
+                    return;
+                }
+                const bool textured = data.contains("texturePath") && data["texturePath"].is_string()
+                                      && !data["texturePath"].get<std::string>().empty();
+                data["baseColor"] = textured ? nlohmann::json::array({ 1.0f, 1.0f, 1.0f })
+                                             : nlohmann::json::array({ 0.75f, 0.75f, 0.78f });
+            });
 
         GE_BEGIN_COMPONENT(CameraComponent)
             GE_FIELD(CameraComponent, fov, Float, "Field of View")
@@ -151,6 +210,15 @@ namespace Engine {
             GE_FIELD(CameraComponent, priority, Int, "Priority")
             GE_FIELD(CameraComponent, blendInSeconds, Float, "Blend In (s)")
         GE_END_COMPONENT(CameraComponent)
+
+        GE_BEGIN_COMPONENT(DirectionalLightComponent)
+            GE_FIELD(DirectionalLightComponent, direction, Vec3, "Direction")
+            GE_FIELD(DirectionalLightComponent, color, Vec3, "Color")
+            GE_FIELD(DirectionalLightComponent, intensity, Float, "Intensity")
+            GE_FIELD(DirectionalLightComponent, ambient, Float, "Ambient")
+            GE_FIELD(DirectionalLightComponent, priority, Int, "Priority")
+            GE_FIELD(DirectionalLightComponent, enabled, Bool, "Enabled")
+        GE_END_COMPONENT(DirectionalLightComponent)
     }
 
     void RegisterScriptComponentReflection() {
@@ -278,6 +346,29 @@ namespace Engine {
             GE_FIELD(PrefabInstanceComponent, prefabPath, String, "Prefab Path")
             GE_FIELD(PrefabInstanceComponent, sourcePrefabVersion, Int, "Source Prefab Version")
         GE_END_COMPONENT(PrefabInstanceComponent)
+
+        // prefabPath: 절대 경로(씬 version 1 이하의 정규 형식) -> 프로젝트 상대 경로(version 2부터의 정규 형식).
+        // version 2 파일에 절대 경로가 있어도(손으로 고친 파일, 옛 도구 출력) 거절하지 않고 같은 규칙으로 정규화한다.
+        // 프로젝트 밖을 가리키면 그대로 두고 경고한다 - 다른 PC나 다른 폴더에서는 Revert가 그 파일을 찾지 못한다.
+        ComponentRegistry::SetFileUpgrader(kPrefabInstanceComponentName,
+            [](nlohmann::json& data, const FileLoadContext& ctx) {
+                if (!data.contains("prefabPath") || !data["prefabPath"].is_string() || ctx.projectRoot.empty()) {
+                    return;
+                }
+                const std::string stored = data["prefabPath"].get<std::string>();
+                bool inside = true;
+                const std::string normalized = NormalizeProjectPath(stored, ctx.projectRoot, &inside);
+                if (!inside) {
+                    const std::string message = fmt::format(
+                        "{} file (version {}): prefab path '{}' is outside the project folder '{}'; kept as is "
+                        "(Revert will not find it if the project moves)", ctx.fileKind, ctx.fileVersion, stored,
+                        ctx.projectRoot);
+                    Logger::Warning("Reflection: {}", message);
+                    if (ctx.warnings) ctx.warnings->push_back(message);
+                    return;
+                }
+                data["prefabPath"] = normalized;
+            });
     }
 
     void RegisterParticleComponentsReflection() {

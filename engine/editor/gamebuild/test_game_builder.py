@@ -80,13 +80,18 @@ def test_create_and_open_project_round_trip():
     check(p.project_file.is_file(), "project.json이 생기지 않음")
     check((p.assets_dir / "models").is_dir() and p.scenes_dir.is_dir() and p.scripts_dir.is_dir(), "기본 폴더 누락")
     check(p.start_scene_path.is_file(), "시작 씬 파일이 생기지 않음")
+    actions = json.loads(p.input_actions_path.read_text(encoding="utf-8")) if p.input_actions_path.is_file() else None
+    check(actions == {"format": "quarterflying.input-actions", "version": 1, "actions": {}},
+          f"새 프로젝트의 빈 입력 액션 맵이 틀림: {actions}")
     p.build.window_width = 800
+    p.build.cursor_lock = True
     p.build.include_dirs = ["assets/prefabs"]
     p.save()
     q = open_project(p.root)
     check(q.name == "RoundTrip", f"이름이 다름: {q.name}")
     check(q.start_scene == "scenes/Main.scene.json", f"시작 씬이 다름: {q.start_scene}")
     check(q.build.window_width == 800 and q.build.include_dirs == ["assets/prefabs"], "빌드 설정이 저장되지 않음")
+    check(q.build.cursor_lock is True, "커서 잠금 설정이 저장되지 않음")
 
 
 def test_create_project_refuses_nonempty_folder():
@@ -131,6 +136,10 @@ def _project_with_content(name: str):
     (p.assets_dir / "models" / "ship.obj").write_text("v 0 0 0\n", encoding="utf-8")
     (p.assets_dir / "models" / "unused.obj").write_text("v 0 0 0\n", encoding="utf-8")
     (p.assets_dir / "textures" / "ship.png").write_bytes(b"png")
+    (p.assets_dir / "textures" / "hull.png").write_bytes(b"png")
+    (p.assets_dir / "materials" / "hull.material.json").write_text(json.dumps({
+        "format": "quarterflying.material", "version": 1, "texture": "assets/textures/hull.png", "metallic": 1.0}),
+        encoding="utf-8")
     (p.assets_dir / "sfx" / "blip.wav").write_bytes(b"RIFF")
     action = ActionData(name="Blink", fps=30, total_frames=10)
     action.events.append(ActionEvent(frame=1, type=EventType.SOUND, params={"clip": "../sfx/blip.wav"}))
@@ -143,7 +152,8 @@ def _project_with_content(name: str):
         "class Player:\n    def __init__(self, e):\n        pass\n", encoding="utf-8")
     write_scene(p.start_scene_path, [
         {"uuid": 1, "name": "Ship", "components": {
-            "RenderableComponent": {"meshPath": "assets/models/ship.obj", "texturePath": "assets/textures/ship.png"},
+            "RenderableComponent": {"meshPath": "assets/models/ship.obj", "texturePath": "assets/textures/ship.png",
+                                    "materialPath": "assets/materials/hull.material.json"},
             "ActionPlayerComponent": {"action": "actions/blink.action.json"},
             "ScriptComponent": {"module_name": "player", "class_name": "Player"}}},
         {"uuid": 2, "name": "Cube", "components": {"RenderableComponent": {"meshPath": ""}}},
@@ -159,7 +169,8 @@ def test_dependencies_follow_meshes_textures_actions_clips_and_scripts():
     check(not deps.errors, f"에러가 나면 안 됨: {deps.errors}")
     for expected in ("scenes/Main.scene.json", "assets/models/ship.obj", "assets/textures/ship.png",
                      "assets/actions/blink.action.json", "assets/sfx/blip.wav", "scripts/player.py",
-                     "scripts/helpers/mathx.py", "scripts/helpers/__init__.py"):
+                     "scripts/helpers/mathx.py", "scripts/helpers/__init__.py",
+                     "assets/materials/hull.material.json", "assets/textures/hull.png"):
         check(expected in rel, f"수집되지 않음: {expected}")
     check("assets/models/unused.obj" not in rel, "참조되지 않은 에셋이 수집됨")
     check(any("numpy" in w for w in deps.warnings), f"서드파티 import 경고가 없음: {deps.warnings}")
@@ -177,6 +188,17 @@ def test_missing_files_fail_with_entity_component_and_path():
     check("'Broken'" in text and "RenderableComponent.meshPath" in text and "nope.obj" in text,
           f"누락 메시 보고에 엔티티/컴포넌트/경로가 없음: {text}")
     check("'NoScript'" in text and "ghost" in text, f"누락 스크립트 보고가 없음: {text}")
+
+
+def test_material_texture_missing_is_reported():
+    p = new_project("MissingMaterialTexture")
+    (p.assets_dir / "materials" / "m.material.json").write_text(json.dumps({
+        "format": "quarterflying.material", "version": 1, "texture": "assets/textures/gone.png"}), encoding="utf-8")
+    write_scene(p.start_scene_path, [
+        {"uuid": 1, "name": "Painted", "components": {"RenderableComponent": {"materialPath": "assets/materials/m.material.json"}}},
+    ])
+    text = "\n".join(collect_dependencies(p, p.start_scene_path).errors)
+    check("'Painted'" in text and "gone.png" in text and "머티리얼" in text, f"머티리얼 텍스처 누락 보고가 없음: {text}")
 
 
 def test_pyside_import_gets_specific_warning():
@@ -209,6 +231,24 @@ def test_template_verification_catches_abi_engine_and_tampering():
     expect_error(BuildError, lambda: verify_template(t, m, None, None), "누락")
 
 
+def test_engine_build_mismatch_is_reported():
+    from gamebuild.game_builder import engine_build_mismatch
+    dll = _tmp / "editor_engine.dll"
+    dll.write_bytes(b"editor build")
+    same = {"files": {"quarterflying_engine.dll": hashlib.sha256(b"editor build").hexdigest()}}
+    other = {"files": {"quarterflying_engine.dll": hashlib.sha256(b"stale build").hexdigest()}}
+    check(engine_build_mismatch(same, dll) is None, "같은 빌드인데 경고함")
+    msg = engine_build_mismatch(other, dll) or ""
+    check("player_template" in msg, f"다른 빌드인데 경고 문장이 없음: {msg!r}")
+    check(engine_build_mismatch(other, None) is None, "에디터 엔진이 없으면 비교하지 않아야 함")
+    pyd = _tmp / "quarterflying.cp314-win_amd64.pyd"
+    pyd.write_bytes(b"new bindings")
+    stale_pyd = {"files": {"quarterflying_engine.dll": hashlib.sha256(b"editor build").hexdigest(),
+                           pyd.name: hashlib.sha256(b"old bindings").hexdigest()}}
+    msg = engine_build_mismatch(stale_pyd, None, {"quarterflying_engine.dll": dll, pyd.name: pyd}) or ""
+    check(pyd.name in msg, f"바인딩(.pyd)만 바뀐 경우를 놓침: {msg!r}")
+
+
 def test_missing_template_lists_searched_paths():
     msg = expect_error(BuildError, lambda: find_runtime_template(_tmp / "no_template_here"), "player_template")
     check(str(_tmp / "no_template_here") in msg, "찾아본 경로가 메시지에 없음")
@@ -239,7 +279,20 @@ def test_build_assembles_only_reachable_files_and_game_json():
     game = json.loads((out / "game.json").read_text(encoding="utf-8"))
     check(game["startScene"] == "scenes/Main.scene.json" and game["title"] == "My Game", f"game.json이 틀림: {game}")
     check(game["window"]["width"] == p.build.window_width, "창 설정이 game.json에 들어가지 않음")
+    check(game["window"].get("cursorLock") is False, f"커서 잠금 기본값이 game.json에 없음: {game['window']}")
     check(any("numpy" in w for w in report.warnings), "경고가 보고서에 없음")
+    check(game.get("inputActions") == "assets/input/actions.json", f"game.json에 입력 액션 경로가 없음: {game}")
+    check((out / "assets/input/actions.json").is_file(), "입력 액션 맵이 복사되지 않음")
+
+
+def test_build_without_input_actions_warns_and_omits_key():
+    p = _project_with_content("NoInput")
+    p.input_actions_path.unlink()
+    t = make_fake_template(_tmp / "tpl_noinput")
+    report = build_game(_settings(p, t))
+    game = json.loads((report.output_dir / "game.json").read_text(encoding="utf-8"))
+    check("inputActions" not in game, f"액션 맵이 없는데 game.json에 키가 있음: {game}")
+    check(any("입력 액션 맵" in w for w in report.warnings), f"경고가 없음: {report.warnings}")
 
 
 def test_build_failure_leaves_previous_output_untouched():
@@ -301,8 +354,20 @@ def test_real_template_build_and_smoke_test_from_moved_folder():
     shutil.copy2(Path(__file__).resolve().parents[2] / "assets" / "models" / "pyramid.obj",
                  p.assets_dir / "models" / "pyramid.obj")
     (p.scripts_dir / "hello.py").write_text(
-        "class Hello:\n    def __init__(self, e):\n        pass\n"
-        "    def on_create(self):\n        print('[hello] on_create', flush=True)\n", encoding="utf-8")
+        "import quarterflying\n"
+        "class Hello:\n    def __init__(self, e):\n        self.frames = 0\n"
+        "    def on_create(self):\n        print('[hello] on_create', flush=True)\n"
+        "    def on_update(self, dt):\n"
+        "        self.frames += 1\n"
+        "        if self.frames == 3:\n"
+        "            inp = quarterflying.input\n"
+        "            print(f'[hello] input has_action={inp.has_action(\"MoveX\")} axis={inp.get_axis(\"MoveX\")} '\n"
+        "                  f'jump={inp.is_down(\"Jump\")}', flush=True)\n", encoding="utf-8")
+    # 입력 액션 맵(G0b): Player가 game.json의 inputActions로 엔진 로더를 불러 스크립트에서 읽힌다.
+    p.input_actions_path.write_text(json.dumps({
+        "format": "quarterflying.input-actions", "version": 1, "actions": {
+            "MoveX": {"type": "axis", "bindings": [{"negative": "Key:A", "positive": "Key:D"}]},
+            "Jump": {"type": "button", "bindings": ["Key:Space"]}}}), encoding="utf-8")
     write_scene(p.start_scene_path, [
         {"uuid": 1, "name": "Main Camera", "components": {
             "TransformComponent": {"position": [0, 2, 6], "rotation": [-15, 0, 0], "scale": [1, 1, 1]},
@@ -317,6 +382,10 @@ def test_real_template_build_and_smoke_test_from_moved_folder():
     s.out_dir = _tmp / "RealOut" / s.name
     report = build_game(s)
     check("[hello] on_create" in report.smoke_test_log, f"빌드 중 실행 검증에서 스크립트가 돌지 않음:\n{report.smoke_test_log[-800:]}")
+    check("[hello] input has_action=True axis=0.0 jump=False" in report.smoke_test_log,
+          f"Player에서 스크립트가 입력 액션 맵을 읽지 못함:\n{report.smoke_test_log[-1200:]}")
+    check("input actions: 2 loaded" in report.smoke_test_log,
+          f"Player가 입력 액션 맵을 불러왔다는 로그가 없음:\n{report.smoke_test_log[-1200:]}")
     check("Loaded mesh" in report.smoke_test_log and "pyramid.obj" in report.smoke_test_log,
           f"한글 경로의 메시를 불러오지 못함:\n{report.smoke_test_log[-800:]}")
     # 다른 경로로 옮겨도 실행되는가(경로가 코드에 박혀 있지 않은가)
@@ -336,11 +405,14 @@ TESTS = [
     test_project_relative_rejects_outside_paths,
     test_dependencies_follow_meshes_textures_actions_clips_and_scripts,
     test_missing_files_fail_with_entity_component_and_path,
+    test_material_texture_missing_is_reported,
     test_pyside_import_gets_specific_warning,
     test_non_scene_json_is_rejected,
     test_template_verification_catches_abi_engine_and_tampering,
+    test_engine_build_mismatch_is_reported,
     test_missing_template_lists_searched_paths,
     test_build_assembles_only_reachable_files_and_game_json,
+    test_build_without_input_actions_warns_and_omits_key,
     test_build_failure_leaves_previous_output_untouched,
     test_cancel_removes_partial_output,
     test_qt_files_in_output_fail_the_build,

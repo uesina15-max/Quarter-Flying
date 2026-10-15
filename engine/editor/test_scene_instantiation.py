@@ -109,7 +109,7 @@ def test_instantiate_sets_mesh_path_and_continues_after_failure():
     logs = []
     results = instantiate_scene(_FakeAPI(fail_names={'a'}), reg, specs, logs.append)
     assert [r.ok for r in results] == [False, True]
-    assert reg.json_calls == [("RenderableComponent", {"meshPath": "b.obj"})]
+    assert reg.json_calls == [("RenderableComponent", {"meshPath": "b.obj", "baseColor": [0.75, 0.75, 0.78]})]
     assert reg.rotations == [(0.0, 90.0, 0.0)]          # 0이 아닌 회전만 전달
     assert any("a 생성 실패" in l for l in logs)
     assert logs[-1] == "[SceneLoad] scene.json 엔티티 1/2개 생성"
@@ -124,7 +124,8 @@ def test_texture_is_expanded_to_every_entity_and_sent_as_texture_path():
     assert [s.texture_path for s in specs] == ['t.png', 't.png']
     reg = _FakeRegistry()
     instantiate_scene(_FakeAPI(), reg, specs, lambda _m: None)
-    assert reg.json_calls == [("RenderableComponent", {"meshPath": "c.obj", "texturePath": "t.png"})] * 2
+    assert reg.json_calls == [("RenderableComponent", {"meshPath": "c.obj", "texturePath": "t.png",
+                                                       "baseColor": [1.0, 1.0, 1.0]})] * 2
 
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_") and callable(v)]

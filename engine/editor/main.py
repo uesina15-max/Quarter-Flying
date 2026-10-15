@@ -16,10 +16,6 @@ _EDITOR_DIR = os.path.dirname(os.path.abspath(__file__))
 if _EDITOR_DIR not in sys.path:
     sys.path.insert(0, _EDITOR_DIR)
 
-# 완제품 exe에서만: 작업 폴더·로그 파일·게임 스크립트용 표준 라이브러리 준비 (개발 실행에서는 무동작)
-import frozen_app
-frozen_app.setup()
-
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter,
     QVBoxLayout, QHBoxLayout, QLabel, QToolBar,
@@ -27,7 +23,7 @@ from PySide6.QtWidgets import (
     QDockWidget
 )
 from PySide6.QtCore import Qt, QTimer, QSize
-from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
+from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence, QShortcut
 
 # 패널 임포트
 from panels.scene_hierarchy import SceneHierarchyPanel
@@ -110,7 +106,12 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 
         self._engine = None      # 엔진 모듈의 Engine 인스턴스 (연동 후)
         self._world = None       # 엔진 모듈의 World 인스턴스  (연동 후)
-        self.is_playing = False  # 플레이 모드 상태
+        # Play 세션 상태. is_playing은 Play~Stop 사이 전체(일시정지 포함)이고, is_paused는 그 안의 일시정지다.
+        # 예전에는 Pause가 is_playing을 False로 만들어서, 일시정지 중에는 "Play 중이 아님"으로 보였다.
+        # 그래서 일시정지한 채 Save Scene을 누르면 Play로 바뀐 월드가 그대로 씬 파일에 저장됐다
+        # (project_actions._require_edit_mode가 is_playing만 본다). 에러도 경고도 없었다.
+        self.is_playing = False
+        self.is_paused = False
         
         # 설정 관리자
         self.config_manager = ConfigManager()
@@ -135,6 +136,9 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         
         # 설정 적용
         self._apply_config()
+        # 도킹·분할 배치(E-6). 기본 배치를 먼저 기억해 두고(View > Reset Layout), 저장된 배치가 있으면 복원한다.
+        self._default_dock_state = self.saveState()
+        self._restore_layout()
         
         # 기본 씬 로드
         self._load_default_scene()
@@ -184,29 +188,128 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 
         # Motion (New)
         motion_menu = mb.addMenu("Motion")
-        act_import = QAction("Import FBX…", self)
-        act_save_action = QAction("Save Action…", self)
+        # 예전에는 이 항목이 켜져 있었고, 누르면 "다음 단계에서 연동됩니다" 안내만 떴다(FBX 파서 없음) - 되는 기능처럼
+        # 보이는 메뉴였다. 지원하지 않는 동안은 꺼 두고 이유를 툴팁에 적는다(docs/USABILITY_IMPROVEMENT_PLAN.md A-1).
+        act_import = QAction("Import FBX… (미지원)", self)
+        act_import.setEnabled(False)
+        act_import.setToolTip("FBX 가져오기는 아직 지원하지 않습니다. 스켈레톤·클립은 JSON(*.skeleton.json, "
+                              "*.clip.json)으로 assets/motion에 넣어 쓰세요. 외부 형식은 glTF 임포터로 추가할 예정입니다.")
+        act_new_action = QAction("New Action", self)
+        act_save_action = QAction("Save Action", self)
+        act_save_action_as = QAction("Save Action As…", self)
         act_load_action = QAction("Load Action…", self)
+        act_new_action.triggered.connect(lambda: self.motion_editor.do_new_action() if hasattr(self, 'motion_editor') else None)
+        act_save_action_as.triggered.connect(lambda: self.motion_editor.do_save_action_as() if hasattr(self, 'motion_editor') else None)
+        # 최근 액션(A-4). 열 때마다 목록을 다시 만든다(config.json의 motion.recentActions).
+        self._recent_actions_menu = QMenu("Recent Actions", self)
+        self._recent_actions_menu.aboutToShow.connect(self._fill_recent_actions_menu)
         
         act_import.triggered.connect(lambda: self.motion_editor.do_import_fbx() if hasattr(self, 'motion_editor') else None)
         act_save_action.triggered.connect(lambda: self.motion_editor.do_save_action() if hasattr(self, 'motion_editor') else None)
         act_load_action.triggered.connect(lambda: self.motion_editor.do_load_action() if hasattr(self, 'motion_editor') else None)
         
-        motion_menu.addActions([act_import, act_save_action, act_load_action])
+        motion_menu.setToolTipsVisible(True)   # 꺼진 항목의 이유(툴팁)가 메뉴에서 보이게
+        motion_menu.addActions([act_new_action, act_save_action, act_save_action_as, act_load_action])
+        motion_menu.addMenu(self._recent_actions_menu)
+        motion_menu.addSeparator()
+        motion_menu.addAction(act_import)
 
         # Engine
         engine_menu = mb.addMenu("Engine")
+        # 에디터 단축키는 Play 중에도 수식키 조합만 쓴다. Space·Esc 같은 맨 키는 뷰포트에 포커스가 있으면
+        # 게임 입력으로 엔진에 간다(viewport.py) - 에디터가 가져가면 게임이 그 키를 쓸 수 없다
+        # (docs/USABILITY_IMPROVEMENT_PLAN.md E-1).
         act_play   = QAction("▶  Play",   self, shortcut="Ctrl+P")
-        act_pause  = QAction("⏸  Pause",  self)
         act_stop   = QAction("⏹  Stop",   self, shortcut="Ctrl+Shift+P")
         act_play.triggered.connect(self._on_play)
         act_stop.triggered.connect(self._on_stop)
-        engine_menu.addActions([act_play, act_pause, act_stop])
+        # 예전에는 Pause 메뉴 항목이 아무 슬롯에도 연결돼 있지 않았다(눌러도 아무 일 없음).
+        self._act_pause_menu = self._make_pause_action(shortcut="Ctrl+Alt+P")
+        engine_menu.addActions([act_play, self._act_pause_menu, act_stop])
 
         # Help
         help_menu = mb.addMenu("Help")
         act_about = QAction("About Quarter Flying Editor", self)
-        help_menu.addAction(act_about)
+        act_about.triggered.connect(self._on_about)   # 예전에는 연결된 슬롯이 없었다
+        act_shortcuts = QAction("Keyboard Shortcuts", self)
+        act_shortcuts.triggered.connect(self._on_keyboard_shortcuts)
+        help_menu.addActions([act_shortcuts, act_about])
+
+    def _fill_recent_actions_menu(self):
+        menu = self._recent_actions_menu
+        menu.clear()
+        recent = self.motion_editor.recent_actions() if hasattr(self, 'motion_editor') else []
+        if not recent:
+            menu.addAction("(없음)").setEnabled(False)
+            return
+        for path in recent:
+            act = menu.addAction(path)
+            act.setEnabled(os.path.isfile(path))
+            act.triggered.connect(lambda _=False, p=path: self._open_recent_action(p))
+
+    def _open_recent_action(self, path: str):
+        self._set_mode(2)
+        self.motion_editor.do_load_action(path)
+
+    def _make_pause_action(self, shortcut=None):
+        act = QAction("⏸  Pause", self)
+        if shortcut:
+            act.setShortcut(shortcut)
+        act.setCheckable(True)
+        act.setEnabled(False)          # Play 중에만 켠다(_refresh_play_controls)
+        act.setToolTip("일시정지 / 계속 (Ctrl+Alt+P) - Play 중에만")
+        act.triggered.connect(self._on_pause_toggle)
+        return act
+
+    # 메뉴의 QAction에 걸리지 않는 에디터 입력(위젯 단축키·마우스). 메뉴 단축키는 아래 함수가 메뉴에서 직접 읽는다.
+    _EXTRA_EDITOR_INPUTS = [
+        ("Delete", "선택 엔티티 삭제 (Scene Hierarchy·뷰포트, Edit 모드)"),
+        ("Ctrl+D", "선택 엔티티 복제 (Scene Hierarchy·뷰포트, Edit 모드)"),
+        ("Ctrl/Shift+클릭", "Scene Hierarchy 다중 선택"),
+        ("F", "에디터 카메라 리셋 (뷰포트)"),
+        ("우클릭 드래그 / Alt+좌클릭 드래그", "에디터 카메라 회전"),
+        ("휠클릭 드래그 / Shift+우클릭 드래그", "에디터 카메라 이동"),
+        ("휠", "에디터 카메라 줌"),
+    ]
+
+    def editor_shortcut_rows(self):
+        """(키, 동작) 목록. 메뉴의 QAction에서 읽으므로 단축키를 바꾸면 이 표도 저절로 바뀐다(E-5).
+        게임 조작(프로젝트의 입력 액션 맵)은 넣지 않는다 - 에디터 설정과 게임 데이터는 다른 것이다(§1.1)."""
+        rows = []
+        for menu_action in self.menuBar().actions():
+            menu = menu_action.menu()
+            if menu is None:
+                continue
+            for act in menu.actions():
+                key = act.shortcut().toString()
+                if key:
+                    rows.append((key, f"{menu_action.text()} > {act.text().strip()}"))
+        return rows + list(self._EXTRA_EDITOR_INPUTS)
+
+    def _on_keyboard_shortcuts(self):
+        from PySide6.QtWidgets import QMessageBox
+        rows = "".join(f"<tr><td><b>{k}</b></td><td>&nbsp;&nbsp;{v}</td></tr>" for k, v in self.editor_shortcut_rows())
+        QMessageBox.information(
+            self, "Keyboard Shortcuts",
+            f"<table>{rows}</table><br>Play 중에는 수식키 없는 키가 뷰포트에 포커스가 있으면 게임으로 갑니다.<br>"
+            "게임 조작 키는 프로젝트의 입력 액션 맵(assets/input/actions.json)에서 정합니다.")
+
+    def _on_about(self):
+        from PySide6.QtWidgets import QMessageBox
+        engine_version = None
+        if HAS_ENGINE:
+            try:
+                from engine_binding import binding as qf
+                engine_version = getattr(qf, "__version__", None)
+            except Exception:
+                engine_version = None
+        python_version = ".".join(str(v) for v in sys.version_info[:3])
+        QMessageBox.about(
+            self, "About Quarter Flying Editor",
+            "<b>Quarter Flying Editor</b><br><br>"
+            f"엔진 버전: {engine_version or '엔진 미연결'}<br>"
+            f"Python: {python_version}<br>"
+            f"프로젝트: {current_project().root}")
 
     # ----------------------------------------------------------------
     # 툴바
@@ -214,6 +317,7 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 
     def _build_toolbar(self):
         tb = QToolBar("Main Toolbar")
+        tb.setObjectName("main_toolbar")   # saveState/restoreState는 objectName으로 툴바·도크를 찾는다(E-6)
         tb.setMovable(False)
         tb.setIconSize(QSize(16, 16))
         tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
@@ -241,11 +345,13 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         self.act_play.setCheckable(True)
         self.act_play.triggered.connect(self._on_play)
 
-        act_pause = QAction("⏸  Pause", self)
+        # 예전에는 툴바 Pause도 아무 슬롯에 연결돼 있지 않았다. 단축키는 메뉴 쪽 항목에만 둔다
+        # (같은 단축키를 두 QAction에 걸면 Qt가 "Ambiguous shortcut"으로 둘 다 무시한다).
+        self._act_pause_tb = self._make_pause_action()
         act_stop  = QAction("⏹  Stop",  self)
         act_stop.triggered.connect(self._on_stop)
 
-        tb.addActions([self.act_play, act_pause, act_stop])
+        tb.addActions([self.act_play, self._act_pause_tb, act_stop])
         tb.addSeparator()
 
         # 뷰포트 카메라: 기본은 에디터 카메라(우클릭 드래그 회전 / 휠클릭 드래그 이동 / 휠 줌 / F 리셋).
@@ -342,6 +448,8 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         # Play 버튼을 누르면 씬 World는 숨겨진 Scene 뷰포트에서 돌고, 화면에는 씬이 없는 엔진이
         # 보였다. 즉 Play 화면에 게임이 나온 적이 없다(docs/INGAME_CAMERA_PLAN.md C0).
         self._play_layout = play_layout
+        self.lbl_play_hint = QLabel("")
+        play_layout.addWidget(self.lbl_play_hint)
         if not (HAS_VIEWPORT and HAS_ENGINE):
             play_layout.addWidget(DummyViewport())
         
@@ -355,6 +463,8 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
             # 버그를 또 만들 위험이 있다 - CLAUDE.md 참고).
             shared_viewport = self.viewport if (HAS_VIEWPORT and HAS_ENGINE and isinstance(self.viewport, EngineViewport)) else None
             self.motion_editor = MotionEditorWidget(shared_viewport=shared_viewport)
+            self.motion_editor.recent_store = self.config_manager     # 최근 액션 목록(A-4)은 에디터 설정
+            self.motion_editor.status_message = lambda text: self.status.log(text) if hasattr(self, 'status') else print(text)
             self.stack.addWidget(self.motion_editor)
         else:
             dummy_motion = QWidget()
@@ -467,16 +577,40 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         있다."""
         self.prefab_browser = PrefabBrowserPanel()
         dock = QDockWidget("Prefabs", self)
-        dock.setObjectName("prefab_browser_dock")
+        dock.setObjectName("prefab_browser_dock")   # saveState/restoreState가 이 이름으로 도크를 찾는다(E-6)
         dock.setWidget(self.prefab_browser)
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
+
+        # 입력 액션 맵 편집(G2). 프리팹 브라우저와 같은 아래쪽 영역에 탭으로 둔다.
+        from panels.input_actions_panel import InputActionsPanel
+        self.input_actions_panel = InputActionsPanel()
+        self.input_actions_panel.status_message.connect(lambda m: self.status.log(m) if hasattr(self, 'status') else None)
+        self.input_actions_panel.reload_requested.connect(self._load_input_actions)
+        input_dock = QDockWidget("Input Actions", self)
+        input_dock.setObjectName("input_actions_dock")
+        input_dock.setWidget(self.input_actions_panel)
+        input_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        self.addDockWidget(Qt.BottomDockWidgetArea, input_dock)
+        self.tabifyDockWidget(dock, input_dock)
+        dock.raise_()
 
     # ----------------------------------------------------------------
     # 패널 시그널 연결
     # ----------------------------------------------------------------
 
     def _connect_panels(self):
+        # 뷰포트에서도 Delete / Ctrl+D (E-4). 위젯에만 걸고 Play 중에는 끈다(_refresh_play_controls) - Play 중의 맨 키는
+        # 게임 입력이다. 처리는 계층 패널의 같은 함수(Undo되는 명령)로 보낸다.
+        self._viewport_edit_shortcuts = []
+        if self._viewport_is_engine():
+            from panels.scene_hierarchy import widget_shortcut
+            self._viewport_edit_shortcuts = [
+                widget_shortcut(QKeySequence.Delete, self.viewport, self.scene_panel.delete_selected_entity),
+                widget_shortcut(QKeySequence("Ctrl+D"), self.viewport, self.scene_panel.duplicate_selected_entity),
+            ]
+            self.viewport.focus_changed.connect(lambda has: self._update_play_hint(has))
+
         # 씬 계층 뷰 → 인스펙터
         self.scene_panel.entity_selected.connect(self.inspector.on_entity_selected)
         self.scene_panel.entity_deselected.connect(self.inspector.on_entity_deselected)
@@ -560,22 +694,30 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
             self._log_engine(f"패널-엔진 연결 실패: {type(e).__name__}: {e}")
             return
 
+        # 프로젝트 폴더(프리팹 상대 경로 기준)와 입력 액션 맵. 프로젝트를 바꿀 때도 같은 함수들을 부른다
+        # (project_actions._switch_project). 데모 시드가 프리팹을 인스턴스화하기 전에 해야 상대 경로로 기록된다.
+        self._set_editor_project_root()
+        self.input_actions_panel.connect_engine(engine, lambda: str(current_project().input_actions_path))
+        self._load_input_actions()
+
         # 3단계 실패는 seed_demo_scene()이 단계별로 이미 로그를 남기므로 여기서는 잡지 않는다
         # (잡을 예외는 인자 누락 같은 호출 순서 버그뿐이고, 그건 드러나야 한다).
         if not getattr(self, '_demo_scene_seeded', False):
             self._demo_scene_seeded = True
             project = current_project()
-            if project.is_sample:
-                # 샘플 프로젝트: 프로젝트 개념 이전과 같은 데모 월드(코드 시드 + scene.json).
+            start = project.start_scene_path
+            if start and start.is_file():
+                # 샘플 프로젝트도 보통 프로젝트와 같은 경로: 시작 씬 파일(샘플은 assets/scenes/Demo.scene.json).
+                self._load_scene_file(start)
+            elif project.is_sample:
+                # 대체 경로: 샘플 시작 씬 파일이 없을 때만 프로젝트 개념 이전의 코드 시드 + scene.json으로 만든다.
+                self._log_engine(f"[DemoSeed] 샘플 시작 씬이 없어({start}) 코드 시드로 데모 월드를 만듭니다")
                 seed_demo_scene(editor_api, registry, self._log_engine)
                 self._instantiate_loaded_scene(editor_api, registry)
             else:
-                start = project.start_scene_path
-                if start and start.is_file():
-                    self._load_scene_file(start)
-                else:
-                    self._new_scene_in_world()
-            self._update_title()
+                self._new_scene_in_world()
+            # 시작 월드(데모 시드·시작 씬)를 만든 명령들은 "저장 안 된 변경"이 아니다 - 그 뒤를 기준으로 삼는다.
+            self._mark_scene_clean()
 
     def _instantiate_loaded_scene(self, editor_api, registry):
         """이미 파싱해 둔 scene.json 오브젝트를 ECS 엔티티로 만든다 (scene_instantiation.py 참고)."""
@@ -753,16 +895,82 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 
     def _reset_layout(self):
         self.main_splitter.setSizes([240, 900, 300])
+        self.restoreState(self._default_dock_state)
+
+    # 도킹·분할 배치 저장/복원(E-6). 에디터 설정이라 config.json에 둔다(프로젝트 데이터가 아니다, R4).
+    def _save_layout(self):
+        import base64
+        self.config_manager.set("layout", "dockState", value=base64.b64encode(bytes(self.saveState())).decode("ascii"))
+        self.config_manager.set("layout", "splitter", value=list(self.main_splitter.sizes()))
+
+    def _restore_layout(self):
+        import base64
+        from PySide6.QtCore import QByteArray
+        state = self.config_manager.get("layout", "dockState", default=None)
+        sizes = self.config_manager.get("layout", "splitter", default=None)
+        try:
+            if state:
+                if not self.restoreState(QByteArray(base64.b64decode(state))):
+                    print("[Layout] 저장된 도킹 배치를 복원하지 못해 기본 배치를 씁니다(형식이 다름)")
+            if isinstance(sizes, list) and len(sizes) == 3 and all(isinstance(v, int) and v >= 0 for v in sizes):
+                self.main_splitter.setSizes(sizes)
+        except Exception as e:
+            print(f"[Layout] 배치 복원 실패, 기본 배치를 씁니다: {e}")
 
     # ----------------------------------------------------------------
     # 엔진 제어 (Phase 2 플레이 모드 통합)
     # ----------------------------------------------------------------
 
+    def _refresh_play_controls(self):
+        """Play/Pause 버튼 표시를 is_playing·is_paused에 맞춘다. 상태를 바꾸는 곳은 이것만 부른다."""
+        self.act_play.setChecked(self.is_playing and not self.is_paused)
+        for act in (getattr(self, '_act_pause_menu', None), getattr(self, '_act_pause_tb', None)):
+            if act is not None:
+                act.setEnabled(self.is_playing)
+                act.setChecked(self.is_paused)
+        self.btn_mode_play.setObjectName(
+            "btn_mode_active" if (self.is_playing and not self.is_paused) else "btn_mode_inactive")
+        self.btn_mode_play.style().unpolish(self.btn_mode_play)
+        self.btn_mode_play.style().polish(self.btn_mode_play)
+        # E-3 모드 표시, E-4 편집 단축키는 Edit 모드에서만(Play 중 Delete 등은 게임 키다)
+        mode = "Pause" if self.is_paused else ("Play" if self.is_playing else "Edit")
+        self.status.set_mode(mode)
+        self.scene_panel.set_edit_shortcuts_enabled(not self.is_playing)
+        for sc in getattr(self, '_viewport_edit_shortcuts', ()):
+            sc.setEnabled(not self.is_playing)
+        self._update_play_hint()
+
+    def _update_play_hint(self, viewport_has_focus=None):
+        """Play 화면 위 안내 줄(E-3). 키보드 입력이 게임으로 가는지(뷰포트 포커스)를 알려 준다.
+        뷰포트는 네이티브 창(HWND)이라 그 위에 Qt 위젯을 겹쳐 그릴 수 없어서, 오버레이 대신 위쪽 줄에 둔다."""
+        hint = getattr(self, 'lbl_play_hint', None)
+        if hint is None:
+            return
+        if viewport_has_focus is None:
+            viewport_has_focus = self._viewport_is_engine() and self.viewport.hasFocus()
+        if self.is_paused:
+            text, color = "⏸ 일시정지 — Ctrl+Alt+P로 계속, Ctrl+Shift+P로 정지", COLORS['accent_orange']
+        elif viewport_has_focus:
+            text, color = "▶ 게임 입력 중 — 키보드·마우스가 게임으로 갑니다 (Ctrl+Alt+P 일시정지, Ctrl+Shift+P 정지)", COLORS['accent_green']
+        else:
+            text, color = "▶ 화면을 클릭하면 게임 입력을 받습니다", COLORS['text_secondary']
+        hint.setText(text)
+        hint.setStyleSheet(f"color: {color}; background-color: {COLORS['bg_header']}; font-size: 11px; padding: 3px 8px;")
+
     def _on_play(self):
-        """플레이 모드 시작/전환"""
+        """플레이 모드 시작. Play 중에 누르면 일시정지, 일시정지 중에 누르면 계속."""
+        if self.is_playing:
+            if self.is_paused:
+                self._resume()
+            else:
+                self._pause()
+            return
+
         if not self.is_playing:
             self.is_playing = True
-            self.act_play.setChecked(True)
+            self.is_paused = False
+            # Stop하면 월드가 Play 시작 시점으로 되돌아가므로, 저장 안 된 변경 표시도 그때 상태로 돌린다.
+            self._remember_dirty_before_play()
 
             # 플레이 모드로 전환 (버튼 활성 상태 갱신 포함 — Motion Editor 등 다른
             # 모드에서 넘어올 때 이전 버튼 강조가 남아있지 않도록 _set_mode로 일원화)
@@ -790,21 +998,41 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
             else:
                 self.status.log("Play mode (no engine)")
             
+            self._refresh_play_controls()
+            # 게임 입력(키보드)이 바로 뷰포트로 가게 한다. 포커스가 툴바에 남아 있으면 첫 키 입력을 놓친다.
+            if self._viewport_is_engine():
+                self.viewport.setFocus()
             print("[Editor] Play mode started")
+
+    def _on_pause_toggle(self):
+        """Pause 메뉴/툴바/Ctrl+Alt+P. Play 중이 아니면 아무것도 하지 않는다."""
+        if not self.is_playing:
+            self._refresh_play_controls()   # checkable 액션이 눌린 상태로 남지 않게
+            return
+        if self.is_paused:
+            self._resume()
         else:
-            self._on_pause()
+            self._pause()
 
-    def _on_pause(self):
-        """일시정지 처리"""
-        self.is_playing = False
-        self.act_play.setChecked(False)
-        self.btn_mode_play.setObjectName("btn_mode_inactive")
-        self.btn_mode_play.style().unpolish(self.btn_mode_play)
-        self.btn_mode_play.style().polish(self.btn_mode_play)
+    def _resume(self):
+        self.is_paused = False
+        if self._engine and HAS_ENGINE and self._world:
+            try:
+                self._world.Play()   # 일시정지 상태에서 Play()는 스냅샷을 다시 찍지 않고 이어서 돈다(World::Play)
+                self.status.log("Resumed")
+            except Exception as e:
+                print(f"[Editor] Resume error: {e}")
+        self._refresh_play_controls()
+        if self._viewport_is_engine():
+            self.viewport.setFocus()
 
-        # Sound Lite Phase 6 - 일시정지하면 울리던 소리도 멈춘다. 커서는 그대로 두므로
-        # 다시 Play를 누르면 이어서 재생된다(_on_play가 start()로 다시 만들긴 하지만,
-        # 멈춘 순간 소리가 계속 나는 것부터 막는다).
+    def _pause(self):
+        """일시정지 처리. Play 세션은 유지된다(is_playing은 그대로 True)."""
+        self.is_paused = True
+        self._refresh_play_controls()
+
+        # Sound Lite Phase 6 - 일시정지하면 울리던 소리도 멈춘다. 재생 커서는 그대로 두고,
+        # 일시정지 동안에는 _on_fps_tick이 커서를 전진시키지 않으므로 계속하면 이어서 재생된다.
         self._scene_playback.sound_player.stop_all()
 
         # 엔진 일시정지
@@ -820,8 +1048,10 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 
     def _on_stop(self):
         """정지 처리"""
+        was_playing = self.is_playing
         self.is_playing = False
-        self.act_play.setChecked(False)
+        self.is_paused = False
+        self._refresh_play_controls()
 
         # Sound Lite Phase 6 - 소리가 Scene 모드로 새어나가지 않게 한다.
         self._scene_playback.stop()
@@ -845,15 +1075,20 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
             self.inspector.on_entity_selected(self.inspector._current_entity_id)
             
         self.status.log("Play 모드 종료")
+        if was_playing:
+            self._restore_dirty_after_stop()
 
     # ----------------------------------------------------------------
     # 데모 씬 통합 메서드
     # ----------------------------------------------------------------
 
     def _load_default_scene(self):
-        """기본 씬 로드 (샘플 프로젝트 전용 — 다른 프로젝트는 시작 씬 파일을 엔진이 불러온다)"""
-        if not current_project().is_sample:
+        """scene.json 파싱 (샘플 프로젝트의 대체 경로 전용 — 시작 씬 파일이 있으면 엔진이 그 파일을 불러온다)"""
+        project = current_project()
+        if not project.is_sample:
             return
+        if project.start_scene_path and project.start_scene_path.is_file():
+            return   # Demo.scene.json이 데모 월드 전체를 담고 있다(scene.json 내용 포함, X-1b)
         # cwd(현재 작업 디렉터리)가 아니라 이 파일 위치(_EDITOR_DIR) 기준 상대경로로
         # 계산해야 한다 — "engine/editor"에서 실행하든 다른 곳에서 실행하든
         # 항상 "engine/assets/scene.json"을 가리키게 함.
@@ -898,6 +1133,7 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 
     def closeEvent(self, event):
         """종료 시 설정 저장"""
+        self._save_layout()
         self.config_manager.save_config()
         super().closeEvent(event)
 
@@ -909,13 +1145,14 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         # 여기서 self.viewport.tick()을 부르지 않는다. EngineViewport는 자기 16ms 타이머로 이미
         # 틱한다. 예전에는 여기서도 불러서 Scene 엔진이 프레임당 두 번(약 120Hz) 틱했다.
         self.status.tick_frame()
+        self._poll_scene_dirty()   # 창 제목의 '*' (project_actions.py)
 
         # 이 타이머는 60fps 고정인데 액션의 fps는 다를 수 있다. 틱 수를 프레임 수로
         # 쓰면 30fps 액션이 두 배 빨리 재생되므로 **실제 경과 시간**으로 전진시킨다.
         now = time.perf_counter()
         dt = now - self._last_tick_time
         self._last_tick_time = now
-        if self.is_playing:
+        if self.is_playing and not self.is_paused:
             # dt가 비정상적으로 크면(탭 전환, 창 이동 등) 소리가 한꺼번에 쏟아지므로
             # 한 프레임 분량 근처로 자른다. 커서 쪽에도 한 바퀴 상한이 있지만
             # 여러 엔티티가 동시에 터지는 것은 여기서 막는 게 싸다.
@@ -938,16 +1175,6 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 # ============================================================
 
 if __name__ == "__main__":
-    # 엔진 로그는 기본 Info. 렌더러의 프레임별 TRACE가 필요하면 QF_LOG_LEVEL=trace로 실행한다.
-    if HAS_ENGINE:
-        _level_name = os.environ.get("QF_LOG_LEVEL", "info").strip().capitalize()
-        _level = getattr(ge_python.LogLevel, _level_name, None)
-        if _level is None:
-            print(f"[Editor] QF_LOG_LEVEL={_level_name!r}는 알 수 없는 값이라 Info를 씁니다 "
-                  f"(trace/info/warning/error/fatal)")
-            _level = ge_python.LogLevel.Info
-        ge_python.set_log_level(_level)
-
     app = QApplication(sys.argv)
 
     # 폰트 설정

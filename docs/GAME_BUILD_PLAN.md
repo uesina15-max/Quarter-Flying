@@ -258,6 +258,7 @@ MyProject/
 ├─ project.json                # 이름, engineVersion, 시작 씬, 빌드 설정
 ├─ assets/
 │  ├─ models/ textures/ fonts/ prefabs/ actions/ sfx/ motion/
+│  └─ input/actions.json       # 입력 액션 맵(USABILITY_IMPROVEMENT_PLAN G0a, 2026-10-15). 새 프로젝트는 빈 맵
 ├─ scenes/Main.scene.json
 └─ scripts/player_controller.py        # ScriptComponent.moduleName이 가리키는 모듈
 ```
@@ -271,8 +272,9 @@ dist/MyGame/
 ├─ MyGame.exe                  # quarterflying_player.exe의 이름을 바꾼 것
 ├─ quarterflying_engine.dll, quarterflying*.pyd, VC 런타임
 ├─ python314.dll, python3.dll, python314.zip, DLLs/, python314._pth    # 템플릿에 들어 있던 Player용 Python
-├─ game.json                   # 시작 씬, 창 설정 (Build Game이 생성)
+├─ game.json                   # 시작 씬, 창 설정, 입력 액션 맵 경로 (Build Game이 생성)
 ├─ assets/ scenes/             # 시작 씬에서 참조되는 파일만, 프로젝트 상대 경로 그대로 (인게임 UI가 참조하는 폰트·이미지 포함)
+│                              #   + assets/input/actions.json(있으면 항상 — 씬이 참조하는 파일이 아니라 프로젝트 설정)
 ├─ scripts/                    # 스크립트와 그 스크립트가 import하는 프로젝트 모듈 (프로젝트의 scripts 폴더 기준)
 └─ python/                     # runtime_bootstrap 등
 ```
@@ -285,12 +287,15 @@ dist/MyGame/
 {
   "version": 1,
   "title": "My Game",
-  "window": { "width": 1280, "height": 720, "fullscreen": false },
+  "window": { "width": 1280, "height": 720, "fullscreen": false, "cursorLock": false },
   "startScene": "scenes/Main.scene.json",
   "assetRoot": "./",
+  "inputActions": "assets/input/actions.json",
   "engine": { "numWorkerThreads": 0, "logFrameInterval": 0 }
 }
 ```
+
+`inputActions`(G0b)와 `window.cursorLock`(G3)은 2026-10-15에 추가했다(USABILITY_IMPROVEMENT_PLAN). 선택 키다 — 없으면 Player는 액션 맵 없이 시작하고 로그로 알린다. `version`은 올리지 않았다: 키 추가이고, 옛 Player는 모르는 키를 무시한다.
 
 ### 3.5 Player 시작 순서 (`engine/runtime/PlayerMain.cpp`, 신규)
 
@@ -422,7 +427,7 @@ def build_game(settings, progress: Callable[[str, float], None], is_cancelled: C
 1. **템플릿 검증** — `runtime_manifest.json`을 읽어 **엔진 버전과 Python ABI가 지금 에디터와 같은지**, 파일이 바뀌거나 빠지지 않았는지(해시) 확인한다. 다르면 원인을 적고 중단한다.
 2. **씬 검증** — 포함할 모든 `*.scene.json`의 헤더·버전을 `SceneIO` 형식으로 검사한다.
 3. **의존성 수집** — 시작 씬과 포함할 씬에서 참조되는 파일만 모은다.
-   - `RenderableComponent.meshPath` / `texturePath`
+   - `RenderableComponent.meshPath` / `texturePath` / `materialPath` → `*.material.json` → 그 안의 `texture` (머티리얼은 2026-10-15 R-4에서 추가. 머티리얼 파일 안의 경로 키는 `game_builder.py`의 `MATERIAL_PATH_FIELDS` 표 하나에 있다)
    - `ActionPlayerComponent.action` → `.action.json` → `params.clip` (경로 기준은 `.action.json` 파일 위치, SOUND_LITE_PLAN §6.4)
    - `ScriptComponent.moduleName` → `scripts/<모듈>.py`와, 그 파일이 import하는 프로젝트 내 모듈(`ast`로 정적 분석)
    - **인게임 UI** — UI 컴포넌트의 에셋 경로 필드를 메시·텍스처와 같은 규칙으로 모은다. UI 계획 §3.2 초안에는 `TextComponent.fontAsset`, §4.2 예시에는 `ImageComponent`의 `sprite`가 있지만, 필드 이름은 UI Phase 1 구현 때 확정된다. 그래서 수집 규칙을 "컴포넌트 이름 → 경로 필드" 표 하나로 두고, UI 컴포넌트가 생기면 표에 행만 추가한다.
@@ -567,7 +572,7 @@ UI 계획:                     └→ UI Phase 1 → UI Phase 2 → UI Phase 3 �
 - **새 프로젝트의 시작 씬**에 Main Camera 하나를 넣는다(빈 씬이면 카메라가 없어서 화면이 비었다 — 실제 실행에서 발견).
 - **`World.NewScene()` 바인딩**을 추가했다(File > New Scene에 월드를 비울 방법이 없었다).
 - **`Engine.SetAssetRoot()`**를 추가했다. 프로젝트를 바꾸면 에셋 기준 폴더와 `RenderSystem`의 메시·텍스처 캐시가 다음 프레임에 교체된다(GL 자원 해제는 자기 컨텍스트가 current인 프레임 안에서 한다).
-- 하지 않은 것: **데모 월드를 `Demo.scene.json`으로 저장**. 프리팹 인스턴스의 `PrefabInstanceComponent.prefabPath`가 절대 경로로 저장되어, 저장소에 이 PC의 경로가 들어가고 프로젝트를 옮기면 Revert가 깨진다. 프리팹 경로를 프로젝트 상대 경로로 바꾸는 것이 먼저다(후속 과제).
+- 하지 않은 것: **데모 월드를 `Demo.scene.json`으로 저장**. 프리팹 인스턴스의 `PrefabInstanceComponent.prefabPath`가 절대 경로로 저장되어, 저장소에 이 PC의 경로가 들어가고 프로젝트를 옮기면 Revert가 깨진다. 프리팹 경로를 프로젝트 상대 경로로 바꾸는 것이 먼저다(후속 과제). → 2026-10-15 해결: 프리팹 경로 상대화(X-1a) 후 `engine/assets/scenes/Demo.scene.json`을 샘플 프로젝트의 시작 씬으로 삼았다(USABILITY_IMPROVEMENT_PLAN X-1b, §5.5).
 
 ### 9.3 구현 중 발견해 고친 기존 버그
 
@@ -591,7 +596,7 @@ UI 계획:                     └→ UI Phase 1 → UI Phase 2 → UI Phase 3 �
 
 1. **인게임 UI 선행 과제**(UI Phase 1~3) — Build Game v1 완료 조건.
 2. **최종 통과 기준**: 깨끗한 Windows(VM)에서 환경 A/B 확인.
-3. **프리팹 경로를 프로젝트 상대 경로로** 저장(§9.2 마지막 항목).
+3. ~~**프리팹 경로를 프로젝트 상대 경로로** 저장(§9.2 마지막 항목).~~ 2026-10-15 완료 — 씬 version 2, `core/ProjectPath.h`(USABILITY_IMPROVEMENT_PLAN X-1a, §5.4).
 4. **설치본에 서드파티 파일이 섞임**: `cmake --install`이 `include/`, `lib/`, `share/`, `glew32.dll`도 설치한다(glew·fmt·googletest의 자체 설치 규칙). 기능에는 영향이 없지만 ②의 구성과 다르다.
 5. **Player 콘솔 창**: `QF_PLAYER_CONSOLE` 기본값이 ON이라 게임 실행 시 콘솔 창이 같이 뜬다. 배포용 템플릿은 OFF로 빌드할지 정해야 한다(OFF면 로그를 파일로 남기는 Phase 5 2번이 필요).
 6. Phase 5 2~6번.

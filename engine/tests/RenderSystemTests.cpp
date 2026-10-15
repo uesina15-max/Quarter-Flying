@@ -270,13 +270,12 @@ namespace
     }
 }
 
-TEST(RenderSystemMeshPathTest, EmptyPath_UsesMeshHandle)
+TEST(RenderSystemMeshPathTest, EmptyPath_UsesProceduralCube)
 {
     FakeLoader loader;
     RenderSystem system(nullptr, "C:/root", loader.Fn());
     RenderableComponent rc;
-    rc.meshHandle = 7;
-    EXPECT_EQ(system.ResolveMeshHandle(rc), 7u);
+    EXPECT_EQ(system.ResolveMeshHandle(rc), 0u);
     EXPECT_TRUE(loader.calls.empty());
 }
 
@@ -337,12 +336,22 @@ TEST(RenderSystemMeshPathTest, SetAssetRoot_AppliesOnNextUpdate_AndReloadsFromNe
     EXPECT_EQ(loader.calls[1], "C:/new/assets/a.obj");
 }
 
-TEST(RenderSystemMeshPathTest, RegisterMesh_InReservedPathRange_IsIgnored)
+TEST(RenderSystemMeshPathTest, RegisteredMeshName_IsUsedInsteadOfFile_AndSurvivesAssetRootChange)
 {
+    // R-4: 코드가 만든 메시도 이름(경로처럼 저장 가능한 값)으로 등록한다. 예전 정수 핸들 등록은 Undo·Play/Stop을
+    // 지나면 의미가 없어졌다.
     FakeLoader loader;
-    RenderSystem system(nullptr, "", loader.Fn());
-    // 예약 범위 핸들은 무시(에러 로그)돼야 한다 - 크래시 없이 리턴하는지만 확인
-    EXPECT_NO_THROW(system.RegisterMesh(RenderSystem::kPathHandleBase + 1, std::make_shared<Mesh>()));
+    RenderSystem system(nullptr, "C:/root", loader.Fn());
+    system.RegisterMesh("code:Gizmo", std::make_shared<Mesh>());
+    const uint32_t h = system.ResolveMeshHandle(RenderableWithPath("code:Gizmo"));
+    EXPECT_GT(h, 0u);
+    EXPECT_LT(h, RenderSystem::kPathHandleBase);
+    EXPECT_TRUE(loader.calls.empty());                       // 파일을 찾지 않는다
+    system.SetAssetRoot("C:/other");
+    ECSRegistry registry;
+    system.Update(registry, 0.016f);
+    EXPECT_EQ(system.ResolveMeshHandle(RenderableWithPath("code:Gizmo")), h);
+    EXPECT_NO_THROW(system.RegisterMesh("", std::make_shared<Mesh>()));   // 빈 이름은 에러 로그 후 무시
 }
 
 TEST(RenderSystemMeshPathTest, MeshPath_RoundTripsThroughReflectionJson)

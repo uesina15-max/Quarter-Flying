@@ -85,6 +85,9 @@ class TimelineCanvas(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setMouseTracking(True)
         self.setCursor(Qt.ArrowCursor)
+        # 키보드(A-4): ←/→ 한 프레임, Shift와 함께 10프레임, Delete는 마지막으로 클릭한 이벤트 삭제.
+        self.setFocusPolicy(Qt.StrongFocus)
+        self._selected_event: Optional[ActionEvent] = None
 
     # ── 공개 API ─────────────────────────────────────────────────────────────
 
@@ -274,8 +277,30 @@ class TimelineCanvas(QWidget):
 
     # ── 마우스 이벤트 ─────────────────────────────────────────────────────────
 
+    def keyPressEvent(self, event):
+        if self._action is None:
+            return super().keyPressEvent(event)
+        key = event.key()
+        if key in (Qt.Key_Left, Qt.Key_Right):
+            step = 10 if event.modifiers() & Qt.ShiftModifier else 1
+            frame = self._current_frame + (step if key == Qt.Key_Right else -step)
+            frame = max(0, min(self._action.total_frames, frame))
+            self._current_frame = frame
+            self.frame_clicked.emit(frame)
+            self.update()
+            return
+        if key == Qt.Key_Delete and self._selected_event is not None and self._selected_event in self._action.events:
+            removed = self._selected_event
+            self._action.events.remove(removed)
+            self._selected_event = None
+            self.event_deleted.emit(removed)
+            self.update()
+            return
+        super().keyPressEvent(event)
+
     def mousePressEvent(self, event: QMouseEvent):
         x, y = event.position().x(), event.position().y()
+        self.setFocus()
 
         if event.button() == Qt.LeftButton:
             # 재생 헤드 영역
@@ -290,6 +315,7 @@ class TimelineCanvas(QWidget):
             # 이벤트 마커 선택
             if self._action:
                 hit = self._hit_test_event(x, y)
+                self._selected_event = hit
                 if hit is not None:
                     self._drag_mode  = "event"
                     self._drag_event = hit

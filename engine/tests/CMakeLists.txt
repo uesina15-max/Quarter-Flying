@@ -150,6 +150,20 @@ add_executable(SimpleEngineTests
     # --- Camera rig (C5/C6) + InputState ---
     CameraRigTests.cpp
 
+    # --- 입력 라우팅 + 포커스 상실 (USABILITY_IMPROVEMENT_PLAN E-2) ---
+    InputRoutingTests.cpp
+    InputActionsTests.cpp
+
+    # --- 프로젝트 상대 경로 (USABILITY_IMPROVEMENT_PLAN X-1a) ---
+    ProjectPathTests.cpp
+
+    # --- 스크립트 실행 문맥 (USABILITY_IMPROVEMENT_PLAN G1) ---
+    ScriptContextTests.cpp
+
+    # --- 씬 조명 + 인스턴스 색 (USABILITY_IMPROVEMENT_PLAN R-1, R-2) ---
+    LightingMaterialTests.cpp
+    MaterialAssetTests.cpp
+
     # --- Sound Lite Tests (Phase 5) ---
     ActionPlayerComponentTests.cpp
 

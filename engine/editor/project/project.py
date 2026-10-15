@@ -10,7 +10,7 @@ editor/project/project.py
 
     MyProject/
     ├─ project.json
-    ├─ assets/        models/ textures/ fonts/ prefabs/ actions/ sfx/ motion/
+    ├─ assets/        models/ textures/ fonts/ prefabs/ actions/ sfx/ motion/ input/ materials/
     ├─ scenes/        *.scene.json
     └─ scripts/       ScriptComponent.module_name이 가리키는 .py
 
@@ -36,11 +36,18 @@ PROJECT_FORMAT = "quarterflying.project"
 PROJECT_VERSION = 1
 
 SCENE_FORMAT = "quarterflying.scene"      # engine/scene/SceneIO.h kSceneFormatName
-SCENE_VERSION = 1                         # engine/scene/SceneIO.h kSceneFormatVersion
+SCENE_VERSION = 2                         # engine/scene/SceneIO.h kSceneFormatVersion (2: 프리팹 경로가 프로젝트 상대)
 SCENE_SUFFIX = ".scene.json"
 
 DEFAULT_LAYOUT = {"assets": "assets", "scenes": "scenes", "scripts": "scripts"}
-ASSET_SUBDIRS = ("models", "textures", "fonts", "prefabs", "actions", "sfx", "motion")
+ASSET_SUBDIRS = ("models", "textures", "fonts", "prefabs", "actions", "sfx", "motion", "input", "materials")
+
+# 입력 액션 맵(docs/USABILITY_IMPROVEMENT_PLAN.md G0a/G0b). 형식은 엔진(input/InputActions.h)만 안다 -
+# 여기서는 경로와 "빈 맵" 파일만 다룬다. 위치가 <프로젝트>/input/이 아니라 assets/input/인 이유: 샘플 프로젝트의
+# 루트는 engine/이고 engine/input/은 C++ 소스 폴더라서, 거기에 프로젝트 데이터를 두면 소스와 섞인다.
+INPUT_ACTIONS_RELPATH = "input/actions.json"     # assets 폴더 기준
+INPUT_ACTIONS_FORMAT = "quarterflying.input-actions"
+INPUT_ACTIONS_VERSION = 1
 
 # 이 파일: engine/editor/project/project.py → 샘플 프로젝트 루트는 engine/
 _ENGINE_DIR = Path(__file__).resolve().parents[2]
@@ -59,6 +66,7 @@ class BuildConfig:
     window_width: int = 1280
     window_height: int = 720
     fullscreen: bool = False
+    cursor_lock: bool = False           # 게임 시작 시 커서 잠금 요청(game.json window.cursorLock, 스크립트로 바꿀 수 있음)
     include_dirs: List[str] = field(default_factory=list)   # 자동 수집과 무관하게 통째로 넣을 폴더
     output_dir: str = ""                # 비면 <프로젝트>/Build
 
@@ -66,7 +74,8 @@ class BuildConfig:
         return {
             "name": self.name,
             "startScene": self.start_scene,
-            "window": {"width": self.window_width, "height": self.window_height, "fullscreen": self.fullscreen},
+            "window": {"width": self.window_width, "height": self.window_height, "fullscreen": self.fullscreen,
+                       "cursorLock": self.cursor_lock},
             "includeDirs": list(self.include_dirs),
             "outputDir": self.output_dir,
         }
@@ -84,6 +93,7 @@ class BuildConfig:
         cfg.window_width = _get(window, "width", int, cfg.window_width, where, "build.window.")
         cfg.window_height = _get(window, "height", int, cfg.window_height, where, "build.window.")
         cfg.fullscreen = _get(window, "fullscreen", bool, cfg.fullscreen, where, "build.window.")
+        cfg.cursor_lock = _get(window, "cursorLock", bool, cfg.cursor_lock, where, "build.window.")
         dirs = data.get("includeDirs", [])
         if not isinstance(dirs, list) or not all(isinstance(d, str) for d in dirs):
             raise ProjectError(f"{where}: \"build.includeDirs\" must be a list of strings")
@@ -144,6 +154,10 @@ class Project:
     @property
     def actions_dir(self) -> Path:
         return self.assets_dir / "actions"
+
+    @property
+    def input_actions_path(self) -> Path:
+        return self.assets_dir / INPUT_ACTIONS_RELPATH
 
     # ── 경로 변환 ────────────────────────────────────────────────────────────
 
@@ -236,6 +250,9 @@ def create_project(path, name: Optional[str] = None) -> Project:
     project.scenes_dir.mkdir(parents=True, exist_ok=True)
     project.scripts_dir.mkdir(parents=True, exist_ok=True)
     _write_json_atomic(project.resolve(project.start_scene), default_scene_document())
+    # 빈 액션 맵. 액션 이름과 키 배치는 게임 개발자가 정한다(엔진이 기본 액션을 정하지 않는다).
+    _write_json_atomic(project.input_actions_path, {
+        "format": INPUT_ACTIONS_FORMAT, "version": INPUT_ACTIONS_VERSION, "actions": {}})
     project.save()
     return project
 
@@ -277,11 +294,18 @@ def open_project(path) -> Project:
     )
 
 
+# 샘플 프로젝트의 시작 씬(docs/USABILITY_IMPROVEMENT_PLAN.md X-1b). 예전에는 데모 월드를 에디터가 시작할 때마다
+# 코드(demo_scene_seed.py)와 scene.json으로 만들었다. 그래서 VFX·카메라 수치를 바꾸려면 Python을 고쳐야 했고,
+# 같은 월드를 Player로 빌드할 방법이 없었다. 지금은 보통의 씬 파일이다 - 코드 시드는 이 파일이 없을 때의 대체 경로다.
+SAMPLE_START_SCENE = "assets/scenes/Demo.scene.json"
+
+
 def sample_project() -> Project:
     """프로젝트를 열지 않았을 때 쓰는 샘플 프로젝트(= engine/). 기존 개발 흐름을 그대로 유지한다."""
     return Project(
         root=_ENGINE_DIR,
         name="Sample",
+        start_scene=SAMPLE_START_SCENE,
         layout={"assets": "assets", "scenes": "assets/scenes", "scripts": "assets/scripts"},
         is_sample=True,
     )

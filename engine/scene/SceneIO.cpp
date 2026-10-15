@@ -183,7 +183,29 @@ namespace Engine
         return report;
     }
 
-    std::expected<SceneLoadReport, EngineError> LoadSceneFromFile(ECSRegistry& registry, const std::string& path)
+    void UpgradeSceneDocument(nlohmann::json& doc, const std::string& projectRoot, std::vector<std::string>* warnings)
+    {
+        if (!doc.is_object() || !doc.contains("version") || !doc["version"].is_number_integer()
+            || !doc.contains("entities") || !doc["entities"].is_array())
+        {
+            return;
+        }
+        FileLoadContext ctx;
+        ctx.fileKind = "scene";
+        ctx.fileVersion = doc["version"].get<int>();
+        ctx.projectRoot = projectRoot;
+        ctx.warnings = warnings;
+        for (auto& entityJson : doc["entities"])
+        {
+            if (entityJson.is_object() && entityJson.contains("components"))
+            {
+                UpgradeComponentsFromFile(entityJson["components"], ctx);
+            }
+        }
+    }
+
+    std::expected<SceneLoadReport, EngineError> LoadSceneFromFile(ECSRegistry& registry, const std::string& path,
+                                                                  const std::string& projectRoot)
     {
         const std::filesystem::path source = PathFromUtf8(path);
         std::error_code ec;
@@ -208,6 +230,9 @@ namespace Engine
             return Fail(EngineErrorCode::ResourceLoadFailed, fmt::format("JSON syntax error in '{}': {}", path, e.what()));
         }
 
+        std::vector<std::string> upgradeWarnings;
+        UpgradeSceneDocument(doc, projectRoot, &upgradeWarnings);
+
         auto result = ApplySceneDocument(registry, doc);
         if (!result)
         {
@@ -216,6 +241,7 @@ namespace Engine
             err.message = fmt::format("{}: {}", path, err.message);
             return std::unexpected(err);
         }
+        result->warnings = std::move(upgradeWarnings);
 
         LogUnknownComponents("loaded", path, result->unknownComponents);
         Logger::Info("SceneIO - loaded '{}' ({} entities)", path, result->entityCount);

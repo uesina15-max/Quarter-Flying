@@ -84,6 +84,7 @@ namespace Engine
         QF_TRY(ReadString(json, "title", "title", cfg.title));
         QF_TRY(ReadString(json, "startScene", "startScene", cfg.startScene));
         QF_TRY(ReadString(json, "assetRoot", "assetRoot", cfg.assetRoot));
+        QF_TRY(ReadString(json, "inputActions", "inputActions", cfg.inputActions));
 
         const nlohmann::json* window = nullptr;
         QF_TRY(ReadSection(json, "window", window));
@@ -92,6 +93,7 @@ namespace Engine
             QF_TRY(ReadUInt(*window, "width", "window.width", cfg.windowWidth, true));
             QF_TRY(ReadUInt(*window, "height", "window.height", cfg.windowHeight, true));
             QF_TRY(ReadBool(*window, "fullscreen", "window.fullscreen", cfg.fullscreen));
+            QF_TRY(ReadBool(*window, "cursorLock", "window.cursorLock", cfg.cursorLock));
         }
 
         const nlohmann::json* engine = nullptr;

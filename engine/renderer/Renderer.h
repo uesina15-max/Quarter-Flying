@@ -68,6 +68,8 @@ namespace Engine
 
         // Performance optimization systems access
         InstancedBatchManager* GetInstancedBatchManager() { return instancedBatchManager.get(); }
+        // RenderSystem이 매 프레임 씬 조명을 써 넣는 곳(renderer/SceneLighting.h). batchManager와 같은 방식이다.
+        SceneLighting* GetSceneLightingTarget() { return &sceneLighting; }
         const InstancedBatchManager* GetInstancedBatchManager() const { return instancedBatchManager.get(); }
         
         LODSystem* GetLODSystem() { return lodSystem.get(); }
@@ -150,6 +152,7 @@ namespace Engine
 
         // ECS RenderSystem이 InstancedBatchManager에 채운 배치를 실제로 그린다 (ROADMAP.md P0-2).
         std::unique_ptr<SceneMeshRenderer> sceneMeshRenderer;
+        SceneLighting sceneLighting = SceneLighting::Default();
 
         // ParticleSystem이 채운 ForwardTransparent 배치를 그린다 (VFX Lite Phase 3).
         std::unique_ptr<ParticleRenderer> particleRenderer;

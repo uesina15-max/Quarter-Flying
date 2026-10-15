@@ -511,7 +511,7 @@ namespace Engine
     }
 
     std::expected<PrefabAsset, EngineError>
-    PrefabAsset::LoadFromFile(const std::filesystem::path& path)
+    PrefabAsset::LoadFromFile(const std::filesystem::path& path, const std::string& projectRoot)
     {
         std::ifstream file(path);
         if (!file.is_open())
@@ -529,6 +529,29 @@ namespace Engine
         {
             return MakeError(EngineErrorCode::ResourceLoadFailed,
                 "Failed to parse prefab JSON '" + Utf8FromPath(path) + "': " + e.what(), "PrefabAsset");
+        }
+
+        // 옛 형식 보정(파일에서 읽을 때만). v1: {"components"}, v2: {"entities": [{"components"}]}.
+        if (parsed.is_object() && parsed.contains("version") && parsed["version"].is_number_integer())
+        {
+            FileLoadContext ctx;
+            ctx.fileKind = "prefab";
+            ctx.fileVersion = parsed["version"].get<int>();
+            ctx.projectRoot = projectRoot;
+            if (parsed.contains("components"))
+            {
+                UpgradeComponentsFromFile(parsed["components"], ctx);
+            }
+            if (parsed.contains("entities") && parsed["entities"].is_array())
+            {
+                for (auto& e : parsed["entities"])
+                {
+                    if (e.is_object() && e.contains("components"))
+                    {
+                        UpgradeComponentsFromFile(e["components"], ctx);
+                    }
+                }
+            }
         }
 
         return FromJson(parsed);

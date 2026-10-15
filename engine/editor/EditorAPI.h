@@ -27,6 +27,12 @@ public:
     void SetRegistry(ECSRegistry* registry);
     ECSRegistry* GetRegistry() const { return registry_; }
 
+    // 프로젝트 폴더(UTF-8). 프리팹 경로를 이 폴더 기준 상대 경로로 저장하고, 저장된 상대 경로를 이 폴더 기준으로
+    // 푼다(core/ProjectPath.h, docs/USABILITY_IMPROVEMENT_PLAN.md X-1a). 에디터가 프로젝트를 열 때 설정한다.
+    // 비어 있으면 경로를 받은 그대로 저장하고 해석한다(옛 동작).
+    void SetProjectRoot(std::string projectRoot) { projectRoot_ = std::move(projectRoot); }
+    const std::string& GetProjectRoot() const { return projectRoot_; }
+
     // ----------------------------------------
     // Transaction lifecycle
     // ----------------------------------------
@@ -102,6 +108,7 @@ private:
     std::expected<void, EngineError> CheckRegistry() const;
 
     ECSRegistry*                  registry_          = nullptr;
+    std::string                   projectRoot_;
     std::unique_ptr<Transaction>  activeTransaction_ = nullptr;
 };
 

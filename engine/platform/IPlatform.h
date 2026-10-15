@@ -47,7 +47,11 @@ namespace Engine
         MouseButtonUp,
         MouseWheel,
         WindowClose,
-        WindowResize
+        WindowResize,
+        // 창(Player) 또는 뷰포트(에디터 Qt)가 키보드 포커스를 잃었다. Up 이벤트가 오지 않으므로
+        // 눌림 상태를 엔진이 직접 풀어야 한다(Engine::HandleFocusLost). 새 값은 항상 끝에 추가한다 -
+        // 바인딩(EngineBindings.cpp)과 저장된 값의 번호가 바뀌지 않게.
+        FocusLost
     };
 
     enum class KeyCode : uint16_t
@@ -166,6 +170,17 @@ namespace Engine
         // 이번 프레임에 그린 백버퍼를 화면에 표시(더블버퍼 스왑)한다.
         // 매 프레임 렌더링 이후(Renderer::LateTick 이후) 호출되어야 한다.
         virtual void PresentFrame(WindowHandle handle) = 0;
+
+        // 커서 잠금(docs/USABILITY_IMPROVEMENT_PLAN.md G3): 커서를 창 안에 가두고 숨긴다. "요청"과 "실제 적용"을
+        // 나눈다 - 게임(game.json, 스크립트)은 요청만 하고, 적용은 창이 포커스를 가진 동안만 한다. 포커스를 잃으면
+        // Engine::HandleFocusLost가 SuspendCursorLock으로 적용만 풀고(요청은 유지), 창 안을 다시 클릭하면 요청이 켜져
+        // 있을 때만 다시 건다. 에디터 임베드 모드에서는 Qt가 창을 소유하므로 요청을 받기만 하고 적용하지 않는다.
+        // 한계: 커서를 가두기만 한다(가운데로 되돌리지 않음) - 창 가장자리에서는 마우스 이동량이 멈춘다.
+        // 기본 구현은 아무것도 하지 않는다(테스트용 가짜 플랫폼, 커서 개념이 없는 플랫폼).
+        virtual void SetCursorLockRequested(bool requested) { (void)requested; }
+        virtual bool IsCursorLockRequested() const { return false; }
+        virtual bool IsCursorLockApplied() const { return false; }
+        virtual void SuspendCursorLock() {}
     };
 
 } // namespace Engine

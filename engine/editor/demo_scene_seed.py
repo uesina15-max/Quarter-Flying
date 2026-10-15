@@ -56,9 +56,8 @@ def _seed_main_camera(editor_api, registry) -> str:
 
 def _seed_test_cube(editor_api, registry) -> str:
     # 임시 검증용 엔티티 (ROADMAP.md P0-2: RenderSystem이 실제로 draw call을 내는지 눈으로
-    # 확인하기 위한 것). RenderableComponent만 붙이면 meshHandle 기본값(0)에 대해
-    # RenderSystem이 절차적 큐브로 대체해서 그려준다 - 실제 메시 에셋 파이프라인은 아직
-    # 없음(RenderSystem.h 주석 참고).
+    # 확인하기 위한 것). RenderableComponent만 붙이면 meshPath가 비어 있어서 RenderSystem이
+    # 절차적 큐브로 그려준다(RenderSystem.h 메시 해석 정책 참고).
     cube_entity = editor_api.create_entity("Test Cube")
     editor_api.add_component(cube_entity, "TransformComponent")
     # 원점에 두면 scene.json 큐브 그리드의 (0,0,0) 칸(2x2x2 큐브) 안에 완전히 묻혀서 보이지 않았다.
@@ -132,7 +131,7 @@ def _seed_sound_test(editor_api, registry) -> str:
     # ActionPlayerComponent를 붙인 엔티티 하나를 만들어 두면, Play를 눌렀을 때 액션이
     # 재생되며 소리가 나는지 바로 확인할 수 있다. Motion Editor의 미리듣기와 달리 이건
     # **Scene Editor의 Play**에서 나는 소리다.
-    sfx_entity = editor_api.create_entity("Sound Test")
+    sfx_entity = editor_api.create_entity("Sound Test (sample)")
     editor_api.add_component(sfx_entity, "TransformComponent")
     editor_api.add_component(sfx_entity, "ActionPlayerComponent")
     registry.SetComponentJson(
@@ -151,7 +150,7 @@ SEED_STEPS = [
     ("Lamp",        _seed_lamp_prefab),
     ("VFX Test",    _seed_vfx_test),
     ("Fire",        _seed_fire_prefab),
-    ("Sound Test",  _seed_sound_test),
+    ("Sound Test (sample)",  _seed_sound_test),
 ]
 
 

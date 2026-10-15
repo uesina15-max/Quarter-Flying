@@ -268,7 +268,7 @@ std::expected<Entity, EngineError> EditorAPI::InstantiatePrefab(const std::files
         return std::unexpected(r.error());
     }
 
-    auto cmd    = std::make_unique<InstantiatePrefabCommand>(registry_, prefabPath, position);
+    auto cmd    = std::make_unique<InstantiatePrefabCommand>(registry_, prefabPath, position, projectRoot_);
     auto rawPtr = cmd.get();  // observe result after ownership transfer
 
     auto result = Dispatch(std::move(cmd));
@@ -310,7 +310,7 @@ std::expected<void, EngineError> EditorAPI::RevertPrefabInstance(Entity entity)
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "EditorAPI");
     }
 
-    return Dispatch(std::make_unique<RevertPrefabInstanceCommand>(registry_, entity));
+    return Dispatch(std::make_unique<RevertPrefabInstanceCommand>(registry_, entity, projectRoot_));
 }
 
 // ============================================================

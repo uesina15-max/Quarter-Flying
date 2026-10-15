@@ -38,6 +38,11 @@ namespace Engine
         bool MakeGraphicsContextCurrent(WindowHandle handle) override;
         void PresentFrame(WindowHandle handle) override;
 
+        void SetCursorLockRequested(bool requested) override;
+        bool IsCursorLockRequested() const override { return cursorLockRequested; }
+        bool IsCursorLockApplied() const override { return cursorLockApplied; }
+        void SuspendCursorLock() override;
+
     private:
         struct WindowData
         {
@@ -58,6 +63,10 @@ namespace Engine
 
         KeyCode TranslateKeyCode(WPARAM wParam, LPARAM lParam);
 
+        // 커서 잠금 적용/해제(IPlatform 주석). Apply는 임베드 모드이거나 창이 전경이 아니면 아무것도 하지 않는다.
+        void ApplyCursorLock(HWND hwnd);
+        void ReleaseCursorLock();
+
         HINSTANCE hInstance;
         std::unordered_map<uint32_t, WindowData> windows;
         std::unordered_map<HWND, uint32_t> hwndToWindowID; // 역방향 매핑 (Qt와의 충돌 회피)
@@ -76,6 +85,10 @@ namespace Engine
         // SetExternalWindowHandle()로 호스트(Qt 에디터)의 HWND에 임베드된 경우 true.
         // 이 스레드의 메시지 루프 주인은 호스트이므로 PollEvents()가 메시지를 펌프하면 안 된다.
         bool hostOwnsMessageLoop = false;
+
+        bool cursorLockRequested = false;
+        bool cursorLockApplied = false;
+        HWND cursorLockWindow = nullptr;     // 독립 창 모드의 게임 창(CreateWindow)
     };
 
 } // namespace Engine

@@ -1,13 +1,16 @@
 import sys
 import os
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QTimer, Qt, Signal
 from engine_binding import binding as ge_python
 
 from style.theme import COLORS
 from core.editor_camera import OrbitCamera
 
 class EngineViewport(QWidget):
+    # 키보드 포커스를 얻거나 잃었다(Play 화면의 "클릭하면 입력 받음" 안내가 쓴다, E-3).
+    focus_changed = Signal(bool)
+
     def __init__(self, parent=None, editor_camera: bool = False):
         """editor_camera=True면 마우스로 조작하는 에디터 카메라(core/editor_camera.py)로 그린다
         (Scene 뷰포트). False면 ECS Main Camera를 따라가는 게임 카메라(Play 뷰포트)."""
@@ -198,6 +201,22 @@ class EngineViewport(QWidget):
             e = ge_python.InputEvent()
             e.type = ge_python.InputEventType.KeyUp
             e.keyCode = key
+            self.engine.PushInputEvent(e)
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.focus_changed.emit(True)
+
+    def focusOutEvent(self, event):
+        # 포커스가 다른 위젯/창으로 가면 눌린 키의 keyReleaseEvent가 이 위젯으로 오지 않는다.
+        # 예전에는 아무것도 하지 않아서, W를 누른 채 Hierarchy를 클릭하면 엔진에는 W가 계속 눌린
+        # 상태로 남았다(Play 중이면 캐릭터·카메라가 계속 움직임). 상태 정리는 엔진 한 곳
+        # (Engine::HandleFocusLost)에서 하고, 여기서는 이벤트만 넣는다 - Player 창의 WM_KILLFOCUS와 같은 경로.
+        super().focusOutEvent(event)
+        self.focus_changed.emit(False)
+        if self.initialized:
+            e = ge_python.InputEvent()
+            e.type = ge_python.InputEventType.FocusLost
             self.engine.PushInputEvent(e)
 
     def _map_mouse_button(self, qt_button):

@@ -10,6 +10,7 @@
 - **이 문서(`docs/MASTER_PLAN.md`)** — 제품/전략 관점의 장기 우선순위. "기술 데모에서 실사용 가능한 제작 도구로" 가기 위해 뭘 순서대로 만들어야 하는가.
 - **[ROADMAP.md](../ROADMAP.md)** — 세션별로 실제 검증된 진행 기록(ground truth). "지금 뭐가 실제로 되고 뭐가 안 되는가"를 실행 결과·스크린샷·테스트 통과 여부로 기록한다. 이 마스터플랜의 각 항목이 실제로 착수되면 ROADMAP.md에 상세 실행 기록이 남는다 — **상태를 확인할 때는 이 문서가 아니라 ROADMAP.md를 먼저 봐야 한다.**
 - **[docs/MOTION_MIXER_IMPLEMENTATION_PLAN.md](MOTION_MIXER_IMPLEMENTATION_PLAN.md)**, **[docs/PYTHON_BINDING_IMPLEMENTATION_PLAN.md](PYTHON_BINDING_IMPLEMENTATION_PLAN.md)** — 개별 기능의 상세 설계/Phase 분해. 이 마스터플랜에서는 "P1.5" 한 줄로만 요약되는 작업의 실제 API 시그니처·JSON 포맷·테스트 명세가 여기 있다.
+- **[docs/USABILITY_IMPROVEMENT_PLAN.md](USABILITY_IMPROVEMENT_PLAN.md)** — 실사용 격상 개선안(게임 입력·조작, 에디터 GUI, 모션 에디터 스텁, 라이트·인스턴스 색, 샘플 콘텐츠). 2026-10-13에 아키텍처 규칙(§0)에 맞춰 원안을 고친 현행본이다.
 - **`PLAN.md`, `PROBLEM_ANALYSIS_REPORT.md`, `UNUSED_AND_LEGACY_REPORT.md`(2026-10-07 저장소 루트에서 `docs/archive/`로 이동)** — 더 오래된 진단 문서. ROADMAP.md §3(P3)에 이미 기록돼 있듯, 이번 세션들에서 검증된 사실과 상당 부분 어긋나거나 이미 해소됐을 가능성이 있어 우선순위가 낮다.
 
 이 문서 자체는 사용자가 제시한 외부 리뷰 정리본을 기반으로 하되, 저장소를 직접 조사해 확인 가능한 부분(§6.1, §6.2)은 실측으로 교정했다.

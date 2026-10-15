@@ -21,6 +21,7 @@ std::expected<void, EngineError> CommandManager::Execute(std::unique_ptr<IComman
     {
         return applyResult;
     }
+    ++changeCount_;   // Apply가 성공한 순간 월드가 바뀌었다(병합 여부와 무관)
 
     if (inMergeSession_ && !undoStack_.empty() && undoStack_.back()->CanMergeWith(*command))
     {
@@ -56,6 +57,7 @@ std::expected<void, EngineError> CommandManager::Undo()
     }
 
     redoStack_.push_back(std::move(command));
+    ++changeCount_;
     return {};
 }
 
@@ -78,6 +80,7 @@ std::expected<void, EngineError> CommandManager::Redo()
 
     undoStack_.push_back(std::move(command));
     TrimUndoStack();
+    ++changeCount_;
     return {};
 }
 

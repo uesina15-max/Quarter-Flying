@@ -31,6 +31,15 @@ class ProjectActionsMixin:
 
     _scene_path: Optional[Path] = None   # 지금 편집 중인 씬 파일(없으면 아직 저장 안 한 새 씬)
 
+    # 저장 안 된 변경 표시(창 제목의 '*'). 기준은 엔진 CommandManager의 변경 카운터 하나다
+    # (Execute/Undo/Redo가 성공할 때마다 오른다, core/CommandManager.h). 씬을 저장·열기·새로 만들 때의
+    # 값을 기억해 두고 지금 값과 다르면 변경이 있다. 패널마다 "바꿨음" 플래그를 따로 세우지 않는다 -
+    # 한 곳이라도 빠뜨리면 표시가 틀리고, 어느 패널이 빠뜨렸는지 추적하기 어렵다.
+    # 한계: 명령을 거치지 않는 편집(editor_api가 없을 때의 Inspector 폴백 등)은 잡지 못한다.
+    _clean_change_count: Optional[int] = None
+    _dirty_before_play: bool = False
+    _last_seen_change_count: Optional[int] = None
+
     # ── 메뉴 ─────────────────────────────────────────────────────────────────
 
     def _add_project_menu_actions(self, file_menu) -> None:
@@ -81,10 +90,55 @@ class ProjectActionsMixin:
     def _update_title(self) -> None:
         project = current_project()
         scene = self._scene_path.name if self._scene_path else "Untitled"
+        if self._is_scene_dirty():
+            scene = "*" + scene
         label = "Sample" if project.is_sample else project.name
         self.setWindowTitle(f"Quarter Flying Editor — {label} — {scene}")
         if hasattr(self, "lbl_scene"):
             self.lbl_scene.setText(f"  {scene}  ")
+
+    # ── 저장 안 된 변경 ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _scene_change_count() -> Optional[int]:
+        """엔진 CommandManager의 변경 카운터. 엔진이 없으면 None(그때는 변경 표시를 하지 않는다)."""
+        try:
+            from engine_binding import binding, HAS_ENGINE
+            if not HAS_ENGINE:
+                return None
+            return int(binding.CommandManager.get_instance().get_change_count())
+        except Exception:
+            return None
+
+    def _mark_scene_clean(self) -> None:
+        """지금 월드를 "저장된 상태"로 본다. 씬을 저장·열기·새로 만든 직후에 부른다."""
+        self._clean_change_count = self._scene_change_count()
+        self._last_seen_change_count = self._clean_change_count
+        self._update_title()
+
+    def _is_scene_dirty(self) -> bool:
+        if self._clean_change_count is None:
+            return False
+        return self._scene_change_count() != self._clean_change_count
+
+    def _poll_scene_dirty(self) -> None:
+        """주기적으로 부른다(main._on_fps_tick). 카운터가 바뀌었을 때만 제목을 다시 쓴다."""
+        count = self._scene_change_count()
+        if count != self._last_seen_change_count:
+            self._last_seen_change_count = count
+            self._update_title()
+
+    def _remember_dirty_before_play(self) -> None:
+        self._dirty_before_play = self._is_scene_dirty()
+
+    def _restore_dirty_after_stop(self) -> None:
+        """Stop은 월드를 Play 시작 시점으로 되돌린다. 그 사이 카운터가 올랐어도 변경 여부는 Play 전과 같다."""
+        if self._dirty_before_play:
+            self._clean_change_count = -1   # 어떤 카운터 값과도 다르다 -> 계속 "변경 있음"
+        else:
+            self._clean_change_count = self._scene_change_count()
+        self._last_seen_change_count = None
+        self._update_title()
 
     # ── 프로젝트 ─────────────────────────────────────────────────────────────
 
@@ -134,6 +188,8 @@ class ProjectActionsMixin:
         if self._engine is not None:
             # meshPath/texturePath는 프로젝트 폴더 기준이다(project.py 모듈 주석).
             self._engine.SetAssetRoot(str(project.root))
+        self._set_editor_project_root()
+        self._load_input_actions()
         self._refresh_project_panels()
 
         start = project.start_scene_path
@@ -144,6 +200,42 @@ class ProjectActionsMixin:
                 self._new_scene_in_world()
         self.status.log(f"프로젝트 열기: {project.name} ({project.root})")
         self._update_title()
+
+    def _set_editor_project_root(self) -> None:
+        """EditorAPI에 현재 프로젝트 폴더를 알린다. 프리팹 경로를 이 폴더 기준 상대 경로로 기록·해석한다
+        (engine/core/ProjectPath.h). 엔진 연결 때와 프로젝트를 바꿀 때 부른다."""
+        editor_api = getattr(self, "_editor_api", None)
+        if editor_api is not None:
+            editor_api.set_project_root(str(current_project().root))
+
+    def _load_input_actions(self) -> None:
+        """현재 프로젝트의 입력 액션 맵(assets/input/actions.json)을 엔진에 불러온다.
+
+        프로젝트를 열 때와 엔진이 연결될 때 부른다. 형식 검사는 엔진(InputActions::LoadActions)이 하고, 여기서는
+        결과만 보여 준다. 거절된 파일이면 엔진은 이전 맵을 그대로 쓰므로, 사용자가 "왜 키가 안 먹지"를 찾지 않도록
+        경고 창으로 알린다. 건너뛴 바인딩(모르는 키 이름 등)은 로그로 남긴다.
+        """
+        if self._engine is None:
+            return
+        path = current_project().input_actions_path
+        try:
+            report = self._engine.LoadInputActions(str(path))
+        except RuntimeError as e:
+            print(f"[InputActions] {path} 불러오기 실패: {e}")
+            QMessageBox.warning(self, "입력 액션 맵",
+                                f"입력 액션 맵을 불러오지 못했습니다. 이전 설정을 그대로 씁니다.\n\n{e}")
+            return
+        for w in report.get("warnings", []):
+            print(f"[InputActions] {w}")
+        panel = getattr(self, "input_actions_panel", None)
+        if panel is not None:
+            panel.reload_from_engine()
+        if report.get("file_missing"):
+            self.status.log(f"입력 액션 맵 없음: {path} (조작 액션 없이 시작)")
+        else:
+            skipped = len(report.get("warnings", []))
+            self.status.log(f"입력 액션 {report.get('action_count', 0)}개 불러옴"
+                            + (f" (경고 {skipped}개 - 콘솔 참고)" if skipped else ""))
 
     def _refresh_project_panels(self) -> None:
         """경로를 프로젝트에서 받는 패널들의 목록을 다시 읽게 한다."""
@@ -180,22 +272,26 @@ class ProjectActionsMixin:
             except Exception as e:
                 self.status.log(f"기본 카메라 생성 실패: {e}")
         self._scene_path = None
-        self._update_title()
+        self._mark_scene_clean()   # 기본 카메라 생성도 명령을 거치므로, 그 뒤를 기준으로 삼는다
 
     def _load_scene_file(self, path: Path) -> bool:
         try:
-            report = self._world.LoadScene(str(path))
+            # 프로젝트 폴더를 넘겨야 옛 씬(version 1)의 절대 프리팹 경로가 프로젝트 상대 경로로 정규화된다.
+            report = self._world.LoadScene(str(path), str(current_project().root))
         except RuntimeError as e:
             QMessageBox.critical(self, "Open Scene", str(e))
             return False
         self._scene_path = Path(path)
+        for w in report.get("warnings", []):
+            print(f"[SceneIO] {w}")
+            self.status.log(f"씬 경고: {w}")
         unknown = list(report.get("unknown_components", []))
         if unknown:
             QMessageBox.warning(
                 self, "Open Scene",
                 "이 씬 파일에 이 엔진이 모르는 컴포넌트가 있어 건너뛰었습니다:\n  " + "\n  ".join(unknown))
         self.status.log(f"씬 열기: {path.name} ({report.get('entity_count', 0)}개 엔티티)")
-        self._update_title()
+        self._mark_scene_clean()
         return True
 
     def _save_scene_file(self, path: Path) -> bool:
@@ -218,8 +314,8 @@ class ProjectActionsMixin:
                 project.save()
             except Exception as e:
                 self.status.log(f"시작 씬 기록 실패: {e}")
-        self.status.log(f"씬 저장: {path.name} ({report.get('entity_count', 0)}개 엔티티)")
-        self._update_title()
+        self.status.log(f"씬 저장: {path.name} ({report.get('entity_count', 0)}개 엔티티) - Saved")
+        self._mark_scene_clean()
         return True
 
     def _on_new_scene(self) -> None:

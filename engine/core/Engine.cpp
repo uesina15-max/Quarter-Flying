@@ -187,6 +187,10 @@ namespace Engine
             Logger::Fatal("Failed to create main window");
             return std::unexpected(EngineError(EngineErrorCode::WindowCreationFailed, "Window creation failed"));
         }
+        if (config.cursorLock)
+        {
+            platform->SetCursorLockRequested(true);
+        }
 
         // 3-7. 공통 코어 시스템 초기화
         auto coreResult = InitializeCoreSystems();
@@ -274,6 +278,39 @@ namespace Engine
     {
         std::lock_guard<std::mutex> lock(inputMutex);
         inputQueue.push_back(event);
+    }
+
+    bool Engine::DispatchInputEvent(const InputEvent& event)
+    {
+        switch (event.type)
+        {
+        case InputEventType::WindowClose:
+            isRunning = false;
+            return false;
+        case InputEventType::WindowResize:
+            HandleWindowResize(event.windowWidth, event.windowHeight);
+            return true;
+        case InputEventType::FocusLost:
+            HandleFocusLost();
+            return true;
+        default:
+            inputState.Apply(event);
+            return true;
+        }
+    }
+
+    void Engine::HandleFocusLost()
+    {
+        // 포커스를 잃으면 그 창으로 KeyUp/ButtonUp이 오지 않는다. 그대로 두면 W를 누른 채 다른 창으로
+        // 가는 순간 W가 영원히 눌린 상태로 남아 캐릭터가 계속 걷는다(되돌아와서 W를 다시 눌렀다 떼야 풀린다).
+        // 정리 루틴은 여기서 하나씩 부른다.
+        inputState.ReleaseAll();         // 키 전부, 마우스 버튼 3개, 마지막 마우스 위치
+        inputActions.ResetHeldState();   // 다음 Update가 WasReleased를 만들지 않게(InputActions.h)
+        if (platform)
+        {
+            platform->SuspendCursorLock();   // 적용만 푼다. 요청은 유지 - 창을 다시 클릭하면 다시 잠긴다
+        }
+        Logger::Debug("Engine: focus lost - released all held keys and mouse buttons");
     }
 
     void Engine::Shutdown()
@@ -410,22 +447,22 @@ namespace Engine
         // 입력 상태: 이번 프레임 이동량을 0으로 되돌리고, 아래 두 경로의 이벤트를 모두 반영한다(InputState.h).
         inputState.BeginFrame();
 
+        // 두 입력 경로(플랫폼 큐 = Player 창, 외부 큐 = 에디터 Qt)는 모두 DispatchInputEvent를 거친다.
+        // 예전에는 경로마다 이벤트 종류별 분기가 따로 있었다(플랫폼 쪽은 Apply를 먼저 부르고, 외부 쪽은
+        // 나중에 불렀다). 새 이벤트 종류(FocusLost)를 한쪽에만 넣으면 에디터와 Player가 다르게 동작한다.
         InputEvent event;
         while ((event = platform->GetNextInputEvent()).type != InputEventType::None)
         {
-            inputState.Apply(event);
-            if (event.type == InputEventType::WindowClose)
+            if (!DispatchInputEvent(event))
             {
-                isRunning = false;
                 return;
-            }
-            if (event.type == InputEventType::WindowResize)
-            {
-                HandleWindowResize(event.windowWidth, event.windowHeight);
             }
         }
 
         // 3-1. 외부 UI 스레드로부터 큐잉된 비동기 입력 이벤트 일괄 처리 (Method A: Lock 최소화)
+        // Qt가 소유한 외부 HWND(EngineViewport 임베딩)는 우리 WindowProc을 거치지 않으므로 위
+        // platform->GetNextInputEvent() 경로로는 이벤트가 오지 않는다 - viewport.py가
+        // PushInputEvent()로 여기(비동기 큐)에 넣는다(크기 변경·포커스 상실 포함).
         std::vector<InputEvent> localInputQueue;
         {
             std::lock_guard<std::mutex> lock(inputMutex);
@@ -434,27 +471,29 @@ namespace Engine
 
         for (const auto& queuedEvent : localInputQueue)
         {
-            if (queuedEvent.type == InputEventType::WindowClose)
+            if (!DispatchInputEvent(queuedEvent))
             {
-                isRunning = false;
                 return;
             }
-            if (queuedEvent.type == InputEventType::WindowResize)
-            {
-                // Qt가 소유한 외부 HWND(EngineViewport 임베딩)는 우리 WindowProc을 거치지
-                // 않으므로 위 platform->GetNextInputEvent() 경로로는 이 이벤트가 절대 안
-                // 온다 - viewport.py의 resizeEvent()가 PushInputEvent()로 여기(비동기 큐)에
-                // 직접 넣어줘야만 갱신된다.
-                HandleWindowResize(queuedEvent.windowWidth, queuedEvent.windowHeight);
-                continue;
-            }
-            inputState.Apply(queuedEvent);
         }
+
+        // 3-2. 액션 상태를 프레임당 한 번 계산한다(스냅샷). 아래 World의 C++ 시스템과 Python 스크립트가 모두
+        // 같은 값을 읽는다 - 읽는 쪽이 각자 계산하거나 읽기가 엣지를 소비하면, 먼저 읽은 쪽만 WasPressed를 보고
+        // 나중에 읽은 쪽은 놓친다. 반드시 이벤트 적용 뒤, World 업데이트 전이어야 한다.
+        inputActions.Update(inputState);
 
         // 4. ECS 업데이트 (입력 처리 → ECS 업데이트 → 렌더링 순서)
         if (worldManager)
         {
+            // Python 스크립트의 quarterflying.input은 이 범위 안에서만 이 엔진의 액션 맵을 읽는다(InputActions::Current).
+            InputActions::ScopedCurrent currentInput(&inputActions);
             worldManager->Update(deltaTime);
+        }
+        // 스크립트가 이번 프레임에 커서 잠금을 바꿨으면(quarterflying.input.set_cursor_locked) 플랫폼에 전한다.
+        // 스크립트는 플랫폼에 직접 닿지 않는다 - 요청은 InputActions에 쌓이고, 적용 판단(포커스·임베드)은 플랫폼이 한다.
+        if (auto lockRequest = inputActions.TakeCursorLockRequest(); lockRequest && platform)
+        {
+            platform->SetCursorLockRequested(*lockRequest);
         }
 
         // 5. 서브시스템 Tick (Renderer::Tick에서 BeginFrame 호출)
@@ -569,9 +608,13 @@ namespace Engine
                 };
             }
 
-            world->RegisterSystem(std::make_unique<RenderSystem>(
+            auto renderSystem = std::make_unique<RenderSystem>(
                 renderer ? renderer->GetInstancedBatchManager() : nullptr,
-                config.assetRoot, RenderSystem::MeshLoader{}, std::move(textureLoader)));
+                config.assetRoot, RenderSystem::MeshLoader{}, std::move(textureLoader),
+                renderer ? renderer->GetSceneLightingTarget() : nullptr);
+            // 머티리얼 파일(R-4). 파서는 asset/MaterialAsset 하나 - 에디터·Player가 같은 코드를 지난다.
+            renderSystem->SetMaterialLoader([](const std::string& fullPath) { return LoadMaterialFile(fullPath); });
+            world->RegisterSystem(std::move(renderSystem));
 
             // ECS 활성 카메라 -> 게임 카메라(위치/시선/렌즈). RenderSystem에서 분리했다(CameraSystem.h).
             world->RegisterSystem(std::make_unique<CameraSystem>(defaultCamera.get()));

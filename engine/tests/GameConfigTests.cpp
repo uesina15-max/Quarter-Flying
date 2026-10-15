@@ -81,3 +81,34 @@ TEST(GameConfigTest, LoadFromFile_MissingAndBrokenFiles_HaveDistinctErrors)
     ASSERT_FALSE(parsed.has_value());
     EXPECT_EQ(parsed.error().code, EngineErrorCode::ResourceLoadFailed);
 }
+
+// docs/USABILITY_IMPROVEMENT_PLAN.md G0b — 입력 액션 맵 경로. 옛 game.json(키 없음)은 빈 값 = 불러오지 않음.
+TEST(GameConfigTest, InputActions_OptionalPath)
+{
+    auto withKey = ParseGameConfig(nlohmann::json::parse(
+        R"({ "startScene": "s.scene.json", "inputActions": "assets/input/actions.json" })"));
+    ASSERT_TRUE(withKey.has_value()) << withKey.error().message;
+    EXPECT_EQ(withKey->inputActions, "assets/input/actions.json");
+
+    auto without = ParseGameConfig(nlohmann::json::parse(R"({ "startScene": "s.scene.json" })"));
+    ASSERT_TRUE(without.has_value());
+    EXPECT_TRUE(without->inputActions.empty());
+
+    auto wrongType = ParseGameConfig(nlohmann::json::parse(R"({ "startScene": "s.scene.json", "inputActions": 3 })"));
+    ASSERT_FALSE(wrongType.has_value());
+    EXPECT_NE(wrongType.error().message.find("inputActions"), std::string::npos);
+}
+
+// docs/USABILITY_IMPROVEMENT_PLAN.md G3 — 커서 잠금 옵션(기본 꺼짐)
+TEST(GameConfigTest, CursorLock_DefaultsOff_AndParses)
+{
+    auto off = ParseGameConfig(nlohmann::json::parse(R"({ "startScene": "s.scene.json" })"));
+    ASSERT_TRUE(off.has_value());
+    EXPECT_FALSE(off->cursorLock);
+    auto on = ParseGameConfig(nlohmann::json::parse(R"({ "startScene": "s.scene.json", "window": { "cursorLock": true } })"));
+    ASSERT_TRUE(on.has_value()) << on.error().message;
+    EXPECT_TRUE(on->cursorLock);
+    auto bad = ParseGameConfig(nlohmann::json::parse(R"({ "startScene": "s.scene.json", "window": { "cursorLock": 1 } })"));
+    ASSERT_FALSE(bad.has_value());
+    EXPECT_NE(bad.error().message.find("window.cursorLock"), std::string::npos);
+}

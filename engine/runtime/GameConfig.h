@@ -20,12 +20,14 @@ namespace Engine
     // {
     //   "version": 1,
     //   "title": "My Game",
-    //   "window": { "width": 1280, "height": 720, "fullscreen": false },
+    //   "window": { "width": 1280, "height": 720, "fullscreen": false, "cursorLock": false },
     //   "startScene": "scenes/Main.scene.json",
     //   "assetRoot": "./",
+    //   "inputActions": "assets/input/actions.json",
     //   "engine": { "numWorkerThreads": 0, "logFrameInterval": 0 }
     // }
-    // 경로(startScene, assetRoot)는 game.json이 있는 폴더 기준이다.
+    // 경로(startScene, assetRoot, inputActions)는 game.json이 있는 폴더 기준이다.
+    // inputActions가 없으면 액션 맵 없이 시작한다(스크립트의 quarterflying.input은 0/false를 읽는다 + 경고).
 
     inline constexpr int kGameConfigVersion = 1;
 
@@ -36,8 +38,10 @@ namespace Engine
         uint32_t windowWidth = 1280;
         uint32_t windowHeight = 720;
         bool fullscreen = false;
+        bool cursorLock = false;           // 시작할 때 커서 잠금을 요청할지(USABILITY_IMPROVEMENT_PLAN G3)
         std::string startScene;
         std::string assetRoot = "./";
+        std::string inputActions;          // 비면 액션 맵을 불러오지 않는다
         uint32_t numWorkerThreads = 0;
         uint32_t logFrameInterval = 0;
     };

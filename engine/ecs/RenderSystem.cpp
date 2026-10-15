@@ -21,10 +21,111 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
         return key;
     }
 
+    SceneLightingSelection SelectSceneLighting(ECSRegistry& registry)
+    {
+        SceneLightingSelection result;
+        auto* lights = registry.GetComponentArray<DirectionalLightComponent>();
+        if (!lights)
+        {
+            return result;
+        }
+        const DirectionalLightComponent* best = nullptr;
+        uint64_t bestUuid = 0;
+        for (size_t i = 0; i < lights->Size(); ++i)
+        {
+            const DirectionalLightComponent& light = lights->GetDenseArray()[i];
+            if (!light.enabled)
+            {
+                continue;
+            }
+            ++result.candidateCount;
+            const Entity entity(lights->GetEntityIDs()[i]);
+            const uint64_t uuid = registry.GetUUID(entity).GetValue();
+            if (!best || light.priority > best->priority || (light.priority == best->priority && uuid < bestUuid))
+            {
+                best = &light;
+                bestUuid = uuid;
+                result.entity = entity;
+            }
+        }
+        if (!best)
+        {
+            return result;
+        }
+        const glm::vec3 dir(best->direction.x, best->direction.y, best->direction.z);
+        if (glm::dot(dir, dir) < 1e-12f)
+        {
+            result.invalidDirection = true;   // 방향은 기본값으로, 색·세기·주변광은 라이트 값으로
+        }
+        else
+        {
+            result.lighting.toLight = glm::normalize(-dir);
+        }
+        result.lighting.color = glm::vec3(best->color.x, best->color.y, best->color.z) * best->intensity;
+        result.lighting.ambient = best->ambient;
+        return result;
+    }
+
+    InstanceMaterial MakeInstanceMaterial(const RenderableComponent& renderable, const MaterialData* material)
+    {
+        const glm::vec3 tint(renderable.baseColor.x, renderable.baseColor.y, renderable.baseColor.z);
+        if (!material)
+        {
+            const MaterialData defaults;
+            return { defaults.baseColor * tint, defaults.roughness, defaults.metallic };
+        }
+        return { material->baseColor * tint, material->roughness, material->metallic };
+    }
+
+    const std::string& EffectiveTexturePath(const RenderableComponent& renderable, const MaterialData* material)
+    {
+        if (!renderable.texturePath.empty() || !material)
+        {
+            return renderable.texturePath;
+        }
+        return material->texture;
+    }
+
+    void RenderSystem::UpdateLighting(ECSRegistry& registry)
+    {
+        if (!lightingTarget_)
+        {
+            return;
+        }
+        const SceneLightingSelection selection = SelectSceneLighting(registry);
+        *lightingTarget_ = selection.lighting;
+
+        const uint64_t uuid = selection.entity.IsValid() ? registry.GetUUID(selection.entity).GetValue() : 0;
+        if (uuid == lastLightUuid_ && selection.candidateCount == lastLightCandidates_)
+        {
+            return;
+        }
+        lastLightUuid_ = uuid;
+        lastLightCandidates_ = selection.candidateCount;
+        if (!selection.entity.IsValid())
+        {
+            Logger::Info("RenderSystem: no enabled DirectionalLightComponent; using the default light");
+            return;
+        }
+        Logger::Info("RenderSystem: using DirectionalLight '{}' (uuid {})", registry.GetEntityName(selection.entity), uuid);
+        if (selection.candidateCount > 1)
+        {
+            Logger::Warning("RenderSystem: {} directional lights are enabled; only one is supported. Using '{}' "
+                            "(highest priority, then smallest UUID) and ignoring the others",
+                            selection.candidateCount, registry.GetEntityName(selection.entity));
+        }
+        if (selection.invalidDirection)
+        {
+            Logger::Warning("RenderSystem: DirectionalLight '{}' has a zero direction; using the default direction",
+                            registry.GetEntityName(selection.entity));
+        }
+    }
+
     RenderSystem::RenderSystem(InstancedBatchManager* batchManager,
                                std::string assetRoot, MeshLoader meshLoader,
-                               TextureLoader textureLoader)
+                               TextureLoader textureLoader, SceneLighting* lightingTarget)
         : batchManager_(batchManager)
+        , lightingTarget_(lightingTarget)
         , assetRoot_(std::move(assetRoot))
         , meshLoader_(meshLoader ? std::move(meshLoader) : MeshLoader(&Mesh::loadFromFile))
         , textureLoader_(std::move(textureLoader))
@@ -33,20 +134,25 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
 
     uint32_t RenderSystem::ResolveTexture(const RenderableComponent& renderable)
     {
-        if (renderable.texturePath.empty())
+        return ResolveTexture(renderable.texturePath);
+    }
+
+    uint32_t RenderSystem::ResolveTexture(const std::string& texturePath)
+    {
+        if (texturePath.empty())
         {
             return 0;
         }
 
-        auto it = textures_.find(renderable.texturePath);
+        auto it = textures_.find(texturePath);
         if (it != textures_.end())
         {
             return it->second.glId;
         }
 
         const std::string fullPath = assetRoot_.empty()
-            ? renderable.texturePath
-            : GenericUtf8FromPath(PathFromUtf8(assetRoot_) / PathFromUtf8(renderable.texturePath));  // core/Utf8Path.h
+            ? texturePath
+            : GenericUtf8FromPath(PathFromUtf8(assetRoot_) / PathFromUtf8(texturePath));  // core/Utf8Path.h
 
         LoadedTexture loaded;
         if (textureLoader_)
@@ -58,18 +164,22 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
             // 경로당 한 번만 경고한다. 원래 색으로 그려지므로 "텍스처가 왜 안 보이지"의 답은 이 로그뿐이다.
             Logger::Log(LogLevel::Warning,
                 "RenderSystem - failed to load texture '{}' (resolved to '{}', assetRoot='{}'{}); drawing without texture",
-                renderable.texturePath, fullPath, assetRoot_,
+                texturePath, fullPath, assetRoot_,
                 textureLoader_ ? "" : ", no texture loader configured");
             loaded = LoadedTexture{};
         }
-        return textures_.emplace(renderable.texturePath, std::move(loaded)).first->second.glId;
+        return textures_.emplace(texturePath, std::move(loaded)).first->second.glId;
     }
 
     uint32_t RenderSystem::ResolveMeshHandle(const RenderableComponent& renderable)
     {
         if (renderable.meshPath.empty())
         {
-            return renderable.meshHandle;
+            return 0;   // 절차적 유닛 큐브
+        }
+        if (auto reg = registeredMeshes_.find(renderable.meshPath); reg != registeredMeshes_.end())
+        {
+            return reg->second;   // 코드가 등록한 메시(RegisterMesh)
         }
 
         auto it = pathHandles_.find(renderable.meshPath);
@@ -100,19 +210,61 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
         return handle;
     }
 
-    void RenderSystem::RegisterMesh(uint32_t meshHandle, std::shared_ptr<Mesh> mesh)
+    void RenderSystem::RegisterMesh(const std::string& name, std::shared_ptr<Mesh> mesh)
     {
-        if (meshHandle >= kPathHandleBase)
+        if (name.empty() || !mesh)
         {
-            Logger::Log(LogLevel::Error,
-                "RenderSystem::RegisterMesh - handle {} is in the reserved path-mesh range (>= {}); ignored",
-                meshHandle, kPathHandleBase);
+            Logger::Log(LogLevel::Error, "RenderSystem::RegisterMesh - empty name or null mesh; ignored");
             return;
         }
-        if (mesh)
+        uint32_t handle;
+        if (auto it = registeredMeshes_.find(name); it != registeredMeshes_.end())
         {
-            meshRegistry_[meshHandle] = std::move(mesh);
+            handle = it->second;
         }
+        else
+        {
+            if (nextRegisteredHandle_ >= kPathHandleBase)
+            {
+                Logger::Log(LogLevel::Error, "RenderSystem::RegisterMesh - too many registered meshes; '{}' ignored", name);
+                return;
+            }
+            handle = nextRegisteredHandle_++;
+            registeredMeshes_[name] = handle;
+        }
+        meshRegistry_[handle] = std::move(mesh);
+    }
+
+    const MaterialData* RenderSystem::ResolveMaterial(const std::string& materialPath)
+    {
+        if (materialPath.empty())
+        {
+            return nullptr;
+        }
+        if (auto it = materials_.find(materialPath); it != materials_.end())
+        {
+            return it->second ? &*it->second : nullptr;
+        }
+        const std::string fullPath = assetRoot_.empty()
+            ? materialPath
+            : GenericUtf8FromPath(PathFromUtf8(assetRoot_) / PathFromUtf8(materialPath));
+        std::optional<MaterialData> loaded;
+        if (!materialLoader_)
+        {
+            Logger::Log(LogLevel::Warning, "RenderSystem - material '{}' ignored: no material loader configured", materialPath);
+        }
+        else if (auto result = materialLoader_(fullPath); result)
+        {
+            loaded = *result;
+        }
+        else
+        {
+            // 경로당 한 번. 기본 머티리얼로 그려지므로 "머티리얼이 안 먹는다"의 답은 이 로그다.
+            Logger::Log(LogLevel::Warning, "RenderSystem - material '{}' failed to load (resolved to '{}'): {}; using the default material",
+                        materialPath, fullPath, result.error().message);
+        }
+        auto& slot = materials_.emplace(materialPath, std::move(loaded)).first->second;
+        return slot ? &*slot : nullptr;
     }
 
     std::shared_ptr<Mesh> RenderSystem::CreateUnitCubeMesh()
@@ -186,6 +338,7 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
         }
         pathHandles_.clear();
         textures_.clear();
+        materials_.clear();   // 등록 메시(registeredMeshes_)는 경로 기준이 아니므로 남긴다
         nextPathHandle_ = kPathHandleBase;
         Logger::Info("RenderSystem - asset root changed to '{}'", assetRoot_);
     }
@@ -193,6 +346,7 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
     void RenderSystem::Update(ECSRegistry& registry, float /*deltaTime*/)
     {
         ApplyPendingAssetRoot();
+        UpdateLighting(registry);
         if (batchManager_)
         {
             auto* renderables = registry.GetComponentArray<RenderableComponent>();
@@ -214,7 +368,8 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
 
                     // meshPath가 있으면 경로 메시(첫 사용 시 로드), 없으면 meshHandle - ResolveMeshHandle 참고
                     const uint32_t meshHandle = ResolveMeshHandle(rc);
-                    const uint32_t texture = ResolveTexture(rc);
+                    const MaterialData* material = ResolveMaterial(rc.materialPath);
+                    const uint32_t texture = ResolveTexture(EffectiveTexturePath(rc, material));
                     const uint64_t batchId = BatchId(meshHandle, texture);
                     InstancedBatchKey key = MakeMeshBatchKey(meshHandle, texture);
 
@@ -243,11 +398,12 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
                     InstanceData data{};
                     // 부모가 있으면 조상 Transform까지 곱한 월드 행렬(Hierarchy.h). 루트면 로컬과 같다.
                     data.model = ComputeWorldMatrix(registry, Entity(id));
-                    // 머티리얼 시스템 이전 임시 고정값. 텍스처가 있으면 셰이더가 텍스처 색에 이 값을 곱하므로
-                    // 흰색으로 둬야 텍스처 원래 색이 나온다.
-                    data.color = texture != 0 ? glm::vec3(1.0f) : glm::vec3(0.75f, 0.75f, 0.78f);
-                    data.roughness = 0.6f;
-                    data.metallic = 0.0f;
+                    // 인스턴스별 색(R-2). 예전에는 모든 엔티티가 고정값(텍스처 있으면 흰색, 없으면 회색 0.75/0.75/0.78,
+                    // roughness 0.6, metallic 0)이었다. 옛 파일은 불러올 때 같은 값으로 채워진다(Reflection.cpp 훅).
+                    const InstanceMaterial surface = MakeInstanceMaterial(rc, material);
+                    data.color = surface.color;
+                    data.roughness = surface.roughness;
+                    data.metallic = surface.metallic;
                     data.entityId = id;
                     data.isSelected = 0;
                     auto addResult = batchManager_->AddInstance(key, data, id);

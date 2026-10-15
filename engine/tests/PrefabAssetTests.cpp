@@ -53,8 +53,8 @@ TEST(PrefabAssetTest, CaptureFromEntity_TransformAndRenderable_RoundTripsThrough
     registry.AddComponent(e, t);
 
     RenderableComponent r;
-    r.meshHandle = 7;
-    r.materialHandle = 3;
+    r.meshPath = "assets/models/seven.obj";
+    r.materialPath = "assets/materials/three.material.json";
     r.castShadows = false;
     registry.AddComponent(e, r);
 
@@ -77,8 +77,8 @@ TEST(PrefabAssetTest, CaptureFromEntity_TransformAndRenderable_RoundTripsThrough
 
     RenderableComponent* sr = freshRegistry.GetComponent<RenderableComponent>(*spawned);
     ASSERT_NE(sr, nullptr);
-    EXPECT_EQ(sr->meshHandle, 7u);
-    EXPECT_EQ(sr->materialHandle, 3u);
+    EXPECT_EQ(sr->meshPath, "assets/models/seven.obj");
+    EXPECT_EQ(sr->materialPath, "assets/materials/three.material.json");
     EXPECT_FALSE(sr->castShadows);
 }
 
@@ -235,7 +235,7 @@ TEST(PrefabAssetTest, ApplyToEntity_MalformedKnownComponentData_ReturnsError)
 
     PrefabAsset asset;
     asset.componentsData["RenderableComponent"] = {
-        {"_version", 1}, {"meshHandle", "not-a-number"}, {"materialHandle", 0}, {"castShadows", true}
+        {"_version", 2}, {"castShadows", "not-a-bool"}
     };
 
     auto result = asset.ApplyToEntity(registry, e);
@@ -297,7 +297,7 @@ TEST(PrefabAssetTest, SpawnInto_FailureMidway_LeavesNoOrphanEntity)
 
     PrefabAsset badAsset;
     badAsset.componentsData["RenderableComponent"] = {
-        {"_version", 1}, {"meshHandle", "not-a-number"}, {"materialHandle", 0}, {"castShadows", true}
+        {"_version", 2}, {"castShadows", "not-a-bool"}
     };
 
     auto result = badAsset.SpawnInto(registry);
@@ -311,7 +311,7 @@ TEST(PrefabAssetTest, ApplyToEntity_FailureMidway_LeavesEntityUnchanged)
     Entity e = registry.CreateEntity();
     registry.AddComponent(e, TransformComponent{});
     RenderableComponent r;
-    r.meshHandle = 11;
+    r.meshPath = "assets/models/eleven.obj";
     registry.AddComponent(e, r);
     AIComponent ai;
     ai.sight_range = 42.0f;
@@ -321,7 +321,7 @@ TEST(PrefabAssetTest, ApplyToEntity_FailureMidway_LeavesEntityUnchanged)
     // No "AIComponent" key -> Definition A step 1 removes AIComponent from `e`
     // before the malformed RenderableComponent data below is even reached.
     badAsset.componentsData["RenderableComponent"] = {
-        {"_version", 1}, {"meshHandle", "not-a-number"}, {"materialHandle", 0}, {"castShadows", true}
+        {"_version", 2}, {"castShadows", "not-a-bool"}
     };
 
     auto result = badAsset.ApplyToEntity(registry, e);
@@ -336,7 +336,7 @@ TEST(PrefabAssetTest, ApplyToEntity_FailureMidway_LeavesEntityUnchanged)
 
     RenderableComponent* rAfter = registry.GetComponent<RenderableComponent>(e);
     ASSERT_NE(rAfter, nullptr);
-    EXPECT_EQ(rAfter->meshHandle, 11u);
+    EXPECT_EQ(rAfter->meshPath, "assets/models/eleven.obj");
 }
 
 TEST(PrefabAssetTest, SpawnInto_EmptyComponents_CreatesBareEntity)
@@ -386,7 +386,7 @@ TEST(PrefabAssetTest, SerializeRegistry_UnaffectedForEntitiesWithoutPrefabInstan
     t.position = Vec3(1.0f, 2.0f, 3.0f);
     registry.AddComponent(e, t);
     RenderableComponent r;
-    r.meshHandle = 5;
+    r.meshPath = "assets/models/five.obj";
     registry.AddComponent(e, r);
 
     nlohmann::json snapshot = SerializeRegistry(registry);
@@ -398,5 +398,5 @@ TEST(PrefabAssetTest, SerializeRegistry_UnaffectedForEntitiesWithoutPrefabInstan
     EXPECT_TRUE(comps.contains("RenderableComponent"));
     EXPECT_FALSE(comps.contains("PrefabInstanceComponent"));
     EXPECT_FLOAT_EQ(comps["TransformComponent"]["position"][0].get<float>(), 1.0f);
-    EXPECT_EQ(comps["RenderableComponent"]["meshHandle"].get<int>(), 5);
+    EXPECT_EQ(comps["RenderableComponent"]["meshPath"].get<std::string>(), "assets/models/five.obj");
 }

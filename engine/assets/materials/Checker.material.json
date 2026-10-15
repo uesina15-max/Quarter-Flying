@@ -1,0 +1,8 @@
+{
+  "format": "quarterflying.material",
+  "version": 1,
+  "baseColor": [1.0, 1.0, 1.0],
+  "texture": "assets/textures/checker.png",
+  "roughness": 0.4,
+  "metallic": 0.0
+}

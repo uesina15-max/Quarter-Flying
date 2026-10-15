@@ -1,0 +1,40 @@
+{
+    "version": 1,
+    "name": "Character",
+    "components": {
+        "TransformComponent": {
+            "_version": 1,
+            "position": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "scale": [
+                0.6,
+                1.2,
+                0.6
+            ]
+        },
+        "RenderableComponent": {
+            "_version": 2,
+            "castShadows": true,
+            "meshPath": "",
+            "texturePath": "assets/textures/checker.png",
+            "baseColor": [
+                1.0,
+                1.0,
+                1.0
+            ]
+        },
+        "ScriptComponent": {
+            "_version": 1,
+            "module_name": "character_controller",
+            "class_name": "CharacterController"
+        }
+    }
+}

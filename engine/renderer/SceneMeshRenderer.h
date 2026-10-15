@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Shader.h"
+#include "SceneLighting.h"
 
 namespace Engine
 {
@@ -37,7 +38,7 @@ namespace Engine
 
         // RenderSystem이 이번 프레임에 채워둔 배치를 그린다. batchManager는 UpdateDynamicBatches()
         // (dirty 배치 GPU 업로드)까지 이 함수 안에서 처리한다 - 호출자가 순서를 신경 쓸 필요 없음.
-        void Render(InstancedBatchManager& batchManager, const Camera& camera);
+        void Render(InstancedBatchManager& batchManager, const Camera& camera, const SceneLighting& lighting);
 
     private:
         Shader shader;

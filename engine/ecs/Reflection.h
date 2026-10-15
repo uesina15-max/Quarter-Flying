@@ -74,6 +74,26 @@ namespace Engine {
     // 동적 컴포넌트 존재 여부 확인 함수
     using ComponentChecker = std::function<bool(ECSRegistry&, Entity)>;
 
+    // ========================================
+    // 파일 로드 업그레이드 훅 (docs/USABILITY_IMPROVEMENT_PLAN.md X-1a)
+    // ========================================
+    //
+    // 옛 형식의 파일을 읽을 때 컴포넌트 데이터를 지금 형식으로 고치는 컴포넌트별 함수. 예: prefabPath 절대 경로 ->
+    // 프로젝트 상대 경로, 옛 RenderableComponent의 기본색 보정(R-2).
+    //
+    // **파일 로더에서만** 부른다: SceneIO(씬 파일)와 PrefabAsset(프리팹 파일). PIE 스냅샷(Play/Stop), Undo 스냅샷,
+    // AddComponent(빈 JSON {}), SetComponentJson(일부 필드만)에는 부르지 않는다 - 거기서 "키가 없다"는 레거시 파일이
+    // 아니라 "기본값"이나 "그대로 둠"을 뜻하므로, 마이그레이션을 섞으면 Inspector 편집이 데이터 변환을 일으킨다.
+    // 그래서 일반 역직렬화(ComponentInfo::deserialize)와 별개의 함수로 둔다.
+    struct FileLoadContext
+    {
+        const char* fileKind = "";           // "scene" | "prefab" (로그용)
+        int fileVersion = 0;                 // 파일의 "version" 값
+        std::string projectRoot;             // UTF-8. 비어 있으면 경로 정규화를 하지 않는다
+        std::vector<std::string>* warnings = nullptr;   // 있으면 사용자에게 보여 줄 경고를 추가한다
+    };
+    using ComponentFileUpgrader = std::function<void(nlohmann::json& data, const FileLoadContext& ctx)>;
+
     struct ComponentInfo {
         std::string name;
         StringHash typeHash;
@@ -84,6 +104,7 @@ namespace Engine {
         ComponentFieldPatcher patchField;
         ComponentRemover remove;    // dynamic remove by type name
         ComponentChecker hasComponent; // dynamic has-component check
+        ComponentFileUpgrader upgradeFromFile;   // 선택. 파일 로더에서만 부른다(위 FileLoadContext 주석)
     };
 
     // ========================================
@@ -112,6 +133,9 @@ namespace Engine {
         static const ComponentInfo* GetComponentInfo(const std::string& name);
         static const std::unordered_map<std::string, ComponentInfo>& GetAllComponents();
 
+        // 등록된 컴포넌트에 파일 로드 업그레이드 훅을 단다(이름·해시 두 맵 모두). 없는 이름이면 false.
+        static bool SetFileUpgrader(const std::string& name, ComponentFileUpgrader upgrader);
+
     private:
         static std::unordered_map<std::string, ComponentInfo>& GetComponentsMap();
         static std::unordered_map<StringHash, ComponentInfo>& GetComponentsByHashMap();
@@ -120,6 +144,10 @@ namespace Engine {
     // 씬 전체 상태 직렬화/역직렬화
     nlohmann::json SerializeRegistry(ECSRegistry& registry);
     void DeserializeRegistry(ECSRegistry& registry, const nlohmann::json& data);
+
+    // 파일 로더(SceneIO, PrefabAsset)가 컴포넌트 묶음({"이름": {필드...}, ...}) 하나에 대해 부른다.
+    // 각 컴포넌트의 upgradeFromFile을 제자리에서 적용한다. 등록되지 않았거나 훅이 없는 컴포넌트는 그대로 둔다.
+    void UpgradeComponentsFromFile(nlohmann::json& components, const FileLoadContext& ctx);
 
     // 디버깅 용도 (Inspector ↔ PIE 문제 파악용)
     void SaveSnapshotToFile(const nlohmann::json& snapshot, const std::string& filepath);

@@ -64,6 +64,12 @@ void RegisterEditorBindings(pybind11::module_& m)
         }, py::arg("child"), py::arg("parent") = std::nullopt)
 
         // ---- Prefabs ----
+        // 프로젝트 폴더: 프리팹 경로를 이 기준의 상대 경로로 기록·해석한다(core/ProjectPath.h). 에디터가 프로젝트를
+        // 열 때 설정한다(project_actions._set_editor_project_root).
+        .def("set_project_root", [](Editor::EditorAPI& self, const std::string& projectRoot) {
+            self.SetProjectRoot(projectRoot);
+        }, py::arg("project_root"))
+        .def("get_project_root", &Editor::EditorAPI::GetProjectRoot)
         .def("instantiate_prefab", [](Editor::EditorAPI& self, const std::filesystem::path& prefabPath,
                                        std::optional<Vec3> position) {
             return UnwrapOrThrow(self.InstantiatePrefab(prefabPath, position));
@@ -103,7 +109,8 @@ void RegisterEditorBindings(pybind11::module_& m)
         .def("clear", &CommandManager::Clear)
         .def("begin_merge_session", &CommandManager::BeginMergeSession)
         .def("end_merge_session", &CommandManager::EndMergeSession)
-        .def("is_in_merge_session", &CommandManager::IsInMergeSession);
+        .def("is_in_merge_session", &CommandManager::IsInMergeSession)
+        .def("get_change_count", &CommandManager::GetChangeCount);
 }
 
 } // namespace Engine::Bindings

@@ -105,6 +105,7 @@ namespace Engine
         {
             return;
         }
+        ReleaseCursorLock();   // 커서를 가둔 채 끝나면 다른 프로그램에서도 커서가 갇혀 보인다
 
         // Destroy all windows
         for (auto& pair : windows)
@@ -203,6 +204,7 @@ namespace Engine
         // Show window
         ShowWindow(hwnd, SW_SHOW);
         UpdateWindow(hwnd);
+        cursorLockWindow = hwnd;
 
         // Store window data
         uint32_t windowID = nextWindowID++;
@@ -538,10 +540,24 @@ namespace Engine
             event.windowWidth = LOWORD(lParam);
             event.windowHeight = HIWORD(lParam);
             self->PushInputEvent(event);
+            if (self->cursorLockApplied) self->ApplyCursorLock(hwnd);   // 가두는 영역을 새 크기로
             return 0;
+
+        case WM_MOVE:
+            if (self->cursorLockApplied) self->ApplyCursorLock(hwnd);
+            return std::nullopt;
 
         case WM_DESTROY:
             PostQuitMessage(0);
+            return 0;
+
+        case WM_KILLFOCUS:
+            // Player 창이 포커스를 잃으면(Alt+Tab 등) 눌려 있던 키의 WM_KEYUP이 이 창으로 오지 않는다.
+            // 예전에는 이 메시지를 처리하지 않아서, 키를 누른 채 다른 창으로 가면 엔진에는 그 키가 계속
+            // 눌린 것으로 남았다. 에디터 임베드 모드는 이 WindowProc을 쓰지 않으므로 viewport.py가
+            // 같은 이벤트를 넣는다. 처리는 Engine::HandleFocusLost 한 곳.
+            event.type = InputEventType::FocusLost;
+            self->PushInputEvent(event);
             return 0;
         }
         return std::nullopt;
@@ -571,6 +587,13 @@ namespace Engine
 
     std::optional<LRESULT> Win32Platform::HandleMouseMessage(Win32Platform* self, HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
+        // 포커스를 잃어 풀린 커서 잠금은 창 안을 다시 클릭할 때, 요청이 아직 켜져 있을 때만 다시 건다(IPlatform 주석).
+        if ((msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN)
+            && self->cursorLockRequested && !self->cursorLockApplied)
+        {
+            self->ApplyCursorLock(hwnd);
+        }
+
         InputEvent event;
         switch (msg)
         {
@@ -642,6 +665,62 @@ namespace Engine
             return 0;
         }
         return std::nullopt;
+    }
+
+    void Win32Platform::SetCursorLockRequested(bool requested)
+    {
+        cursorLockRequested = requested;
+        if (requested)
+        {
+            ApplyCursorLock(cursorLockWindow);
+        }
+        else
+        {
+            ReleaseCursorLock();
+        }
+    }
+
+    void Win32Platform::SuspendCursorLock()
+    {
+        ReleaseCursorLock();   // 요청(cursorLockRequested)은 그대로 둔다
+    }
+
+    void Win32Platform::ApplyCursorLock(HWND hwnd)
+    {
+        if (hostOwnsMessageLoop || !hwnd)
+        {
+            return;   // 에디터 임베드 모드: Qt가 창과 커서를 소유한다
+        }
+        if (GetForegroundWindow() != hwnd)
+        {
+            return;   // 포커스가 없을 때 가두면 다른 창으로 커서를 옮길 수 없다. 클릭으로 돌아오면 건다
+        }
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        POINT topLeft{ rc.left, rc.top };
+        POINT bottomRight{ rc.right, rc.bottom };
+        ClientToScreen(hwnd, &topLeft);
+        ClientToScreen(hwnd, &bottomRight);
+        RECT clip{ topLeft.x, topLeft.y, bottomRight.x, bottomRight.y };
+        ClipCursor(&clip);
+        if (!cursorLockApplied)
+        {
+            while (ShowCursor(FALSE) >= 0) {}   // ShowCursor는 카운터라 음수가 될 때까지 내린다
+            cursorLockApplied = true;
+            Logger::Info("Win32Platform: cursor locked to the game window");
+        }
+    }
+
+    void Win32Platform::ReleaseCursorLock()
+    {
+        if (!cursorLockApplied)
+        {
+            return;
+        }
+        ClipCursor(nullptr);
+        while (ShowCursor(TRUE) < 0) {}
+        cursorLockApplied = false;
+        Logger::Info("Win32Platform: cursor lock released{}", cursorLockRequested ? " (still requested; click the window to lock again)" : "");
     }
 
     KeyCode Win32Platform::TranslateKeyCode(WPARAM wParam, LPARAM lParam)

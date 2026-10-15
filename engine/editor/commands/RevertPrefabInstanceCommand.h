@@ -30,7 +30,8 @@ class ECSRegistry;
 class RevertPrefabInstanceCommand : public ICommand
 {
 public:
-    RevertPrefabInstanceCommand(ECSRegistry* registry, Entity entity);
+    // projectRoot: PrefabInstanceComponent.prefabPath가 상대 경로일 때의 기준 폴더(core/ProjectPath.h).
+    RevertPrefabInstanceCommand(ECSRegistry* registry, Entity entity, std::string projectRoot = "");
 
     std::expected<void, EngineError> Apply() override;
     std::expected<void, EngineError> Undo() override;
@@ -40,6 +41,7 @@ public:
 private:
     ECSRegistry* registry_;
     Entity       entity_;
+    std::string  projectRoot_;   // prefabPath가 상대 경로일 때의 기준(core/ProjectPath.h)
     bool         applied_ = false;
 
     nlohmann::json              preRevertSnapshot_; // captured once, on first Apply — Undo target

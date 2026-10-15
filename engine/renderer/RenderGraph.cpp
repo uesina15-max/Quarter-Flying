@@ -502,8 +502,7 @@ namespace Engine
 
     void RenderGraph::Reset()
     {
-        // 매 프레임 호출되므로 Trace. Info면 설치판 에디터 로그가 시간당 수십 MB씩 커졌다.
-        Logger::Log(LogLevel::Trace, "RenderGraph::Reset - Clearing render graph");
+        Logger::Log(LogLevel::Info, "RenderGraph::Reset - Clearing render graph");
         
         passes.clear();
         resources.clear();
@@ -515,7 +514,7 @@ namespace Engine
         compiled = false;
         nextResourceId = RGTextureHandle(1, 0);  // Start from id=1, generation=0  // Start from 1, 0 is reserved for invalid handle
         
-        Logger::Log(LogLevel::Trace, "RenderGraph::Reset - Render graph cleared");
+        Logger::Log(LogLevel::Info, "RenderGraph::Reset - Render graph cleared");
     }
 
     const RGTexture& RenderGraph::GetResource(RGTextureHandle handle) const

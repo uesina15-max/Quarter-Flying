@@ -29,9 +29,12 @@ class ECSRegistry;
 class InstantiatePrefabCommand : public ICommand
 {
 public:
+    // prefabPath는 절대 경로 또는 projectRoot 기준 상대 경로. 인스턴스에는 projectRoot 기준 상대 경로로 기록한다
+    // (프로젝트 밖이면 절대 경로 그대로 + 경고). projectRoot가 비어 있으면 받은 그대로 기록한다.
     InstantiatePrefabCommand(ECSRegistry* registry,
                               std::filesystem::path prefabPath,
-                              std::optional<Vec3> position = std::nullopt);
+                              std::optional<Vec3> position = std::nullopt,
+                              std::string projectRoot = "");
 
     std::expected<void, EngineError> Apply() override;
     std::expected<void, EngineError> Undo() override;
@@ -45,6 +48,7 @@ private:
     ECSRegistry*           registry_;
     std::filesystem::path  prefabPath_;
     std::optional<Vec3>    position_;
+    std::string            projectRoot_;
 
     Entity                      spawnedEntity_;   // root
     // Phase 5: every spawned entity's UUID, [0] = root, same order as

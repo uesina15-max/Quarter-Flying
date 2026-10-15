@@ -39,6 +39,10 @@ struct EngineConfig
     // 고친 뒤 Play를 다시 누르면 반영되게 하는 기능이라, 게임 실행 파일에서는 끈다.
     bool scriptHotReload;
 
+    // 독립 창(게임 실행 파일)에서 시작할 때 커서 잠금을 요청할지(game.json window.cursorLock, IPlatform 주석).
+    // 스크립트가 quarterflying.input.set_cursor_locked로 나중에 바꿀 수 있다. 에디터 임베드 모드에서는 무시된다.
+    bool cursorLock;
+
     EngineConfig()
         : windowTitle("Quarter Flying")
         , windowWidth(kDefaultWindowWidth)
@@ -49,6 +53,7 @@ struct EngineConfig
         , logFrameInterval(60) // Log every 60 frames
         , showDebugGrid(true)
         , scriptHotReload(true)
+        , cursorLock(false)
     {}
 };
 

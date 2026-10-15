@@ -1,0 +1,4260 @@
+{
+  "entities": [
+    {
+      "components": {
+        "CameraComponent": {
+          "_version": 1,
+          "blendInSeconds": 0.0,
+          "farPlane": 1000.0,
+          "fov": 60.0,
+          "isMainCamera": true,
+          "nearPlane": 0.10000000149011612,
+          "priority": 0
+        },
+        "CameraOrbitControlComponent": {
+          "_version": 1,
+          "distance": 7.0,
+          "maxDistance": 30.0,
+          "minDistance": 2.0,
+          "pitch": 20.0,
+          "requireRightMouse": true,
+          "sensitivity": 0.30000001192092896,
+          "target": 867066518052416131,
+          "targetOffset": [
+            0.0,
+            0.800000011920929,
+            0.0
+          ],
+          "yaw": 0.0,
+          "zoomPerStep": 0.8500000238418579
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            5.0,
+            15.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "Main Camera",
+      "uuid": 9172705923968476774
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "",
+          "texturePath": "assets/textures/checker.png"
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            1.5,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "Test Cube",
+      "uuid": 8019610959187674962
+    },
+    {
+      "components": {
+        "PrefabInstanceComponent": {
+          "_version": 1,
+          "prefabPath": "assets/prefabs/Barrel.prefab.json",
+          "sourcePrefabVersion": 1
+        },
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            3.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "Barrel",
+      "uuid": 3637209596468895907
+    },
+    {
+      "components": {
+        "PrefabInstanceComponent": {
+          "_version": 1,
+          "prefabPath": "assets/prefabs/Lamp.prefab.json",
+          "sourcePrefabVersion": 2
+        },
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -4.0,
+            1.5,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "Lamp",
+      "uuid": 15928233305108829899
+    },
+    {
+      "components": {
+        "HierarchyComponent": {
+          "_version": 1,
+          "parent": 15928233305108829899
+        },
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            1.5,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            0.20000000298023224,
+            2.0,
+            0.20000000298023224
+          ]
+        }
+      },
+      "name": "Pole",
+      "uuid": 2129045340778200282
+    },
+    {
+      "components": {
+        "HierarchyComponent": {
+          "_version": 1,
+          "parent": 15928233305108829899
+        },
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "",
+          "texturePath": "assets/textures/checker.png"
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            3.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            45.000003814697266,
+            0.0
+          ],
+          "scale": [
+            0.800000011920929,
+            0.800000011920929,
+            0.800000011920929
+          ]
+        }
+      },
+      "name": "Head",
+      "uuid": 13350800744970032439
+    },
+    {
+      "components": {
+        "HierarchyComponent": {
+          "_version": 1,
+          "parent": 13350800744970032439
+        },
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.8999999761581421,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
+      },
+      "name": "Bulb",
+      "uuid": 4800489427358992475
+    },
+    {
+      "components": {
+        "ParticleEffectComponent": {
+          "_version": 1,
+          "burst": 0,
+          "directionBase": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "directionSpread": 40.0,
+          "drag": 0.0,
+          "endAlpha": 0.0,
+          "endColor": [
+            0.8999999761581421,
+            0.10000000149011612,
+            0.0
+          ],
+          "endSize": 0.10000000149011612,
+          "gravity": 0.0,
+          "initialSpeed": 1.5,
+          "lifetime": 2.0,
+          "maxParticle": 64,
+          "rotationSpeed": 0.0,
+          "rotationVariance": 0.0,
+          "sizeVariance": 0.20000000298023224,
+          "spawnRate": 20.0,
+          "speedVariance": 0.30000001192092896,
+          "startAlpha": 1.0,
+          "startColor": [
+            1.0,
+            0.6000000238418579,
+            0.15000000596046448
+          ],
+          "startRotation": 0.0,
+          "startSize": 0.4000000059604645
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -3.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "VFX Test",
+      "uuid": 16796052750050250536
+    },
+    {
+      "components": {
+        "ParticleEffectComponent": {
+          "_version": 1,
+          "burst": 0,
+          "directionBase": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "directionSpread": 35.0,
+          "drag": 0.20000000298023224,
+          "endAlpha": 0.0,
+          "endColor": [
+            0.8999999761581421,
+            0.15000000596046448,
+            0.0
+          ],
+          "endSize": 0.05000000074505806,
+          "gravity": 0.4000000059604645,
+          "initialSpeed": 1.7999999523162842,
+          "lifetime": 1.600000023841858,
+          "maxParticle": 96,
+          "rotationSpeed": 0.0,
+          "rotationVariance": 0.0,
+          "sizeVariance": 0.25,
+          "spawnRate": 25.0,
+          "speedVariance": 0.3499999940395355,
+          "startAlpha": 1.0,
+          "startColor": [
+            1.0,
+            0.75,
+            0.25
+          ],
+          "startRotation": 0.0,
+          "startSize": 0.44999998807907104
+        },
+        "PrefabInstanceComponent": {
+          "_version": 1,
+          "prefabPath": "assets/prefabs/Fire.prefab.json",
+          "sourcePrefabVersion": 1
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            6.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "Fire",
+      "uuid": 1687369377470396509
+    },
+    {
+      "components": {
+        "ActionPlayerComponent": {
+          "_version": 1,
+          "action": "actions/SoundTest.action.json",
+          "loop": true,
+          "playOnStart": true
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "Sound Test (sample)",
+      "uuid": 10718157647099792983
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,0]",
+      "uuid": 1950096284856324783
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,1]",
+      "uuid": 482606688149489241
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,2]",
+      "uuid": 5545624738831418558
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,3]",
+      "uuid": 16063841225866709644
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,4]",
+      "uuid": 881716563723634509
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,5]",
+      "uuid": 6911546190422064294
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,6]",
+      "uuid": 14795933153887113179
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,7]",
+      "uuid": 4569851373181470886
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,8]",
+      "uuid": 1249504998418445020
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -12.5,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[0,0,9]",
+      "uuid": 1958173239710978629
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,0]",
+      "uuid": 17479741792504437052
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,1]",
+      "uuid": 12110041923240163082
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,2]",
+      "uuid": 15017291193792328781
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,3]",
+      "uuid": 1802551871875218482
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,4]",
+      "uuid": 16440266881951925187
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,5]",
+      "uuid": 4247804525774056344
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,6]",
+      "uuid": 9033943501037995625
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,7]",
+      "uuid": 1291927682053699760
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,8]",
+      "uuid": 4932328687622883571
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -10.0,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[1,0,9]",
+      "uuid": 9093099694743114853
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,0]",
+      "uuid": 10846284497347816395
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,1]",
+      "uuid": 11755628108811557182
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,2]",
+      "uuid": 6805039263831505766
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,3]",
+      "uuid": 17460278285829548986
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,4]",
+      "uuid": 18144473601338828562
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,5]",
+      "uuid": 1643465860318110766
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,6]",
+      "uuid": 4597217031150089692
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,7]",
+      "uuid": 9690096663005849637
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,8]",
+      "uuid": 8786968329042732908
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -7.5,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[2,0,9]",
+      "uuid": 12892411723419669781
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,0]",
+      "uuid": 16359538014756644036
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,1]",
+      "uuid": 11231101923693765502
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,2]",
+      "uuid": 13470750309900806306
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,3]",
+      "uuid": 14738838274874887507
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,4]",
+      "uuid": 9481954964638399403
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,5]",
+      "uuid": 16591689105203892831
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,6]",
+      "uuid": 9805162189810897987
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,7]",
+      "uuid": 6478247120781180150
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,8]",
+      "uuid": 9524677015622280512
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -5.0,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[3,0,9]",
+      "uuid": 3034416876277186336
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,0]",
+      "uuid": 8620345786903152696
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,1]",
+      "uuid": 8227137089535982708
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,2]",
+      "uuid": 2136748396739837187
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,3]",
+      "uuid": 4148182713799445644
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,4]",
+      "uuid": 12166802170880675665
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,5]",
+      "uuid": 4734037862930469128
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,6]",
+      "uuid": 14045127097781794231
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,7]",
+      "uuid": 13003149146264541812
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,8]",
+      "uuid": 7897609284001967037
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[4,0,9]",
+      "uuid": 8964102128792563537
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,0]",
+      "uuid": 1208305813367058614
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,1]",
+      "uuid": 8449404098846234129
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,2]",
+      "uuid": 7555441009234491343
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,3]",
+      "uuid": 12736122900942233168
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,4]",
+      "uuid": 10204030832736820167
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,5]",
+      "uuid": 3758504407953587279
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,6]",
+      "uuid": 9201102238697393448
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,7]",
+      "uuid": 14862566903278342165
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,8]",
+      "uuid": 8762845140295616326
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[5,0,9]",
+      "uuid": 3533095022499942952
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,0]",
+      "uuid": 12557883413288870856
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,1]",
+      "uuid": 10548278404726488
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,2]",
+      "uuid": 6851656379481161004
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,3]",
+      "uuid": 5927627173842261978
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,4]",
+      "uuid": 14761124957436156060
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,5]",
+      "uuid": 11403030486899077634
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,6]",
+      "uuid": 6181964149766063731
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,7]",
+      "uuid": 2318038361806023189
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,8]",
+      "uuid": 6651542476185728937
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[6,0,9]",
+      "uuid": 14225682055848681673
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,0]",
+      "uuid": 17006308947384503227
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,1]",
+      "uuid": 5641096887756281615
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,2]",
+      "uuid": 10481738844052647551
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,3]",
+      "uuid": 8752132380833518592
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,4]",
+      "uuid": 9116791997826463033
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,5]",
+      "uuid": 994367852277587138
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,6]",
+      "uuid": 5191122940501872108
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,7]",
+      "uuid": 9476735719208815315
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,8]",
+      "uuid": 3884722970032050587
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            5.0,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[7,0,9]",
+      "uuid": 15776095191633167397
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,0]",
+      "uuid": 11504808613347020442
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,1]",
+      "uuid": 633977823340561035
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,2]",
+      "uuid": 15621640717127930254
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,3]",
+      "uuid": 12519876805043629382
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,4]",
+      "uuid": 6391196470206376839
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,5]",
+      "uuid": 283393814851498686
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,6]",
+      "uuid": 9896168472585694701
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,7]",
+      "uuid": 9291789282283421783
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,8]",
+      "uuid": 8740499091304124044
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            7.5,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[8,0,9]",
+      "uuid": 9696433924422149440
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            -12.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,0]",
+      "uuid": 14273592396003964567
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            -10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,1]",
+      "uuid": 52229736860747332
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            -7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,2]",
+      "uuid": 2884438890519129710
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            -5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,3]",
+      "uuid": 11798646349234528125
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            -2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,4]",
+      "uuid": 15569811404493779683
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,5]",
+      "uuid": 866333725630913684
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            2.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,6]",
+      "uuid": 9425662965817635919
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            5.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,7]",
+      "uuid": 3114179888117306818
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,8]",
+      "uuid": 14693055234939662302
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            0.75,
+            0.75,
+            0.7799999713897705
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/cube.obj",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            10.0,
+            0.0,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "cube_grid[9,0,9]",
+      "uuid": 16455220179202232658
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "assets/models/pyramid.obj",
+          "texturePath": "assets/textures/checker.png"
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            3.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "name": "center_pyramid",
+      "uuid": 8353072332754429210
+    },
+    {
+      "components": {
+        "PrefabInstanceComponent": {
+          "_version": 1,
+          "prefabPath": "assets/prefabs/Character.prefab.json",
+          "sourcePrefabVersion": 1
+        },
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "castShadows": true,
+          "materialPath": "",
+          "meshPath": "",
+          "texturePath": "assets/textures/checker.png"
+        },
+        "ScriptComponent": {
+          "_version": 1,
+          "class_name": "CharacterController",
+          "module_name": "character_controller"
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            1.600000023841858,
+            7.5
+          ],
+          "rotation": [
+            0.0,
+            -0.0,
+            0.0
+          ],
+          "scale": [
+            0.6000000238418579,
+            1.2000000476837158,
+            0.6000000238418579
+          ]
+        }
+      },
+      "name": "Character",
+      "uuid": 867066518052416131
+    },
+    {
+      "components": {
+        "DirectionalLightComponent": {
+          "_version": 1,
+          "ambient": 0.25,
+          "color": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "direction": [
+            -0.4000000059604645,
+            -1.0,
+            -0.3499999940395355
+          ],
+          "enabled": true,
+          "intensity": 1.0,
+          "priority": 0
+        }
+      },
+      "name": "Sun",
+      "uuid": 8456281639847199737
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "castShadows": true,
+          "materialPath": "assets/materials/Gold.material.json",
+          "meshPath": "",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            -2.5,
+            1.600000023841858,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            34.999996185302734,
+            0.0
+          ],
+          "scale": [
+            1.2000000476837158,
+            1.2000000476837158,
+            1.2000000476837158
+          ]
+        }
+      },
+      "name": "Material Gold",
+      "uuid": 9749537442421588149
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "castShadows": true,
+          "materialPath": "assets/materials/RedRubber.material.json",
+          "meshPath": "",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            0.0,
+            1.600000023841858,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            34.999996185302734,
+            0.0
+          ],
+          "scale": [
+            1.2000000476837158,
+            1.2000000476837158,
+            1.2000000476837158
+          ]
+        }
+      },
+      "name": "Material RedRubber",
+      "uuid": 14339876282645769610
+    },
+    {
+      "components": {
+        "RenderableComponent": {
+          "_version": 2,
+          "baseColor": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "castShadows": true,
+          "materialPath": "assets/materials/Checker.material.json",
+          "meshPath": "",
+          "texturePath": ""
+        },
+        "TransformComponent": {
+          "_version": 1,
+          "position": [
+            2.5,
+            1.600000023841858,
+            10.0
+          ],
+          "rotation": [
+            0.0,
+            34.999996185302734,
+            0.0
+          ],
+          "scale": [
+            1.2000000476837158,
+            1.2000000476837158,
+            1.2000000476837158
+          ]
+        }
+      },
+      "name": "Material Checker",
+      "uuid": 2182107926490093319
+    }
+  ],
+  "format": "quarterflying.scene",
+  "version": 2
+}

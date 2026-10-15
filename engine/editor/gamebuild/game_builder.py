@@ -43,19 +43,23 @@ if __package__ in (None, ""):
     # `python gamebuild/game_builder.py`로 직접 실행할 때도 editor/의 모듈(project, core)을 찾게 한다.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from project import Project, ProjectError, SCENE_SUFFIX  # noqa: E402
+from project import Project, ProjectError, SCENE_FORMAT, SCENE_SUFFIX, SCENE_VERSION  # noqa: E402
 
 TEMPLATE_FORMAT = "quarterflying.runtime-template"
 TEMPLATE_VERSION = 1
 MANIFEST = "runtime_manifest.json"
-SCENE_FORMAT = "quarterflying.scene"
-SCENE_VERSION = 1
+# 씬 형식·버전은 project.py 한 곳에서 가져온다(엔진 scene/SceneIO.h와 맞추는 곳도 거기 하나). 예전에는 여기에
+# SCENE_VERSION = 1 사본이 따로 있어서, 씬 버전이 2로 오르자 에디터가 저장한 모든 씬을 Build Game이
+# "지원하지 않는 씬 버전"으로 거절할 뻔했다(USABILITY_IMPROVEMENT_PLAN X-1a 영향 범위 확인 중 발견).
 GAME_CONFIG_VERSION = 1
 
 # 컴포넌트 이름 → (경로 필드, 기준). 기준: "project" = 프로젝트 폴더, "assets" = assets 폴더.
 # 새 컴포넌트(예: 인게임 UI의 폰트·이미지 경로)가 생기면 여기에 행만 추가한다.
+# 머티리얼 파일(*.material.json, R-4) 안의 경로 키. 형식 전체는 엔진(engine/asset/MaterialAsset.h)만 알고, 여기서는
+# 빌드에 넣을 파일을 찾는 데 필요한 경로 키만 안다(컴포넌트 표와 같은 방식).
+MATERIAL_PATH_FIELDS: List[Tuple[str, str]] = [("texture", "project")]
 COMPONENT_PATH_FIELDS: Dict[str, List[Tuple[str, str]]] = {
-    "RenderableComponent": [("meshPath", "project"), ("texturePath", "project")],
+    "RenderableComponent": [("meshPath", "project"), ("materialPath", "project"), ("texturePath", "project")],
     "ActionPlayerComponent": [("action", "assets")],
 }
 
@@ -86,6 +90,7 @@ class BuildSettings:
     window_width: int = 1280
     window_height: int = 720
     fullscreen: bool = False
+    cursor_lock: bool = False
     include_dirs: List[str] = field(default_factory=list)
     zip_output: bool = False
     template_dir: Optional[Path] = None   # 비우면 find_runtime_template()
@@ -106,7 +111,7 @@ class BuildSettings:
         return cls(project=project, out_dir=out, name=name,
                    start_scene=b.start_scene or project.start_scene,
                    window_width=b.window_width, window_height=b.window_height,
-                   fullscreen=b.fullscreen, include_dirs=list(b.include_dirs))
+                   fullscreen=b.fullscreen, cursor_lock=b.cursor_lock, include_dirs=list(b.include_dirs))
 
 
 @dataclass
@@ -207,6 +212,48 @@ def verify_template(template_dir: Path, manifest: dict,
                          + ("\n  ..." if len(problems) > 20 else ""))
 
 
+def editor_engine_files() -> Dict[str, Path]:
+    """에디터가 지금 쓰는 엔진 파일들(템플릿 매니페스트의 이름 -> 실제 경로): 엔진 DLL과 Python 바인딩(.pyd).
+    엔진 없이(더미 모드/CLI) 돌면 빈 dict."""
+    try:
+        import quarterflying  # noqa: PLC0415
+    except ImportError:
+        return {}
+    pyd = Path(quarterflying.__file__).resolve()
+    files = {pyd.name: pyd}
+    dll = pyd.parent / "quarterflying_engine.dll"
+    if dll.is_file():
+        files[dll.name] = dll
+    return files
+
+
+def editor_engine_dll() -> Optional[Path]:
+    return editor_engine_files().get("quarterflying_engine.dll")
+
+
+def engine_build_mismatch(manifest: dict, editor_dll, editor_files: Optional[Dict[str, Path]] = None) -> Optional[str]:
+    """템플릿의 엔진 DLL이 에디터의 엔진 DLL과 다른 빌드면 경고 문장, 같거나 비교할 수 없으면 None.
+
+    엔진 버전 문자열(engineVersion)만으로는 부족하다. 개발 중(①)에 엔진을 고치고 player_template을 다시 만들지 않으면
+    버전은 같은데 Player가 옛 엔진을 쓴다. 실제로 그렇게 빌드한 게임이 새 컴포넌트(DirectionalLightComponent)와
+    새 필드(RenderableComponent.baseColor)를 말없이 건너뛰어, 에디터와 다른 화면이 나왔다(에러·경고 없음,
+    docs/USABILITY_IMPROVEMENT_PLAN.md §5.9). 설치본(②)에서는 에디터와 템플릿이 같은 빌드라 이 경고가 나지 않는다.
+    """
+    # 엔진 DLL만 보면 바인딩(.pyd)만 바뀐 경우(예: quarterflying.input 함수 추가)를 놓친다 - 스크립트가 쓰는 API가
+    # 게임에서만 없을 수 있다. 에디터가 쓰는 엔진 파일 전부를 템플릿 매니페스트의 해시와 비교한다.
+    files = dict(editor_files) if editor_files else {}
+    if editor_dll is not None:
+        files.setdefault("quarterflying_engine.dll", editor_dll)
+    template_files = manifest.get("files", {})
+    different = [name for name, path in sorted(files.items())
+                 if name in template_files and _sha256(path) != template_files[name]]
+    if not different:
+        return None
+    return ("Player 템플릿의 엔진 파일(" + ", ".join(different) + ")이 에디터가 쓰는 것과 다른 빌드입니다. 엔진을 고친 뒤 "
+            "템플릿을 다시 만들지 않았다면 빌드한 게임이 에디터와 다르게 동작합니다(새 컴포넌트·필드·스크립트 API를 모름). "
+            "도구 개발자: cmake --build . --config Release --target player_template")
+
+
 # ── 씬 / 의존성 ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -278,6 +325,8 @@ def collect_dependencies(project: Project, scene_path: Path) -> Dependencies:
                 deps.files.add(target.resolve())
                 if comp_name == "ActionPlayerComponent":
                     _collect_action_clips(project, target, where, deps)
+                if comp_name == "RenderableComponent" and field_name == "materialPath":
+                    _collect_material_files(project, target, where, deps)
 
         script = comps.get("ScriptComponent")
         if isinstance(script, dict):
@@ -313,6 +362,29 @@ def _collect_action_clips(project: Project, action_path: Path, where: str, deps:
             # 게임 빌드 오디오는 v1 제외(SOUND_LITE_PLAN §6.1)지만, 파일은 넣어 둔다 — 나중에 오디오
             # 백엔드가 생기면 다시 빌드하지 않아도 되게.
             deps.files.add(clip_path.resolve())
+
+
+def _collect_material_files(project: Project, material_path: Path, where: str, deps: Dependencies) -> None:
+    try:
+        doc = json.loads(material_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        deps.errors.append(f"{where} → 머티리얼 파일을 읽을 수 없습니다: {e}")
+        return
+    if not isinstance(doc, dict):
+        deps.errors.append(f"{where} → 머티리얼 파일 형식이 아닙니다: {material_path}")
+        return
+    for key, base in MATERIAL_PATH_FIELDS:
+        value = doc.get(key)
+        if not isinstance(value, str) or not value.strip() or value.startswith("builtin:"):
+            continue
+        root = project.root if base == "project" else project.assets_dir
+        target = Path(value) if os.path.isabs(value) else root / value
+        if not target.is_file():
+            deps.errors.append(f"{where} → 머티리얼의 {key}가 가리키는 파일이 없습니다: {target}")
+        elif not _inside(target, project.root):
+            deps.errors.append(f"{where} → 머티리얼의 {key}가 프로젝트 폴더 밖입니다: {target}")
+        else:
+            deps.files.add(target.resolve())
 
 
 def resolve_project_module(project: Project, module: str) -> Optional[Path]:
@@ -407,16 +479,21 @@ def check_forbidden(output_dir: Path) -> List[str]:
     return bad
 
 
-def make_game_config(settings: BuildSettings, start_scene_out: str) -> dict:
-    return {
+def make_game_config(settings: BuildSettings, start_scene_out: str,
+                     input_actions_out: Optional[str] = None) -> dict:
+    config = {
         "version": GAME_CONFIG_VERSION,
         "title": settings.name,
         "window": {"width": settings.window_width, "height": settings.window_height,
-                   "fullscreen": settings.fullscreen},
+                   "fullscreen": settings.fullscreen, "cursorLock": settings.cursor_lock},
         "startScene": start_scene_out,
         "assetRoot": "./",
         "engine": {"numWorkerThreads": 0, "logFrameInterval": 0},
     }
+    if input_actions_out:
+        # Player가 엔진의 InputActions::LoadActions로 읽는다(에디터와 같은 코드). 키가 없으면 액션 맵 없이 시작.
+        config["inputActions"] = input_actions_out
+    return config
 
 
 def run_smoke_test(exe: Path, frames: int, timeout: float,
@@ -472,6 +549,9 @@ def build_game(settings: BuildSettings,
     template = find_runtime_template(settings.template_dir)
     manifest = load_manifest(template)
     verify_template(template, manifest, current_python_abi(), current_engine_version())
+    mismatch = engine_build_mismatch(manifest, None, editor_engine_files())
+    if mismatch:
+        warnings.append(mismatch)
 
     # 2~4. 씬과 의존성
     step("씬 검증", 0.15)
@@ -483,6 +563,16 @@ def build_game(settings: BuildSettings,
 
     step("의존성 수집", 0.25)
     deps = collect_dependencies(project, start_scene)
+    # 입력 액션 맵: 씬이 참조하는 파일이 아니라 프로젝트 설정이라 따로 넣는다. 없으면 game.json에 키를 쓰지 않는다
+    # (Player는 액션 맵 없이 시작하고 로그로 알린다). 내용 검사는 Player/에디터의 엔진 로더가 한다 - 여기서
+    # 형식을 다시 파싱하면 파서가 두 벌이 된다.
+    input_actions = project.input_actions_path
+    input_actions_out: Optional[str] = None
+    if input_actions.is_file():
+        deps.files.add(input_actions.resolve())
+        input_actions_out = _output_relpath(project, input_actions)
+    else:
+        warnings.append(f"입력 액션 맵이 없어 조작 설정 없이 빌드합니다: {input_actions}")
     for d in settings.include_dirs:
         folder = project.resolve(d)
         if not folder.is_dir() or not _inside(folder, project.root):
@@ -520,7 +610,7 @@ def build_game(settings: BuildSettings,
             copied.append(rel)
             progress("게임 파일 복사", 0.5 + 0.2 * (i + 1) / max(1, len(files)))
 
-        game_json = make_game_config(settings, _output_relpath(project, start_scene))
+        game_json = make_game_config(settings, _output_relpath(project, start_scene), input_actions_out)
         (staging / "game.json").write_text(json.dumps(game_json, ensure_ascii=False, indent=2) + "\n",
                                            encoding="utf-8")
 

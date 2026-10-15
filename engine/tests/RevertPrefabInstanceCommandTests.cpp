@@ -30,7 +30,7 @@ namespace
                 "  \"components\": {\n"
                 "    \"TransformComponent\": {\"_version\": 1, \"position\": ["
              << posX << ", 0, 0], \"rotation\": [0,0,0], \"scale\": [1,1,1]},\n"
-                "    \"RenderableComponent\": {\"_version\": 1, \"meshHandle\": 3, \"materialHandle\": 0, \"castShadows\": true}\n"
+                "    \"RenderableComponent\": {\"_version\": 2, \"meshPath\": \"assets/models/three.obj\", \"castShadows\": true}\n"
                 "  }\n"
                 "}\n";
         return path;
@@ -48,7 +48,7 @@ namespace
         registry.AddComponent(e, t);
 
         RenderableComponent r;
-        r.meshHandle = 3;
+        r.meshPath = "assets/models/three.obj";
         registry.AddComponent(e, r);
 
         registry.AddComponent(e, AIComponent{}); // not present in the prefab -> Revert should remove it
@@ -226,4 +226,38 @@ TEST_F(RevertPrefabInstanceCommandTest, Undo_WithoutApply_ReturnsInvalidState)
     auto result = cmd.Undo();
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code, EngineErrorCode::InvalidState);
+}
+
+// ─── 프로젝트 상대 경로 (USABILITY_IMPROVEMENT_PLAN X-1a) ─────────────────────────
+
+#include "../core/Utf8Path.h"
+
+TEST_F(RevertPrefabInstanceCommandTest, Apply_RelativePrefabPath_ResolvesAgainstProjectRoot)
+{
+    const auto root = std::filesystem::temp_directory_path() / "qf_revert_rel" / PathFromUtf8("옮긴 프로젝트");
+    std::filesystem::create_directories(root / "assets" / "prefabs");
+    std::filesystem::copy_file(WritePrefabFile("revert_rel_source.prefab.json", 0.0f),
+                               root / "assets" / "prefabs" / "barrel.prefab.json",
+                               std::filesystem::copy_options::overwrite_existing);
+    Entity e = MakeDivergedInstance(registry, "unused");
+    registry.GetComponent<PrefabInstanceComponent>(e)->prefabPath = "assets/prefabs/barrel.prefab.json";
+
+    RevertPrefabInstanceCommand cmd(&registry, e, Utf8FromPath(root));
+    ASSERT_TRUE(cmd.Apply().has_value());
+    EXPECT_FLOAT_EQ(registry.GetComponent<TransformComponent>(e)->position.x, 0.0f);
+}
+
+TEST_F(RevertPrefabInstanceCommandTest, Apply_RelativePathNotFound_ErrorNamesStoredRootAndResolvedPath)
+{
+    Entity e = MakeDivergedInstance(registry, "unused");
+    registry.GetComponent<PrefabInstanceComponent>(e)->prefabPath = "assets/prefabs/missing.prefab.json";
+
+    RevertPrefabInstanceCommand cmd(&registry, e, "C:/NoSuchProject");
+    auto result = cmd.Apply();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_NE(result.error().message.find("stored prefabPath='assets/prefabs/missing.prefab.json'"), std::string::npos)
+        << result.error().message;
+    EXPECT_NE(result.error().message.find("project root='C:/NoSuchProject'"), std::string::npos);
+    EXPECT_NE(result.error().message.find("resolved="), std::string::npos);
+    EXPECT_TRUE(registry.HasComponent<AIComponent>(e));   // 실패하면 엔티티는 그대로(§2.9)
 }

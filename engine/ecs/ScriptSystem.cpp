@@ -5,6 +5,7 @@
 namespace pybind11 { class object; }
 
 #include "ECSRegistry.h"
+#include "ScriptContext.h"
 #include "ComponentManager.h"
 #include "ComponentArray.h"
 #include "../core/logging/Logger.h"
@@ -60,6 +61,7 @@ namespace Engine
     {
         auto array = registry.GetComponentArray<ScriptComponent>();
         if (!array) return;
+        ScriptContext::ScopedRegistry scriptContext(&registry);   // on_destroy에서도 quarterflying.script.registry()
 
         for (size_t i = 0; i < array->Size(); ++i) {
             auto& comp = array->GetDenseArray()[i];
@@ -90,6 +92,8 @@ namespace Engine
     {
         auto array = registry.GetComponentArray<ScriptComponent>();
         if (!array) return;
+        // on_create/on_update가 자기 엔티티의 레지스트리를 쓸 수 있게 한다(ScriptContext.h).
+        ScriptContext::ScopedRegistry scriptContext(&registry);
 
         for (size_t i = 0; i < array->Size(); ++i) {
             auto& comp = array->GetDenseArray()[i];

@@ -231,6 +231,8 @@ InstantiatePrefab(const std::filesystem::path& path,
 
 `RenderableComponent.meshHandle`은 `uint32_t` 정수 핸들이고, 프리팹은 이 값을 있는 그대로 캡처/복원한다(§2.2). 오늘 시점(§1) `RenderSystem`은 등록되지 않은 `meshHandle`을 전부 절차적 유닛 큐브로 대체하므로([ROADMAP.md](../ROADMAP.md) §6), 지금 나오는 프리팹(예: "Test Cube" 계열, `meshHandle=0`)은 이 한계의 영향을 받지 않는다. 하지만 실제 메시 에셋 파이프라인이 생겨서 `meshHandle`이 세션마다 다른 순서로 할당되는 진짜 핸들이 되는 순간, **`.prefab.json`에 박아둔 정수 핸들 값은 재시작 후 다른 메시를 가리키거나 무효가 될 수 있다.** 이건 프리팹이 만든 문제가 아니라 기존 핸들 시스템의 한계를 프리팹이 그대로 물려받는 것이다 — MASTER_PLAN.md P1의 에셋 파이프라인이 경로/UUID 기반의 안정적 참조를 도입하면, 프리팹의 메시 참조도 그때 같이 옮겨야 한다는 것만 지금 명시해둔다(§5).
 
+> **2026-10-15 해결** (`USABILITY_IMPROVEMENT_PLAN.md` R-4): `RenderableComponent` 스키마 2에서 `meshHandle`·`materialHandle`을 없애고 경로 필드(`meshPath`·`materialPath`)로 통일했다. 옛 프리팹 파일(스키마 1)은 그대로 열린다 — 그 키들은 무시하고, `meshHandle`이 0이 아니면 경고를 남긴다(`Reflection.cpp` 파일 로드 훅). 샘플 `Lamp`·`Barrel` 프리팹은 옛 형식(`meshHandle: 0`) 그대로 두어 이 호환 경로가 실제 파일로도 쓰이게 했다.
+
 ---
 
 ## 3. Phase 분해

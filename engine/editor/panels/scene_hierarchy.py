@@ -8,10 +8,9 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget,
     QTreeWidgetItem, QPushButton, QMenu, QAbstractItemView,
-    QSizePolicy, QFileDialog
-)
+    QSizePolicy, QFileDialog, QLineEdit)
 from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QIcon, QColor, QBrush, QFont, QAction
+from PySide6.QtGui import QIcon, QColor, QBrush, QFont, QAction, QKeySequence, QShortcut
 
 from style.theme import COLORS
 from project import current_project
@@ -25,6 +24,19 @@ from hierarchy_model import (ABOVE_ITEM, BELOW_ITEM, ON_ITEM, ON_VIEWPORT,
 # 경로는 import 시점에 고정하지 않고 쓰는 순간 현재 프로젝트에서 받는다(editor/project/project.py).
 # 예전에는 이 파일 위치 기준 engine/assets/...를 상수로 계산해 두어서, 다른 프로젝트를 열 수 없었다
 # (docs/GAME_BUILD_PLAN.md §1.2 항목 3).
+def widget_shortcut(key, widget, slot) -> QShortcut:
+    """widget에 포커스가 있을 때만 동작하는 단축키.
+
+    QShortcut(..., context=Qt.WidgetShortcut)처럼 생성자 키워드로 넘기면 PySide6가 context를 말없이 무시하고 창 전체
+    단축키(WindowShortcut)로 만든다. 그러면 계층 트리와 뷰포트의 Delete가 둘 다 창 전체 단축키가 되어 "모호한 단축키"로
+    둘 다 동작하지 않았다(에러·경고 없음, E-4 실제 실행에서 발견). 생성한 뒤 setContext로 정한다.
+    """
+    shortcut = QShortcut(key, widget)
+    shortcut.setContext(Qt.WidgetShortcut)
+    shortcut.activated.connect(slot)
+    return shortcut
+
+
 def _prefab_dir() -> str:
     return str(current_project().prefabs_dir)
 
@@ -142,7 +154,9 @@ class SceneHierarchyPanel(QWidget):
         self.tree.setHeaderHidden(True)
         self.tree.setAnimated(True)
         self.tree.setExpandsOnDoubleClick(True)
-        self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        # 다중 선택(E-6): Ctrl/Shift+클릭. Delete/Duplicate는 선택 전체를 한 번의 Undo로 처리한다. Inspector와 드래그
+        # 재부모화는 현재 항목(마지막으로 클릭한 것) 하나만 다룬다.
+        self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         # 드롭은 EntityTree.dropEvent가 엔진 쪽 부모 변경으로 바꾼다(Qt가 항목을 직접 옮기지 않음).
         self.tree.setDragDropMode(QAbstractItemView.InternalMove)
@@ -169,8 +183,14 @@ class SceneHierarchyPanel(QWidget):
         self.btn_delete.setFixedWidth(28)
         self.btn_delete.setToolTip("선택한 엔티티 삭제")
 
+        # 이름 검색(E-6). 맞는 항목과 그 조상만 보인다. 트리를 다시 그린 뒤에도 다시 적용한다(refresh_from_engine).
+        self.ed_filter = QLineEdit()
+        self.ed_filter.setPlaceholderText("검색")
+        self.ed_filter.setClearButtonEnabled(True)
+        self.ed_filter.setFixedHeight(22)
+
         h.addWidget(self.btn_create)
-        h.addStretch()
+        h.addWidget(self.ed_filter, 1)
         h.addWidget(self.btn_delete)
 
         return bar
@@ -187,6 +207,71 @@ class SceneHierarchyPanel(QWidget):
         self.tree.itemExpanded.connect(lambda item: self._collapsed_ids.discard(getattr(item, "entity_id", None)))
         self.btn_create.clicked.connect(self.create_entity)
         self.btn_delete.clicked.connect(self.delete_selected_entity)
+        self.ed_filter.textChanged.connect(lambda _: self._apply_filter())
+
+        # Delete / Ctrl+D (E-4). 창 전체가 아니라 이 트리에만 건다 - 창 전체에 걸면 Inspector 입력칸에서 Delete를
+        # 눌러도 엔티티가 지워진다. Play 중에는 꺼 둔다(set_edit_shortcuts_enabled). 둘 다 Undo되는 명령을 거친다.
+        self._shortcut_delete = widget_shortcut(QKeySequence.Delete, self.tree, self.delete_selected_entity)
+        self._shortcut_duplicate = widget_shortcut(QKeySequence("Ctrl+D"), self.tree, self.duplicate_selected_entity)
+
+    def set_edit_shortcuts_enabled(self, enabled: bool):
+        self._shortcut_delete.setEnabled(enabled)
+        self._shortcut_duplicate.setEnabled(enabled)
+
+    def duplicate_selected_entity(self):
+        items = self._selected_root_items()
+        if len(items) > 1 and self.editor_api is not None and HAS_ENGINE:
+            from ge_transaction import transaction
+            try:
+                with transaction(self.editor_api, f"Duplicate {len(items)} entities"):
+                    for it in items:
+                        self.editor_api.duplicate_entity(to_entity(it.entity_id))
+                self.hierarchy_status.emit(f"엔티티 {len(items)}개를 복제했습니다 (Ctrl+Z 한 번으로 되돌리기)")
+            except Exception as e:
+                print(f"[SceneHierarchy] 여러 엔티티 복제 실패: {e}")
+                self.hierarchy_status.emit(f"복제 실패: {e}")
+            self._last_structure = None
+            self.refresh_from_engine()
+            return
+        item = items[0] if items else self.tree.currentItem()
+        if isinstance(item, EntityItem):
+            self._duplicate_entity(item)
+
+    def _selected_root_items(self):
+        """선택된 엔티티 항목 중, 조상이 함께 선택되지 않은 것들. 부모를 지우거나 복제하면 자손도 같이 처리되므로,
+        자손을 따로 또 처리하면 이미 사라진 엔티티를 지우려다 실패한다."""
+        selected = [it for it in self.tree.selectedItems() if isinstance(it, EntityItem)]
+        chosen = set(id(it) for it in selected)
+        roots = []
+        for it in selected:
+            parent = it.parent()
+            covered = False
+            while parent is not None:
+                if id(parent) in chosen:
+                    covered = True
+                    break
+                parent = parent.parent()
+            if not covered:
+                roots.append(it)
+        return roots
+
+    def _apply_filter(self):
+        """검색어가 이름에 들어간 항목과 그 조상만 보인다(대소문자 무시). 비어 있으면 전부 보인다."""
+        text = self.ed_filter.text().strip().lower()
+
+        def visit(item) -> bool:
+            child_match = False
+            for i in range(item.childCount()):
+                child_match = visit(item.child(i)) or child_match
+            name = item.entity_name if isinstance(item, EntityItem) else item.text(0)
+            match = (not text) or (text in name.lower()) or child_match
+            item.setHidden(not match)
+            if text and child_match:
+                item.setExpanded(True)
+            return match
+
+        for i in range(self.tree.topLevelItemCount()):
+            visit(self.tree.topLevelItem(i))
 
     # ----------------------------------------------------------------
     # 더미 씬 데이터 (1단계)
@@ -306,6 +391,7 @@ class SceneHierarchyPanel(QWidget):
 
             if item_to_reselect is not None:
                 self.tree.setCurrentItem(item_to_reselect)
+            self._apply_filter()   # 다시 그린 트리에도 검색어를 적용한다
         except Exception as e:
             print(f"[SceneHierarchy] 엔진 동기화 실패: {e}")
 
@@ -421,8 +507,27 @@ class SceneHierarchyPanel(QWidget):
         self.tree.setCurrentItem(item)
 
     def delete_selected_entity(self):
-        """선택한 엔티티 삭제"""
-        item = self.tree.currentItem()
+        """선택한 엔티티 삭제. 여러 개를 골랐으면 한 번의 Undo로 묶는다(E-6)."""
+        roots = self._selected_root_items()
+        if len(roots) > 1 and self.registry and self.editor_api is not None and HAS_ENGINE:
+            from ge_transaction import transaction
+            try:
+                with transaction(self.editor_api, f"Delete {len(roots)} entities"):
+                    for it in roots:
+                        self.editor_api.destroy_entity(to_entity(it.entity_id))
+                self.hierarchy_status.emit(f"엔티티 {len(roots)}개를 삭제했습니다 (Ctrl+Z 한 번으로 되돌리기)")
+            except Exception as e:
+                print(f"[SceneHierarchy] 여러 엔티티 삭제 실패: {e}")
+                self.hierarchy_status.emit(f"삭제 실패: {e}")
+            self._last_structure = None
+            self.entity_deselected.emit()
+            self._selected_entity_id = -1
+            self.refresh_from_engine()
+            return
+
+        # 선택이 하나로 줄었으면(부모와 그 자식을 함께 고른 경우 포함) 그 루트를 지운다. 예전처럼 currentItem(마지막으로
+        # 클릭한 항목)을 쓰면, 부모와 자식을 함께 골랐을 때 자식만 지워졌다(E-6 실제 실행에서 발견).
+        item = roots[0] if roots else self.tree.currentItem()
         if not item or not isinstance(item, EntityItem):
             return
 

@@ -315,3 +315,41 @@ TEST_F(EntityCommandTest, CreateThenDestroy_UndoRedoChain)
     EXPECT_EQ(registry.GetUUID(restoredEntity), createdUUID);
     EXPECT_EQ(registry.GetEntityName(restoredEntity), "ChainEntity");
 }
+
+// ─── CommandManager 변경 카운터 (USABILITY_IMPROVEMENT_PLAN E-5: 저장 안 된 변경 표시) ──────────
+
+#include "../core/CommandManager.h"
+
+// 에디터는 저장 시점의 GetChangeCount()와 지금 값을 비교해 창 제목에 '*'를 붙인다.
+// 싱글턴이라 다른 테스트가 남긴 값이 있을 수 있으므로 절대값이 아니라 증가량만 본다.
+TEST_F(EntityCommandTest, ChangeCount_IncrementsOnExecuteUndoRedo_AndSurvivesClear)
+{
+    CommandManager& cm = CommandManager::GetInstance();
+    cm.Clear();
+    const uint64_t start = cm.GetChangeCount();
+
+    ASSERT_TRUE(cm.Execute(std::make_unique<CreateEntityCommand>(&registry, "Counted")).has_value());
+    EXPECT_EQ(cm.GetChangeCount(), start + 1);
+
+    ASSERT_TRUE(cm.Undo().has_value());
+    EXPECT_EQ(cm.GetChangeCount(), start + 2);   // Undo도 월드를 바꾼다 - 저장 시점과 달라짐
+
+    ASSERT_TRUE(cm.Redo().has_value());
+    EXPECT_EQ(cm.GetChangeCount(), start + 3);
+
+    // Clear(Play 종료 등)는 카운터를 되돌리지 않는다. 되돌리면 예전 저장 시점의 값과 우연히 같아져
+    // 변경이 있는데도 "저장됨"으로 보일 수 있다.
+    cm.Clear();
+    EXPECT_EQ(cm.GetChangeCount(), start + 3);
+}
+
+TEST_F(EntityCommandTest, ChangeCount_DoesNotChangeOnFailedUndoOrRedo)
+{
+    CommandManager& cm = CommandManager::GetInstance();
+    cm.Clear();
+    const uint64_t start = cm.GetChangeCount();
+
+    EXPECT_FALSE(cm.Undo().has_value());   // 되돌릴 것이 없음
+    EXPECT_FALSE(cm.Redo().has_value());
+    EXPECT_EQ(cm.GetChangeCount(), start);
+}

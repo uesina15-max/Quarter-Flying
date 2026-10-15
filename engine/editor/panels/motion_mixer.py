@@ -262,10 +262,16 @@ class MotionMixerPanel(QWidget):
         row_add.addWidget(btn_import_layer)
         root.addLayout(row_add)
 
-        # 상태 라인
+        # 상태 라인 + 샘플 불러오기(A-3: 자동 로드 대신 명시적 버튼. 프로젝트에 샘플 파일이 있을 때만 켜진다)
+        row_status = QHBoxLayout()
         self.lbl_status = QLabel("")
         self.lbl_status.setStyleSheet(f"color: {COLORS['text_dim']}; font-size: 10px;")
-        root.addWidget(self.lbl_status)
+        self.btn_load_sample = QPushButton("샘플 불러오기")
+        self.btn_load_sample.setToolTip("프로젝트 assets/motion의 sample.skeleton.json + idle/attack 클립을 불러옵니다")
+        self.btn_load_sample.clicked.connect(self.load_default_sample)
+        row_status.addWidget(self.lbl_status, 1)
+        row_status.addWidget(self.btn_load_sample)
+        root.addLayout(row_status)
 
         # 레이어 스택 (스크롤)
         scroll = QScrollArea()
@@ -305,6 +311,11 @@ class MotionMixerPanel(QWidget):
                     continue  # 호환 안 되는 클립은 dropdown에서 제외
             self.combo_base.addItem(name, path)
             self.combo_add_layer.addItem(name, path)
+        missing = self._missing_sample_files()
+        self.btn_load_sample.setEnabled(not missing)
+        self.btn_load_sample.setToolTip(
+            "프로젝트 assets/motion의 sample.skeleton.json + idle/attack 클립을 불러옵니다" if not missing
+            else "이 프로젝트에는 샘플 모션 파일이 없습니다: " + ", ".join(missing))
 
     @staticmethod
     def _scan_dir(suffix: str) -> list[str]:
@@ -450,7 +461,19 @@ class MotionMixerPanel(QWidget):
             row.deleteLater()
         self._layer_rows.clear()
 
-    # ── 데모용 초기 상태 (Motion Editor 진입 시 아무 것도 안 실려있으면 자동 호출) ──
+    # ── 샘플 ("샘플 불러오기" 버튼) ──
+
+    _SAMPLE_FILES = ("sample.skeleton.json", "idle.clip.json", "attack.clip.json")
+
+    def _missing_sample_files(self):
+        return [n for n in self._SAMPLE_FILES if not os.path.isfile(os.path.join(_motion_dir(), n))]
+
+    def show_empty_hint(self):
+        """아무것도 안 실린 상태의 안내. 빈 상태로 시작하는 것이 정상이다."""
+        hint = "스켈레톤을 고르세요"
+        if not self._missing_sample_files():
+            hint += " (또는 '샘플 불러오기')"
+        self._status(hint)
 
     def load_default_sample(self):
         """번들된 샘플 스켈레톤 + Idle 베이스 + Attack 레이어(weight 0.5)를 미리 채워

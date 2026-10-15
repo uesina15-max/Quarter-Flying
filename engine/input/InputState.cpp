@@ -9,6 +9,10 @@ namespace Engine
         wheelDelta_ = 0.0f;
         dragDeltaX_.fill(0.0f);
         dragDeltaY_.fill(0.0f);
+        keysPressed_.fill(false);
+        keysReleased_.fill(false);
+        mouseButtonsPressed_.fill(false);
+        mouseButtonsReleased_.fill(false);
     }
 
     void InputState::Apply(const InputEvent& event)
@@ -21,7 +25,10 @@ namespace Engine
             const size_t index = static_cast<size_t>(event.keyCode);
             if (event.keyCode != KeyCode::Unknown && index < kKeyCount)
             {
-                keys_[index] = (event.type == InputEventType::KeyDown);
+                const bool down = (event.type == InputEventType::KeyDown);
+                if (down && !keys_[index]) keysPressed_[index] = true;
+                if (!down && keys_[index]) keysReleased_[index] = true;
+                keys_[index] = down;
             }
             break;
         }
@@ -31,7 +38,10 @@ namespace Engine
             const size_t index = static_cast<size_t>(event.mouseButton);
             if (index < mouseButtons_.size())
             {
-                mouseButtons_[index] = (event.type == InputEventType::MouseButtonDown);
+                const bool down = (event.type == InputEventType::MouseButtonDown);
+                if (down && !mouseButtons_[index]) mouseButtonsPressed_[index] = true;
+                if (!down && mouseButtons_[index]) mouseButtonsReleased_[index] = true;
+                mouseButtons_[index] = down;
             }
             // 누른/뗀 위치를 이동량의 기준점으로 삼는다. 증상: 에디터에서 수평으로만 우클릭 드래그했는데
             // pitch까지 크게 바뀌었다. 원인: 기준점이 "마지막 MouseMove 위치"(마우스 트래킹으로 들어온
@@ -82,6 +92,30 @@ namespace Engine
         return index < mouseButtons_.size() && mouseButtons_[index];
     }
 
+    bool InputState::WasKeyPressed(KeyCode key) const
+    {
+        const size_t index = static_cast<size_t>(key);
+        return key != KeyCode::Unknown && index < kKeyCount && keysPressed_[index];
+    }
+
+    bool InputState::WasKeyReleased(KeyCode key) const
+    {
+        const size_t index = static_cast<size_t>(key);
+        return key != KeyCode::Unknown && index < kKeyCount && keysReleased_[index];
+    }
+
+    bool InputState::WasMouseButtonPressed(MouseButton button) const
+    {
+        const size_t index = static_cast<size_t>(button);
+        return index < mouseButtonsPressed_.size() && mouseButtonsPressed_[index];
+    }
+
+    bool InputState::WasMouseButtonReleased(MouseButton button) const
+    {
+        const size_t index = static_cast<size_t>(button);
+        return index < mouseButtonsReleased_.size() && mouseButtonsReleased_[index];
+    }
+
     float InputState::GetDragDeltaX(MouseButton button) const
     {
         const size_t index = static_cast<size_t>(button);
@@ -99,5 +133,13 @@ namespace Engine
         keys_.fill(false);
         mouseButtons_.fill(false);
         hasLastMouse_ = false;
+        // 이번 프레임에 쌓인 엣지도 지운다. 지우지 않으면, 같은 프레임 안에 키를 누르고(KeyDown) 바로 포커스를
+        // 잃었을 때 "누른 엣지는 있는데 지금은 안 눌림"이 되어 InputActions가 이를 "한 프레임 안에 눌렀다 뗌"으로
+        // 읽고 WasReleased를 만든다 - 포커스 상실이 "뗀 순간" 동작을 발동시키는 것이다
+        // (InputActionsTest.EngineFocusLost_ResetsActionsToo가 잡았다). 포커스를 잃은 프레임의 입력은 버린다.
+        keysPressed_.fill(false);
+        keysReleased_.fill(false);
+        mouseButtonsPressed_.fill(false);
+        mouseButtonsReleased_.fill(false);
     }
 }
