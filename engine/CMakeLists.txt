@@ -348,3 +348,24 @@ else()
 endif()
 
 message(STATUS "Python editor configured as main entry point")
+
+# 6. 완제품 에디터 — exe + DLL (packaging/build_editor_app.py)
+# 위 install 결과를 build/app_stage에 만든 뒤 PyInstaller로 묶는다. 결과(build/app/Quarter Flying)는
+# Python·PySide6·Visual Studio가 없는 PC에서 실행된다. 처음 한 번은 전용 venv에 PyInstaller·PySide6를
+# 내려받으므로 인터넷이 필요하다. 기본 빌드(ALL)에는 넣지 않는다:
+#     cmake --build . --config Release --target editor_app
+set(QF_APP_STAGE "${CMAKE_BINARY_DIR}/app_stage")
+set(QF_APP_DIR "${CMAKE_BINARY_DIR}/app")
+add_custom_target(editor_app
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${QF_APP_STAGE}"
+    COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}" --config $<CONFIG> --prefix "${QF_APP_STAGE}"
+    COMMAND "${PYTHON_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/packaging/build_editor_app.py"
+            --stage "${QF_APP_STAGE}"
+            --out "${QF_APP_DIR}"
+            --work "${CMAKE_BINARY_DIR}/app_work"
+            --venv "${CMAKE_BINARY_DIR}/packaging_venv"
+    COMMENT "Packaging editor app into ${QF_APP_DIR}"
+    USES_TERMINAL
+    VERBATIM
+)
+add_dependencies(editor_app player_template quarterflying quarterflying_engine)

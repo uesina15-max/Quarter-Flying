@@ -16,6 +16,10 @@ _EDITOR_DIR = os.path.dirname(os.path.abspath(__file__))
 if _EDITOR_DIR not in sys.path:
     sys.path.insert(0, _EDITOR_DIR)
 
+# 완제품 exe에서만: 작업 폴더·로그 파일·게임 스크립트용 표준 라이브러리 준비 (개발 실행에서는 무동작)
+import frozen_app
+frozen_app.setup()
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter,
     QVBoxLayout, QHBoxLayout, QLabel, QToolBar,
@@ -934,6 +938,16 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 # ============================================================
 
 if __name__ == "__main__":
+    # 엔진 로그는 기본 Info. 렌더러의 프레임별 TRACE가 필요하면 QF_LOG_LEVEL=trace로 실행한다.
+    if HAS_ENGINE:
+        _level_name = os.environ.get("QF_LOG_LEVEL", "info").strip().capitalize()
+        _level = getattr(ge_python.LogLevel, _level_name, None)
+        if _level is None:
+            print(f"[Editor] QF_LOG_LEVEL={_level_name!r}는 알 수 없는 값이라 Info를 씁니다 "
+                  f"(trace/info/warning/error/fatal)")
+            _level = ge_python.LogLevel.Info
+        ge_python.set_log_level(_level)
+
     app = QApplication(sys.argv)
 
     # 폰트 설정

@@ -1,0 +1,5 @@
+# 완제품 에디터 패키징 전용 venv(build/packaging_venv)에 설치하는 패키지.
+# 버전을 고정해 두어야 같은 소스에서 같은 완제품이 나온다. 올릴 때는 editor_app을 다시 빌드해 실행 확인할 것.
+pyinstaller==6.21.0
+PySide6-Essentials==6.11.1
+PySide6-Addons==6.11.1

@@ -1,6 +1,7 @@
 #include "Bindings.h"
 #include "../core/Engine.h"
 #include "../core/Types.h"
+#include "../core/logging/Logger.h"
 #include "../ecs/World.h"
 #include <stdexcept>
 
@@ -9,6 +10,21 @@ namespace Bindings {
 
 void RegisterEngineBindings(pybind11::module_& m) {
     namespace py = pybind11;
+
+    // ============================================================
+    // Logging
+    // ============================================================
+    // 기본값(Trace)이면 렌더러가 매 프레임 여러 줄을 찍어서, 콘솔 없는 설치판 에디터의
+    // 로그 파일이 분당 수 MB씩 커졌다. Player(PlayerMain.cpp)처럼 에디터도 시작할 때 낮춘다.
+    py::enum_<LogLevel>(m, "LogLevel")
+        .value("Trace", LogLevel::Trace)
+        .value("Info", LogLevel::Info)
+        .value("Warning", LogLevel::Warning)
+        .value("Error", LogLevel::Error)
+        .value("Fatal", LogLevel::Fatal);
+    m.def("set_log_level", &Logger::SetMinLevel, py::arg("level"),
+          "엔진 로그의 최소 레벨을 정한다(엔진 DLL 전체에 적용).");
+    m.def("get_log_level", &Logger::GetMinLevel);
 
     // ============================================================
     // Input Enums
