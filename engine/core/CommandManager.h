@@ -9,6 +9,8 @@
 namespace Engine
 {
 
+class ECSRegistry;
+
 class CommandManager
 {
 public:
@@ -22,6 +24,15 @@ public:
     bool CanRedo() const;
 
     void Clear();
+
+    // Only the registry attached by EditorAPI owns the editor history.
+    void SetEditorRegistry(ECSRegistry* registry);
+    std::expected<void, EngineError> BeginPlay(ECSRegistry* registry);
+    void EndPlay(ECSRegistry* registry);
+    void ForgetRegistry(ECSRegistry* registry);
+    bool IsEditingLocked() const { return playRegistry_ != nullptr; }
+    void SetTransactionOpen(bool open) { transactionOpen_ = open; }
+
 
     void SetMaxUndoDepth(size_t depth);
     size_t GetMaxUndoDepth() const;
@@ -55,7 +66,12 @@ private:
     std::vector<std::unique_ptr<ICommand>> redoStack_;
     size_t maxUndoDepth_ = 100;
     bool inMergeSession_ = false;
+    // 스택 맨 위 명령이 지금 병합 세션 안에서 Execute로 쌓였는가. 병합은 이 명령에만 한다(Execute 주석).
+    bool topPushedInMergeSession_ = false;
     uint64_t changeCount_ = 0;
+    ECSRegistry* editorRegistry_ = nullptr;
+    ECSRegistry* playRegistry_ = nullptr;
+    bool transactionOpen_ = false;
 };
 
 } // namespace Engine

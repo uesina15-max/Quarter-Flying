@@ -353,3 +353,19 @@ TEST_F(ComponentCommandTest, AddThenRemove_UndoChain_RestoresComponent)
     ASSERT_TRUE(addCmd.Undo().has_value());
     EXPECT_FALSE(registry_.HasComponent<CameraComponent>(entity_));
 }
+
+TEST_F(ComponentCommandTest, AddComponent_FollowsUuidAcrossRecreation)
+{
+    const UUID uuid = registry_.GetUUID(entity_);
+    AddComponentCommand cmd(&registry_, entity_, "TransformComponent");
+    ASSERT_TRUE(cmd.Apply().has_value());
+    ASSERT_TRUE(cmd.Undo().has_value());
+    registry_.DestroyEntity(entity_);
+    EXPECT_FALSE(cmd.Apply().has_value());
+    Entity restored = registry_.CreateEntityWithUUID(uuid);
+    ASSERT_NE(restored.id, entity_.id);
+    ASSERT_TRUE(cmd.Apply().has_value());
+    EXPECT_TRUE(registry_.HasComponent<TransformComponent>(restored));
+    ASSERT_TRUE(cmd.Undo().has_value());
+    EXPECT_FALSE(registry_.HasComponent<TransformComponent>(restored));
+}

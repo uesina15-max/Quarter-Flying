@@ -97,6 +97,13 @@ public:
     std::expected<void, EngineError> RemoveComponent(Entity entity,
                                                       const std::string& componentType);
 
+    // 리플렉션 필드 하나를 명령으로 바꾼다(Undo·저장 안 된 변경에 잡힘). jsonValue는 직렬화와 같은 형식
+    // (EulerRotation은 도 단위 [x,y,z], EntityRef는 UUID). expectedVersion은 Inspector가 위젯을 만든 스키마 버전 —
+    // 다르면 쓰지 않는다. 연속 편집은 병합 세션 안에서 하나로 묶인다(SetComponentFieldCommand).
+    std::expected<void, EngineError> SetComponentField(Entity entity, const std::string& componentType,
+                                                        const std::string& fieldName, const std::string& jsonValue,
+                                                        uint32_t expectedVersion);
+
 private:
     EditorAPI() = default;
 

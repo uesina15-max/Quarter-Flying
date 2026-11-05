@@ -8,6 +8,7 @@ namespace Engine
 ScaleEntityCommand::ScaleEntityCommand(ECSRegistry* registry, Entity entity, Vec3 newScale)
     : registry_(registry)
     , entity_(entity)
+    , entityUUID_(registry && registry->IsValid(entity) ? registry->GetUUID(entity) : UUID(0))
     , newScale_(newScale)
 {
     if (registry_ && registry_->HasTransformComponent(entity_))
@@ -25,6 +26,8 @@ std::expected<void, EngineError> ScaleEntityCommand::Apply()
     {
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "ScaleEntityCommand");
     }
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!entity_.IsValid())
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "ScaleEntityCommand");
@@ -48,6 +51,8 @@ std::expected<void, EngineError> ScaleEntityCommand::Undo()
     {
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "ScaleEntityCommand");
     }
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!entity_.IsValid())
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "ScaleEntityCommand");
@@ -68,7 +73,7 @@ std::expected<void, EngineError> ScaleEntityCommand::Undo()
 bool ScaleEntityCommand::CanMergeWith(const ICommand& other) const
 {
     const auto* otherScale = dynamic_cast<const ScaleEntityCommand*>(&other);
-    return otherScale != nullptr && otherScale->entity_.id == entity_.id;
+    return otherScale != nullptr && otherScale->registry_ == registry_ && entityUUID_.IsValid() && otherScale->entityUUID_ == entityUUID_;
 }
 
 std::expected<void, EngineError> ScaleEntityCommand::MergeWith(const ICommand& other)

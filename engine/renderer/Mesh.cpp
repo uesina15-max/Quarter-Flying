@@ -12,6 +12,7 @@
 #include <tiny_obj_loader.h>
 #include "../core/logging/Logger.h"
 #include "../core/Utf8Path.h"
+#include <algorithm>
 #include <fstream>
 #include <unordered_map>
 #include "ObjLoaderHelper.h"
@@ -25,8 +26,26 @@ namespace Engine
         if (m_vao) glDeleteVertexArrays(1, &m_vao);
     }
 
+    void Mesh::setLocalBounds(const std::vector<Vertex>& vertices)
+    {
+        m_hasBounds = !vertices.empty();
+        if (!m_hasBounds) return;
+        const float first[3] = {vertices[0].px, vertices[0].py, vertices[0].pz};
+        for (int i = 0; i < 3; ++i) m_boundsMin[i] = m_boundsMax[i] = first[i];
+        for (const Vertex& v : vertices)
+        {
+            const float p[3] = {v.px, v.py, v.pz};
+            for (int i = 0; i < 3; ++i)
+            {
+                m_boundsMin[i] = (std::min)(m_boundsMin[i], p[i]);   // 괄호: windows.h의 min/max 매크로 회피
+                m_boundsMax[i] = (std::max)(m_boundsMax[i], p[i]);
+            }
+        }
+    }
+
     void Mesh::create(const std::vector<Vertex>& vertices, const std::vector<unsigned int>& indices)
     {
+        setLocalBounds(vertices);
         m_indexCount = (unsigned int)indices.size();
 
         glGenVertexArrays(1, &m_vao);

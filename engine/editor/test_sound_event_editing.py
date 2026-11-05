@@ -185,7 +185,32 @@ def test_non_sound_event_clip_is_not_touched_on_save():
           f"Sound 아닌 이벤트는 그대로여야 함: {action.events[0].params}")
 
 
+def test_save_as_to_other_folder_keeps_clip_pointing_at_same_file():
+    """저장된(clip이 이미 상대 경로인) 액션을 다른 폴더로 Save As 해도 같은 클립을 가리켜야 한다.
+
+    예전에는 relativize_clip_paths가 절대 경로만 바꾸고 상대 경로는 건너뛰어서, 옛 폴더 기준 "../sfx_saveas/hit.wav"가
+    새 폴더(actions/보스/)에 그대로 쓰였다 - 미리듣기·Scene Play 무음, Build Game "액션이 참조하는 클립이 없습니다".
+    """
+    from core.sound_player import resolve_clip_path
+    wav = make_wav(os.path.join("sfx_saveas", "hit.wav"))
+    action = empty_action("Slash")
+    action.events = [ActionEvent(frame=1, type=EventType.SOUND, params={"clip": wav})]
+    first = os.path.join(_tmpdir, "actions_saveas", "Slash.action.json")
+    save_action(action, first)
+
+    loaded = load_action(first)                      # clip은 이제 상대 경로
+    target = os.path.join(_tmpdir, "actions_saveas", "보스", "Slash_Boss.action.json")
+    save_action(loaded, target)
+
+    again = load_action(target)
+    resolved = resolve_clip_path(again.events[0].params["clip"], os.path.dirname(again.source_path))
+    check(os.path.normcase(os.path.normpath(resolved)) == os.path.normcase(os.path.normpath(wav)),
+          f"Save As 뒤에도 같은 클립이어야 함: {again.events[0].params['clip']} -> {resolved}")
+    check(not os.path.isabs(again.events[0].params["clip"]), "새 위치 기준 상대 경로로 저장돼야 함")
+
+
 TESTS = [
+    test_save_as_to_other_folder_keeps_clip_pointing_at_same_file,
     test_add_sound_event_creates_editable_row,
     test_editing_row_writes_into_event_params,
     test_delete_removes_only_that_sound_event,

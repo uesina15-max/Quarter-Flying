@@ -7,6 +7,7 @@
 #include "commands/DuplicateEntityCommand.h"
 #include "commands/AddComponentCommand.h"
 #include "commands/RemoveComponentCommand.h"
+#include "commands/SetComponentFieldCommand.h"
 #include "commands/InstantiatePrefabCommand.h"
 #include "commands/RevertPrefabInstanceCommand.h"
 #include "commands/SetParentCommand.h"
@@ -29,6 +30,7 @@ EditorAPI& EditorAPI::GetInstance()
 
 void EditorAPI::SetRegistry(ECSRegistry* registry)
 {
+    CommandManager::GetInstance().SetEditorRegistry(registry);
     registry_ = registry;
 }
 
@@ -38,6 +40,9 @@ void EditorAPI::SetRegistry(ECSRegistry* registry)
 
 std::expected<void, EngineError> EditorAPI::CheckRegistry() const
 {
+    if (CommandManager::GetInstance().IsEditingLocked())
+        return MakeError(EngineErrorCode::InvalidState, "Editing is locked during Play/Pause", "EditorAPI");
+
     if (!registry_)
     {
         return MakeError(EngineErrorCode::NotInitialized, "Editor registry not set", "EditorAPI");
@@ -47,6 +52,9 @@ std::expected<void, EngineError> EditorAPI::CheckRegistry() const
 
 std::expected<void, EngineError> EditorAPI::Dispatch(std::unique_ptr<ICommand> cmd)
 {
+    if (CommandManager::GetInstance().IsEditingLocked())
+        return MakeError(EngineErrorCode::InvalidState, "Editing is locked during Play/Pause", "EditorAPI");
+
     if (activeTransaction_)
     {
         // Inside a transaction: apply the command immediately for live preview
@@ -72,17 +80,24 @@ std::expected<void, EngineError> EditorAPI::Dispatch(std::unique_ptr<ICommand> c
 
 std::expected<void, EngineError> EditorAPI::BeginTransaction(const std::string& name)
 {
+    if (CommandManager::GetInstance().IsEditingLocked())
+        return MakeError(EngineErrorCode::InvalidState, "Editing is locked during Play/Pause", "EditorAPI");
+
     if (activeTransaction_)
     {
         return MakeError(EngineErrorCode::TransactionAlreadyOpen,
                          "A transaction is already open", "EditorAPI");
     }
     activeTransaction_ = std::make_unique<Transaction>(name);
+    CommandManager::GetInstance().SetTransactionOpen(true);
     return {};
 }
 
 std::expected<void, EngineError> EditorAPI::CommitTransaction()
 {
+    if (CommandManager::GetInstance().IsEditingLocked())
+        return MakeError(EngineErrorCode::InvalidState, "Editing is locked during Play/Pause", "EditorAPI");
+
     if (!activeTransaction_)
     {
         return MakeError(EngineErrorCode::NoOpenTransaction,
@@ -93,17 +108,22 @@ std::expected<void, EngineError> EditorAPI::CommitTransaction()
     if (activeTransaction_->Empty())
     {
         activeTransaction_.reset();
+        CommandManager::GetInstance().SetTransactionOpen(false);
         return {};
     }
 
     // Move the transaction out before Execute() so that any Apply() side-effects
     // that happen to call back into EditorAPI don't see an open transaction.
     auto txn = std::move(activeTransaction_);
+    CommandManager::GetInstance().SetTransactionOpen(false);
     return CommandManager::GetInstance().Execute(std::move(txn));
 }
 
 std::expected<void, EngineError> EditorAPI::CancelTransaction()
 {
+    if (CommandManager::GetInstance().IsEditingLocked())
+        return MakeError(EngineErrorCode::InvalidState, "Editing is locked during Play/Pause", "EditorAPI");
+
     if (!activeTransaction_)
     {
         return MakeError(EngineErrorCode::NoOpenTransaction,
@@ -120,6 +140,7 @@ std::expected<void, EngineError> EditorAPI::CancelTransaction()
     }
 
     activeTransaction_.reset();
+    CommandManager::GetInstance().SetTransactionOpen(false);
     return {};
 }
 
@@ -328,6 +349,30 @@ std::expected<void, EngineError> EditorAPI::AddComponent(Entity entity,
     }
 
     return Dispatch(std::make_unique<AddComponentCommand>(registry_, entity, componentType));
+}
+
+std::expected<void, EngineError> EditorAPI::SetComponentField(Entity entity, const std::string& componentType,
+                                                             const std::string& fieldName, const std::string& jsonValue,
+                                                             uint32_t expectedVersion)
+{
+    if (auto r = CheckRegistry(); !r) return r;
+
+    if (!registry_->IsValid(entity))
+    {
+        return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "EditorAPI");
+    }
+    nlohmann::json value;
+    try
+    {
+        value = nlohmann::json::parse(jsonValue);
+    }
+    catch (const std::exception& e)
+    {
+        return MakeError(EngineErrorCode::InvalidParameter,
+                         "SetComponentField: value is not valid JSON: " + std::string(e.what()), "EditorAPI");
+    }
+    return Dispatch(std::make_unique<SetComponentFieldCommand>(registry_, entity, componentType, fieldName,
+                                                               std::move(value), expectedVersion));
 }
 
 std::expected<void, EngineError> EditorAPI::RemoveComponent(Entity entity,

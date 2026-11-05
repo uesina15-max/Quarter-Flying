@@ -14,6 +14,105 @@
 
 using namespace Engine;
 
+// 문서의 순서(이펙트 -> 스타일)로 추가해도, Inspector에서 값을 바꿔도 반영되어야 한다. 이펙트는 Edit 상태에서 바로
+// 만들어지므로 생성 시점에 한 번만 읽으면 그 뒤의 편집을 볼 기회가 없다(ParticleSystem::SyncEffectsWithRegistry).
+TEST(ParticleStyle, StyleAddedAfterEffectAndEditedLaterIsApplied)
+{
+    ECSRegistry registry;
+    auto emitter = registry.CreateEntity();
+    ParticleEffectComponent effect;
+    effect.burst = 1; effect.spawnRate = 0; effect.lifetime = 5;
+    registry.AddComponent(emitter, effect);
+    ParticleSystem system;
+    system.Update(registry, .1f);
+    ASSERT_TRUE(system.FindEffect(emitter.id));
+    EXPECT_EQ(system.FindEffect(emitter.id)->style.trailSamples, 0);
+
+    ParticleStyleComponent style;
+    style.trailSamples = 2;
+    registry.AddComponent(emitter, style);
+    system.Update(registry, .1f);
+    ASSERT_TRUE(system.FindEffect(emitter.id));
+    EXPECT_EQ(system.FindEffect(emitter.id)->style.trailSamples, 2);
+    EXPECT_EQ(system.FindEffect(emitter.id)->history.size(), 1u);   // 버스트가 새 스타일로 다시 터졌다
+
+    registry.GetComponent<ParticleStyleComponent>(emitter)->sheetPath = "assets/textures/smoke.png";
+    system.Update(registry, .1f);
+    EXPECT_EQ(system.FindEffect(emitter.id)->style.sheetPath, "assets/textures/smoke.png");
+
+    registry.RemoveComponent<ParticleStyleComponent>(emitter);
+    system.Update(registry, .1f);
+    EXPECT_TRUE(system.FindEffect(emitter.id)->style.sheetPath.empty());
+}
+
+TEST(ParticleEffect, EditedSettingsRestartEffectButUnchangedSettingsDoNot)
+{
+    ECSRegistry registry;
+    auto emitter = registry.CreateEntity();
+    ParticleEffectComponent effect;
+    effect.burst = 3; effect.spawnRate = 0; effect.lifetime = 5;
+    registry.AddComponent(emitter, effect);
+    ParticleSystem system;
+    system.Update(registry, .1f);
+    system.Update(registry, .1f);
+    ASSERT_EQ(system.FindEffect(emitter.id)->particles.size(), 3u);
+    const float age = system.FindEffect(emitter.id)->particles.front().lifetime;
+    EXPECT_LT(age, 5.f - .15f);   // 값이 그대로면 이어서 진행한다(매 프레임 다시 시작하지 않는다)
+
+    registry.GetComponent<ParticleEffectComponent>(emitter)->startColor = Vec3(0, 1, 0);
+    system.Update(registry, .1f);
+    const auto* restarted = system.FindEffect(emitter.id);
+    ASSERT_EQ(restarted->particles.size(), 3u);
+    EXPECT_GT(restarted->particles.front().lifetime, age);
+    EXPECT_FLOAT_EQ(restarted->settings.startColor.y, 1);
+}
+
+// Edit 미리보기에서 터진 버스트가 Play에서 다시 터지지 않으면 빌드한 게임(Player)과 화면이 다르다.
+TEST(ParticleEffect, PlayStartFiresBurstAgainLikeThePlayer)
+{
+    ECSRegistry registry;
+    auto emitter = registry.CreateEntity();
+    ParticleEffectComponent effect;
+    effect.burst = 2; effect.spawnRate = 0; effect.lifetime = .1f;
+    registry.AddComponent(emitter, effect);
+    ParticleSystem system;
+    system.Update(registry, .05f);
+    ASSERT_EQ(system.FindEffect(emitter.id)->particles.size(), 2u);
+    for (int i = 0; i < 4; ++i) system.Update(registry, .05f);
+    EXPECT_EQ(system.GetTotalAliveParticles(), 0u);   // Edit 미리보기에서 다 사라졌다
+
+    system.OnStart(registry);
+    system.Update(registry, .05f);
+    EXPECT_EQ(system.GetTotalAliveParticles(), 2u);
+}
+
+TEST(ParticleStyle, GPUKeepsLaunchVelocityAndCpuTrailsRetainPastPositions)
+{
+    for (bool gpu : {false, true}) {
+        ECSRegistry registry;
+        auto emitter = registry.CreateEntity();
+        ParticleEffectComponent effect;
+        effect.burst = 1; effect.spawnRate = 0; effect.directionSpread = 0;
+        effect.lifetime = 2; effect.initialSpeed = 4; effect.speedVariance = 0;
+        registry.AddComponent(emitter, effect);
+        ParticleStyleComponent style;
+        style.gpuMotion = gpu; style.trailSamples = 2;
+        registry.AddComponent(emitter, style);
+        ParticleSystem system;
+        system.Update(registry, .1f);
+        const auto* alive = system.FindEffect(emitter.id);
+        ASSERT_TRUE(alive);
+        ASSERT_EQ(alive->particles.size(), 1u);
+        if (gpu) {
+            EXPECT_FLOAT_EQ(alive->particles.front().position.y, 0);
+            EXPECT_FLOAT_EQ(alive->particles.front().velocity.y, 4);
+        } else {
+            ASSERT_EQ(alive->history.size(), 1u);
+            EXPECT_GT(alive->particles.front().position.y, alive->history.front()[0].y);
+        }
+    }
+}
+
 namespace
 {
     // 지속 방출 없이 Burst만 쓰는 이펙트. 상한/수명/종료 조건 테스트의 기본형.

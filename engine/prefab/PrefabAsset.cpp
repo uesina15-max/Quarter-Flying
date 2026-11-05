@@ -510,8 +510,8 @@ namespace Engine
         return {};
     }
 
-    std::expected<PrefabAsset, EngineError>
-    PrefabAsset::LoadFromFile(const std::filesystem::path& path, const std::string& projectRoot)
+    static std::expected<PrefabAsset, EngineError>
+    ReadPrefab(const std::filesystem::path& path, const std::string& projectRoot, unsigned depth)
     {
         std::ifstream file(path);
         if (!file.is_open())
@@ -531,6 +531,44 @@ namespace Engine
                 "Failed to parse prefab JSON '" + Utf8FromPath(path) + "': " + e.what(), "PrefabAsset");
         }
 
+        if (parsed.contains("base")) {
+            try {
+                if (depth >= 32 || parsed.at("variantVersion") != 1)
+                    throw std::runtime_error("invalid variant version or inheritance cycle");
+                const auto reference = PathFromUtf8(parsed.at("base").get<std::string>());
+                if (reference.empty() || reference.has_root_path()) throw std::runtime_error("expected relative base path");
+                const auto source = std::filesystem::weakly_canonical(path.parent_path() / reference);
+                if (!projectRoot.empty()) {
+                    auto relative = source.lexically_relative(std::filesystem::weakly_canonical(PathFromUtf8(projectRoot)));
+                    if (relative.empty() || *relative.begin() == "..") throw std::runtime_error("base outside project");
+                }
+                auto base = ReadPrefab(source, projectRoot, depth+1);
+                if (!base) return std::unexpected(base.error());
+                const auto& overrides = parsed.at("overrides");
+                if (!overrides.is_array()) throw std::runtime_error("expected overrides array");
+                for (const auto& change : overrides) {
+                    int index = 0;
+                    for (const auto& name : change.at("path").get<std::vector<std::string>>()) {
+                        int next = -1;
+                        for (size_t child = 0; child < base->children.size(); ++child) {
+                            if (base->children[child].parentIndex != index || base->children[child].name != name) continue;
+                            if (next >= 0) throw std::runtime_error("ambiguous child: " + name);
+                            next = static_cast<int>(child+1);
+                        }
+                        if (next < 0) throw std::runtime_error("missing child: " + name);
+                        index = next;
+                    }
+                    auto& components = index ? base->children[index-1].componentsData : base->componentsData;
+                    const auto& patch = change.at("components");
+                    if (!patch.is_object()) throw std::runtime_error("expected component patch");
+                    components.merge_patch(patch);
+                }
+                base->name = parsed.value("name", base->name);
+                return base;
+            } catch (const std::exception& error) {
+                return MakeError(EngineErrorCode::ResourceLoadFailed, Utf8FromPath(path) + ": " + error.what(), "PrefabAsset");
+            }
+        }
         // 옛 형식 보정(파일에서 읽을 때만). v1: {"components"}, v2: {"entities": [{"components"}]}.
         if (parsed.is_object() && parsed.contains("version") && parsed["version"].is_number_integer())
         {
@@ -554,6 +592,12 @@ namespace Engine
             }
         }
 
-        return FromJson(parsed);
+        return PrefabAsset::FromJson(parsed);
+    }
+
+    std::expected<PrefabAsset, EngineError>
+    PrefabAsset::LoadFromFile(const std::filesystem::path& path, const std::string& projectRoot)
+    {
+        return ReadPrefab(path, projectRoot, 0);
     }
 }

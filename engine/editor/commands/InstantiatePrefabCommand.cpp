@@ -129,6 +129,8 @@ std::expected<void, EngineError> InstantiatePrefabCommand::Undo()
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "InstantiatePrefabCommand");
     }
 
+    // Resolve the saved root before validating after a Play/Stop restoration.
+    if (!savedUUIDs_.empty()) spawnedEntity_ = registry_->GetEntityByUUID(savedUUIDs_.front());
     if (!registry_->IsValid(spawnedEntity_))
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Entity is no longer valid", "InstantiatePrefabCommand");

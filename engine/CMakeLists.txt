@@ -53,6 +53,7 @@ set(EDITOR_SOURCES
     editor/commands/RevertPrefabInstanceCommand.cpp
     editor/commands/EntitySnapshot.cpp
     editor/commands/SetParentCommand.cpp
+    editor/commands/SetComponentFieldCommand.cpp
 )
 
 set(JOB_SOURCES
@@ -81,6 +82,8 @@ renderer/Shader.cpp
     renderer/DynamicResolution.cpp
     renderer/DebugGridRenderer.cpp
     renderer/BoneLineRenderer.cpp
+    renderer/TransformGizmo.cpp
+    renderer/GameOverlay.cpp
     renderer/SceneMeshRenderer.cpp
     renderer/ParticleRenderer.cpp
 )
@@ -95,6 +98,10 @@ set(ECS_SOURCES
     ecs/RenderSystem.cpp
     ecs/CameraSystem.cpp
     ecs/CameraRigSystem.cpp
+    ecs/KeyboardMovementSystem.cpp
+    ecs/StaticCollision.cpp
+    animation/LocomotionSystem.cpp
+    ecs/Picking.cpp
     ecs/CameraGizmoSystem.cpp
     ecs/Hierarchy.cpp
     input/InputState.cpp
@@ -172,6 +179,7 @@ if(MSVC)
     target_compile_definitions(quarterflying_engine PRIVATE GE_EXPORTS)
     target_compile_options(quarterflying_engine PRIVATE /FS)
     target_link_libraries(quarterflying_engine PRIVATE opengl32.lib user32.lib gdi32.lib)
+    target_link_libraries(quarterflying_engine PRIVATE gdiplus.lib)
     # Enable AddressSanitizer for MSVC (Visual Studio 2019+)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION GREATER_EQUAL 1920)
         option(ENABLE_ASAN "Enable AddressSanitizer" OFF)

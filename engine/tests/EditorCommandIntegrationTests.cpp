@@ -207,6 +207,49 @@ TEST_F(IntegrationTest, MergeSession_ConsecutiveMoves_MergeToOneUndoEntry)
     EXPECT_FALSE(cm.CanUndo());
 }
 
+// A new merge session (Inspector focus moved to another input) must not merge into a
+// command pushed by an earlier session, outside any session, or restored by Redo.
+// It used to: one Undo reverted both the X edit and the later Y edit.
+TEST_F(IntegrationTest, MergeSession_DoesNotMergeIntoEarlierSessionOrRedo)
+{
+    Entity e = CreateEntityWithTransform(registry_, Vec3(0, 0, 0));
+    auto& cm = CommandManager::GetInstance();
+    auto X = [&] { return registry_.GetTransformComponent(e)->position.x; };
+    auto Y = [&] { return registry_.GetTransformComponent(e)->position.y; };
+
+    cm.BeginMergeSession();
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&registry_, e, Vec3(1, 0, 0))).has_value());
+    cm.EndMergeSession();
+    cm.BeginMergeSession();
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&registry_, e, Vec3(1, 5, 0))).has_value());
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&registry_, e, Vec3(1, 6, 0))).has_value());
+    cm.EndMergeSession();
+
+    ASSERT_TRUE(cm.Undo().has_value());   // second session only (both of its moves)
+    EXPECT_FLOAT_EQ(X(), 1.0f);
+    EXPECT_FLOAT_EQ(Y(), 0.0f);
+    ASSERT_TRUE(cm.Undo().has_value());   // first session
+    EXPECT_FLOAT_EQ(X(), 0.0f);
+    EXPECT_FALSE(cm.CanUndo());
+
+    // A command outside a session, then a session: still separate steps.
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&registry_, e, Vec3(2, 0, 0))).has_value());
+    cm.BeginMergeSession();
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&registry_, e, Vec3(3, 0, 0))).has_value());
+    // Redo inside the same session restores an older command; the next edit must not fold into it.
+    ASSERT_TRUE(cm.Undo().has_value());
+    ASSERT_TRUE(cm.Redo().has_value());
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&registry_, e, Vec3(4, 0, 0))).has_value());
+    cm.EndMergeSession();
+    ASSERT_TRUE(cm.Undo().has_value());
+    EXPECT_FLOAT_EQ(X(), 3.0f);
+    ASSERT_TRUE(cm.Undo().has_value());
+    EXPECT_FLOAT_EQ(X(), 2.0f);
+    ASSERT_TRUE(cm.Undo().has_value());
+    EXPECT_FLOAT_EQ(X(), 0.0f);
+    EXPECT_FALSE(cm.CanUndo());
+}
+
 // ─── Test 4: SetMaxUndoDepth(3) — oldest entry trimmed on 4th command (Req 10.5) ─
 
 // Validates: Requirements 10.5
@@ -327,4 +370,105 @@ TEST_F(IntegrationTest, Execute_NullCommand_ReturnsInvalidParameter)
     auto result = cm.Execute(nullptr);
     ASSERT_FALSE(result.has_value());
     EXPECT_EQ(result.error().code, EngineErrorCode::InvalidParameter);
+}
+
+// Regression: preview used to discard history, and restored UUIDs had new IDs.
+#include "../ecs/World.h"
+#include "../ecs/Reflection.h"
+#include "../editor/commands/CreateEntityCommand.h"
+#include "../editor/commands/DestroyEntityCommand.h"
+#include "../editor/commands/RemoveComponentCommand.h"
+#include "../editor/commands/InstantiatePrefabCommand.h"
+#include "../editor/commands/RevertPrefabInstanceCommand.h"
+#include <fstream>
+#include <filesystem>
+
+class PlayUndoTest : public ::testing::Test {
+protected:
+    World world;
+    CommandManager& cm = CommandManager::GetInstance();
+    ECSRegistry& reg = *world.GetRegistry();
+    void SetUp() override {
+        RegisterPODComponentsReflection();
+        cm.Clear(); cm.SetEditorRegistry(&reg);
+    }
+    void TearDown() override {
+        cm.EndPlay(&reg); cm.SetTransactionOpen(false);
+        cm.SetEditorRegistry(nullptr); cm.Clear();
+    }
+    void Preview() { world.Play(); world.Pause(); world.Play(); world.Stop(); }
+};
+
+TEST_F(PlayUndoTest, TransformUndoRedoAcrossRepeatedPreview) {
+    Entity e = CreateEntityWithTransform(reg);
+    UUID uid = reg.GetUUID(e);
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&reg,e,Vec3(4,2,3))));
+    ASSERT_TRUE(cm.Execute(std::make_unique<RotateEntityCommand>(&reg,e,Quaternion(0,0,1,0))));
+    ASSERT_TRUE(cm.Execute(std::make_unique<ScaleEntityCommand>(&reg,e,Vec3(2,3,4))));
+    for(int n=0;n<3;++n) {
+        Preview(); EXPECT_NE(reg.GetEntityByUUID(uid).id,e.id);
+        ASSERT_TRUE(cm.Undo()); ASSERT_TRUE(cm.Undo()); ASSERT_TRUE(cm.Undo());
+        auto* t=reg.GetTransformComponent(reg.GetEntityByUUID(uid));
+        EXPECT_FLOAT_EQ(t->position.x,0); EXPECT_FLOAT_EQ(t->scale.x,1); EXPECT_FLOAT_EQ(t->rotation.w,1);
+        Preview();
+        ASSERT_TRUE(cm.Redo()); ASSERT_TRUE(cm.Redo()); ASSERT_TRUE(cm.Redo());
+        t=reg.GetTransformComponent(reg.GetEntityByUUID(uid));
+        EXPECT_FLOAT_EQ(t->position.x,4); EXPECT_FLOAT_EQ(t->scale.z,4); EXPECT_FLOAT_EQ(t->rotation.z,1);
+    }
+}
+TEST_F(PlayUndoTest, CreateRemoveDestroySurvivePreview) {
+    auto create=std::make_unique<CreateEntityCommand>(&reg,"Object");
+    auto* ptr=create.get(); ASSERT_TRUE(cm.Execute(std::move(create)));
+    Entity e=ptr->GetCreatedEntity(); UUID uid=reg.GetUUID(e);
+    reg.AddComponent(e,TransformComponent{});
+    ASSERT_TRUE(cm.Execute(std::make_unique<RemoveComponentCommand>(&reg,e,"TransformComponent")));
+    Preview(); ASSERT_TRUE(cm.Undo());
+    EXPECT_TRUE(reg.HasTransformComponent(reg.GetEntityByUUID(uid)));
+    Preview(); ASSERT_TRUE(cm.Redo()); EXPECT_FALSE(reg.HasTransformComponent(reg.GetEntityByUUID(uid)));
+    ASSERT_TRUE(cm.Undo());
+    ASSERT_TRUE(cm.Execute(std::make_unique<DestroyEntityCommand>(&reg,reg.GetEntityByUUID(uid))));
+    Preview(); ASSERT_TRUE(cm.Undo()); EXPECT_TRUE(reg.GetEntityByUUID(uid).IsValid());
+    Preview(); ASSERT_TRUE(cm.Redo()); EXPECT_FALSE(reg.GetEntityByUUID(uid).IsValid());
+    ASSERT_TRUE(cm.Undo());
+    Preview(); ASSERT_TRUE(cm.Undo()); EXPECT_FALSE(reg.GetEntityByUUID(uid).IsValid());
+    ASSERT_TRUE(cm.Redo()); EXPECT_TRUE(reg.GetEntityByUUID(uid).IsValid());
+}
+TEST_F(PlayUndoTest, PrefabInstantiateAndRevertSurvivePreview) {
+    auto path=std::filesystem::temp_directory_path()/"qf-play-undo-test.prefab.json";
+    { std::ofstream f(path); f << R"({"version":1,"name":"Prefab","components":{"TransformComponent":{"position":[1,0,0],"rotation":[0,0,0],"scale":[1,1,1]}}})"; }
+    auto spawn=std::make_unique<InstantiatePrefabCommand>(&reg,path);
+    auto* ptr=spawn.get(); ASSERT_TRUE(cm.Execute(std::move(spawn)));
+    Entity e=ptr->GetSpawnedEntity(); UUID uid=reg.GetUUID(e);
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&reg,e,Vec3(9,0,0))));
+    ASSERT_TRUE(cm.Execute(std::make_unique<RevertPrefabInstanceCommand>(&reg,e)));
+    Preview(); ASSERT_TRUE(cm.Undo()); EXPECT_FLOAT_EQ(reg.GetTransformComponent(reg.GetEntityByUUID(uid))->position.x,9);
+    Preview(); ASSERT_TRUE(cm.Redo()); EXPECT_FLOAT_EQ(reg.GetTransformComponent(reg.GetEntityByUUID(uid))->position.x,1);
+    ASSERT_TRUE(cm.Undo()); ASSERT_TRUE(cm.Undo());
+    Preview(); ASSERT_TRUE(cm.Undo()); EXPECT_FALSE(reg.GetEntityByUUID(uid).IsValid());
+    Preview(); ASSERT_TRUE(cm.Redo()); EXPECT_TRUE(reg.GetEntityByUUID(uid).IsValid());
+    std::filesystem::remove(path);
+}
+TEST_F(PlayUndoTest, PlayLocksHistoryAndRestoresSimulationWithoutNewCommands) {
+    Entity e=CreateEntityWithTransform(reg); UUID uid=reg.GetUUID(e);
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&reg,e,Vec3(4,0,0))));
+    auto count=cm.GetChangeCount(); cm.BeginMergeSession();
+    world.Play(); EXPECT_FALSE(cm.IsInMergeSession()); EXPECT_FALSE(cm.CanUndo());
+    EXPECT_FALSE(cm.Undo()); EXPECT_FALSE(cm.Redo());
+    EXPECT_FALSE(cm.Execute(std::make_unique<MoveEntityCommand>(&reg,e,Vec3(99,0,0))));
+    EXPECT_THROW(cm.Clear(),std::runtime_error);
+    reg.SetTransformPosition(e,20,0,0); Entity runtime=reg.CreateEntity(); UUID runtimeUid=reg.GetUUID(runtime);
+    world.Pause(); EXPECT_FALSE(cm.CanUndo()); world.Stop();
+    EXPECT_EQ(cm.GetChangeCount(),count); EXPECT_TRUE(cm.CanUndo());
+    EXPECT_FALSE(reg.GetEntityByUUID(runtimeUid).IsValid());
+    EXPECT_FLOAT_EQ(reg.GetTransformComponent(reg.GetEntityByUUID(uid))->position.x,4);
+    ASSERT_TRUE(cm.Undo()); EXPECT_FLOAT_EQ(reg.GetTransformComponent(reg.GetEntityByUUID(uid))->position.x,0);
+}
+TEST_F(PlayUndoTest, OpenTransactionRejectsPlayAndOtherWorldDoesNotTouchHistory) {
+    Entity e=CreateEntityWithTransform(reg);
+    ASSERT_TRUE(cm.Execute(std::make_unique<MoveEntityCommand>(&reg,e,Vec3(4,0,0))));
+    cm.SetTransactionOpen(true); EXPECT_THROW(world.Play(),std::runtime_error);
+    EXPECT_EQ(world.GetEditorState(),World::EditorState::Edit); EXPECT_TRUE(cm.CanUndo());
+    cm.SetTransactionOpen(false);
+    { World other; other.Play(); EXPECT_FALSE(cm.IsEditingLocked()); other.Stop(); }
+    EXPECT_TRUE(cm.CanUndo()); ASSERT_TRUE(cm.Undo());
 }

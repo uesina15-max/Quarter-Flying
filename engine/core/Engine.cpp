@@ -21,8 +21,12 @@
 #include "PlatformFactory.h"
 #include "../ecs/WorldManager.h"
 #include "../ecs/RenderSystem.h"
+#include "../renderer/GameOverlay.h"
 #include "../ecs/CameraSystem.h"
 #include "../ecs/CameraRigSystem.h"
+#include "../ecs/KeyboardMovementSystem.h"
+#include <chrono>
+#include "../animation/LocomotionSystem.h"
 #include "../ecs/CameraGizmoSystem.h"
 #include "../ecs/ParticleSystem.h"
 #include "../job/JobSystem.h"
@@ -282,6 +286,7 @@ namespace Engine
 
     bool Engine::DispatchInputEvent(const InputEvent& event)
     {
+        if (gameOverlay) gameOverlay->QueuePointer(event);
         switch (event.type)
         {
         case InputEventType::WindowClose:
@@ -321,6 +326,8 @@ namespace Engine
         }
 
         Logger::Info("Shutting down Engine...");
+        if (gameOverlay && platform) platform->MakeGraphicsContextCurrent(mainWindow);
+        gameOverlay.reset();
 
         isRunning = false;
 
@@ -444,6 +451,19 @@ namespace Engine
         }
         contextLossLogged = false;
 
+        // 일시정지 중에도 게임 UI는 화면에 남아야 한다. 예전에는 Play 상태에서만 만들어서, Pause를 누르면 UI가 통째로
+        // 사라졌다가(오버레이 상태까지 파괴) 재개하면 다시 나타났다.
+        World* overlayWorld = GetActiveWorld();
+        if (viewCamera == ViewCamera::Game && overlayWorld &&
+            overlayWorld->GetEditorState() != World::EditorState::Edit)
+        {
+            if (!gameOverlay) gameOverlay = std::make_unique<GameOverlay>();
+        }
+        else
+        {
+            gameOverlay.reset();
+        }
+
         // 입력 상태: 이번 프레임 이동량을 0으로 되돌리고, 아래 두 경로의 이벤트를 모두 반영한다(InputState.h).
         inputState.BeginFrame();
 
@@ -481,22 +501,30 @@ namespace Engine
         // 같은 값을 읽는다 - 읽는 쪽이 각자 계산하거나 읽기가 엣지를 소비하면, 먼저 읽은 쪽만 WasPressed를 보고
         // 나중에 읽은 쪽은 놓친다. 반드시 이벤트 적용 뒤, World 업데이트 전이어야 한다.
         inputActions.Update(inputState);
+        using FrameClock = std::chrono::steady_clock;
+        const auto simulationStart = FrameClock::now();
 
         // 4. ECS 업데이트 (입력 처리 → ECS 업데이트 → 렌더링 순서)
         if (worldManager)
         {
             // Python 스크립트의 quarterflying.input은 이 범위 안에서만 이 엔진의 액션 맵을 읽는다(InputActions::Current).
             InputActions::ScopedCurrent currentInput(&inputActions);
+            // 에디터 선택 강조는 Edit 상태에서만. Play 중에도 선택(Inspector 읽기 전용)은 유지되지만 게임 화면에
+            // 노란 강조가 남으면 안 된다.
+            if (World* active = worldManager->GetActiveWorld())
+            {
+                if (RenderSystem* rs = active->GetSystem<RenderSystem>())
+                {
+                    const bool editing = active->GetEditorState() == World::EditorState::Edit;
+                    rs->SetSelectedEntities(editing ? selectedEntities : std::vector<Entity>{});
+                }
+            }
             worldManager->Update(deltaTime);
-        }
-        // 스크립트가 이번 프레임에 커서 잠금을 바꿨으면(quarterflying.input.set_cursor_locked) 플랫폼에 전한다.
-        // 스크립트는 플랫폼에 직접 닿지 않는다 - 요청은 InputActions에 쌓이고, 적용 판단(포커스·임베드)은 플랫폼이 한다.
-        if (auto lockRequest = inputActions.TakeCursorLockRequest(); lockRequest && platform)
-        {
-            platform->SetCursorLockRequested(*lockRequest);
+            UpdateTransformGizmo();   // World 갱신 뒤 - 이번 프레임의 최종 위치(드래그 결과 포함)에 그린다
         }
 
         // 5. 서브시스템 Tick (Renderer::Tick에서 BeginFrame 호출)
+        const auto rendererStart = FrameClock::now();
         for (auto& subsystem : subsystems)
         {
             subsystem->Tick(deltaTime);
@@ -508,11 +536,35 @@ namespace Engine
             subsystem->LateTick(deltaTime);
         }
 
+        if (gameOverlay && overlayWorld == GetActiveWorld())
+        {
+            // on_ui_click 등도 게임 스크립트다 - on_update처럼 quarterflying.input을 읽을 수 있어야 한다.
+            // 증상: "시작" 버튼의 on_ui_click에서 set_cursor_locked를 부르면 "quarterflying.input.set_cursor_locked:
+            // no engine frame is running"으로 실패했다(로그에만 남고 버튼은 아무 일도 안 하는 것처럼 보임).
+            // 원인: 위 World 업데이트의 ScopedCurrent 범위 밖에서 콜백을 불렀다.
+            InputActions::ScopedCurrent currentInput(&inputActions);
+            gameOverlay->Frame(*overlayWorld->GetRegistry(), config.assetRoot,
+                               overlayWorld->GetEditorState() == World::EditorState::Play);
+        }
+
+        // 스크립트가 이번 프레임에 커서 잠금을 바꿨으면(quarterflying.input.set_cursor_locked) 플랫폼에 전한다.
+        // 스크립트는 플랫폼에 직접 닿지 않는다 - 요청은 InputActions에 쌓이고, 적용 판단(포커스·임베드)은 플랫폼이 한다.
+        // UI 콜백이 낸 요청도 받도록 오버레이 뒤에서 처리한다.
+        if (auto lockRequest = inputActions.TakeCursorLockRequest(); lockRequest && platform)
+        {
+            platform->SetCursorLockRequested(*lockRequest);
+        }
+
+        const auto presentStart = FrameClock::now();
         // 6-1. 더블 버퍼 스왑 - 이번 프레임에 그린 내용을 화면에 표시
         if (platform)
         {
             platform->PresentFrame(mainWindow);
         }
+        using Milliseconds = std::chrono::duration<double,std::milli>;
+        frameCosts = {Milliseconds(rendererStart-simulationStart).count(),
+                      Milliseconds(presentStart-rendererStart).count(),
+                      Milliseconds(FrameClock::now()-presentStart).count()};
 
         // 프레임 시간 로깅 (설정된 간격마다)
         if (config.logFrameInterval > 0 && frameCount % config.logFrameInterval == 0)
@@ -539,6 +591,8 @@ namespace Engine
         // 렌즈(fov/near/far)는 CameraSystem이 활성 CameraComponent 값으로 관리하므로 여기서 덮어쓰지 않는다
         // (예전에는 60도 고정 투영으로 통째로 덮어써서 CameraComponent.fov가 반영되지 않았다).
         const float aspect = static_cast<float>(width) / static_cast<float>(height);
+        viewportPixelWidth = width;
+        viewportPixelHeight = height;
         if (defaultCamera)
         {
             defaultCamera->setAspect(aspect);
@@ -610,7 +664,7 @@ namespace Engine
 
             auto renderSystem = std::make_unique<RenderSystem>(
                 renderer ? renderer->GetInstancedBatchManager() : nullptr,
-                config.assetRoot, RenderSystem::MeshLoader{}, std::move(textureLoader),
+                config.assetRoot, RenderSystem::MeshLoader{}, textureLoader,
                 renderer ? renderer->GetSceneLightingTarget() : nullptr);
             // 머티리얼 파일(R-4). 파서는 asset/MaterialAsset 하나 - 에디터·Player가 같은 코드를 지난다.
             renderSystem->SetMaterialLoader([](const std::string& fullPath) { return LoadMaterialFile(fullPath); });
@@ -621,6 +675,8 @@ namespace Engine
 
             // 추적/주시/플레이어 조작 카메라가 카메라 엔티티의 Transform을 먼저 계산한다(CameraRigSystem.h).
             world->RegisterSystem(std::make_unique<CameraRigSystem>(&inputState));
+            world->RegisterSystem(std::make_unique<KeyboardMovementSystem>(&inputState));
+            world->RegisterSystem(std::make_unique<LocomotionSystem>(config.assetRoot));
 
             // 에디터 카메라 기즈모(카메라마다 위치/시야 선). 그릴지는 Renderer가 뷰 카메라에 따라 정한다.
             world->RegisterSystem(std::make_unique<CameraGizmoSystem>(
@@ -635,7 +691,7 @@ namespace Engine
             // 카메라를 같은 프레임에 쓰기 위해서다(§3.9).
             world->RegisterSystem(std::make_unique<ParticleSystem>(
                 renderer ? renderer->GetInstancedBatchManager() : nullptr,
-                defaultCamera.get()));
+                defaultCamera.get(), std::move(textureLoader), config.assetRoot));
 
             // Python 스크립트(ScriptComponent). 예전에는 ScriptSystem이 구현만 되어 있고 어떤 World에도
             // 등록되지 않아서, ScriptComponent를 붙여도 on_create/on_update가 한 번도 호출되지 않았다
@@ -661,6 +717,10 @@ namespace Engine
         if (worldManager)
         {
             worldManager->ForEachWorld([&](World& world) {
+                if (auto* particles = world.GetSystem<ParticleSystem>())
+                    particles->SetAssetRoot(assetRoot);
+                if (auto* locomotion = world.GetSystem<LocomotionSystem>())
+                    locomotion->SetAssetRoot(assetRoot);
                 if (RenderSystem* rs = world.GetSystem<RenderSystem>())
                 {
                     rs->SetAssetRoot(assetRoot);
@@ -699,6 +759,99 @@ namespace Engine
         }
         editorCamera->setPosition(glm::vec3(eyeX, eyeY, eyeZ));
         editorCamera->lookAt(glm::vec3(targetX, targetY, targetZ));
+    }
+
+    std::optional<PickRay> Engine::GetViewRay(float ndcX, float ndcY) const
+    {
+        const Camera* camera = (viewCamera == ViewCamera::Editor) ? editorCamera.get() : defaultCamera.get();
+        if (!camera)
+        {
+            return std::nullopt;   // Initialize 전
+        }
+        return MakePickRay(camera->getViewMatrix(), camera->getProjectionMatrix(), ndcX, ndcY);
+    }
+
+    std::optional<PickHit> Engine::PickEntityAtScreen(float ndcX, float ndcY)
+    {
+        World* world = GetActiveWorld();
+        const auto ray = GetViewRay(ndcX, ndcY);
+        if (!world || !ray)
+        {
+            return std::nullopt;
+        }
+        // 메시 경계는 그 메시를 그리는 RenderSystem에 묻는다 - 그려진 모양과 피킹 모양이 같은 곳에서 나온다.
+        const RenderSystem* renderSystem = world->GetSystem<RenderSystem>();
+        MeshBoundsLookup bounds;
+        if (renderSystem)
+        {
+            bounds = [renderSystem](const RenderableComponent& rc) { return renderSystem->GetMeshBounds(rc); };
+        }
+        return PickEntity(*world->GetRegistry(), *ray, bounds);
+    }
+
+    void Engine::UpdateTransformGizmo()
+    {
+        gizmo.reset();
+        gizmoTarget = Entity();
+        World* world = GetActiveWorld();
+        if (!world || !editorCamera || viewCamera != ViewCamera::Editor
+            || world->GetEditorState() != World::EditorState::Edit || selectedEntities.size() != 1)
+        {
+            return;
+        }
+        ECSRegistry& registry = *world->GetRegistry();
+        const Entity target = selectedEntities.front();
+        if (!registry.GetTransformComponent(target))
+        {
+            return;   // 지워졌거나(Undo 등) 위치가 없는 엔티티
+        }
+        const TransformComponent worldTransform = ComputeWorldTransform(registry, target);
+        const glm::vec3 origin = glm::vec3(ComputeWorldMatrix(registry, target)[3]);
+        const glm::quat orientation(worldTransform.rotation.w, worldTransform.rotation.x, worldTransform.rotation.y, worldTransform.rotation.z);
+        gizmo = MakeTransformGizmo(gizmoMode, origin, orientation, editorCamera->getViewMatrix(),
+                                   editorCamera->getProjectionMatrix());
+        if (!gizmo)
+        {
+            return;   // 카메라 뒤
+        }
+        gizmoTarget = target;
+        if (Renderer* renderer = GetSubsystem<Renderer>())
+        {
+            // X 빨강, Y 초록, Z 파랑, 전체 크기(가운데 상자) 밝은 회색. 마우스가 올라간(또는 끌고 있는) 손잡이는 노랑.
+            auto colorOf = [](GizmoHandle handle) {
+                switch (handle)
+                {
+                case GizmoHandle::X: return glm::vec3(0.95f, 0.30f, 0.30f);
+                case GizmoHandle::Y: return glm::vec3(0.40f, 0.90f, 0.35f);
+                case GizmoHandle::Z: return glm::vec3(0.35f, 0.55f, 1.0f);
+                default: return glm::vec3(0.85f);
+                }
+            };
+            for (GizmoHandle handle : GizmoHandles(gizmoMode))
+            {
+                Renderer::ColoredLines group;
+                group.color = handle == gizmoHighlight ? glm::vec3(1.0f, 0.85f, 0.2f) : colorOf(handle);
+                AppendGizmoHandleLines(*gizmo, handle, group.lines);
+                renderer->GetOverlayLines().push_back(std::move(group));
+            }
+        }
+    }
+
+    std::optional<Engine::GizmoPick> Engine::PickGizmoAt(float ndcX, float ndcY) const
+    {
+        if (!gizmo || !editorCamera)
+        {
+            return std::nullopt;
+        }
+        const glm::vec2 viewport(static_cast<float>(viewportPixelWidth ? viewportPixelWidth : config.windowWidth),
+                                 static_cast<float>(viewportPixelHeight ? viewportPixelHeight : config.windowHeight));
+        const GizmoHandle handle = PickGizmoHandle(*gizmo, editorCamera->getViewMatrix(),
+                                                   editorCamera->getProjectionMatrix(), ndcX, ndcY, viewport);
+        if (handle == GizmoHandle::None)
+        {
+            return std::nullopt;
+        }
+        return GizmoPick{handle, gizmoTarget, *gizmo};
     }
 
     void Engine::SetRenderMode(RenderMode mode)

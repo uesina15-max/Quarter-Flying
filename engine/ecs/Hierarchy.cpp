@@ -251,4 +251,22 @@ namespace Engine
         world.scale = Vec3(scale.x, scale.y, scale.z);
         return world;
     }
+
+    glm::vec3 LocalPositionForWorld(ECSRegistry& registry, Entity entity, const glm::vec3& worldPosition)
+    {
+        const Entity parent = GetParent(registry, entity);
+        if (!parent.IsValid())
+        {
+            return worldPosition;
+        }
+        // 엔티티 원점의 월드 위치 = parentWorld * (local.position, 1). 부모 스케일이 0이면 역이 없다 - 그때는
+        // 어느 로컬 값이든 같은 점으로 접히므로 지금 값을 그대로 둔다.
+        const glm::mat4 parentWorld = ComputeWorldMatrix(registry, parent);
+        if (std::abs(glm::determinant(parentWorld)) < 1e-12f)
+        {
+            const TransformComponent* tc = registry.GetComponent<TransformComponent>(entity);
+            return tc ? glm::vec3(tc->position.x, tc->position.y, tc->position.z) : glm::vec3(0.0f);
+        }
+        return glm::vec3(glm::inverse(parentWorld) * glm::vec4(worldPosition, 1.0f));
+    }
 }

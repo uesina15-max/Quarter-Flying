@@ -8,6 +8,7 @@ namespace Engine
 RotateEntityCommand::RotateEntityCommand(ECSRegistry* registry, Entity entity, Quaternion newRotation)
     : registry_(registry)
     , entity_(entity)
+    , entityUUID_(registry && registry->IsValid(entity) ? registry->GetUUID(entity) : UUID(0))
     , newRotation_(newRotation)
 {
     if (registry_ && registry_->HasTransformComponent(entity_))
@@ -25,6 +26,8 @@ std::expected<void, EngineError> RotateEntityCommand::Apply()
     {
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "RotateEntityCommand");
     }
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!entity_.IsValid())
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "RotateEntityCommand");
@@ -51,6 +54,8 @@ std::expected<void, EngineError> RotateEntityCommand::Undo()
     {
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "RotateEntityCommand");
     }
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!entity_.IsValid())
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "RotateEntityCommand");
@@ -71,7 +76,7 @@ std::expected<void, EngineError> RotateEntityCommand::Undo()
 bool RotateEntityCommand::CanMergeWith(const ICommand& other) const
 {
     const auto* otherRotate = dynamic_cast<const RotateEntityCommand*>(&other);
-    return otherRotate != nullptr && otherRotate->entity_.id == entity_.id;
+    return otherRotate != nullptr && otherRotate->registry_ == registry_ && entityUUID_.IsValid() && otherRotate->entityUUID_ == entityUUID_;
 }
 
 std::expected<void, EngineError> RotateEntityCommand::MergeWith(const ICommand& other)

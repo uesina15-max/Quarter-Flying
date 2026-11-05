@@ -17,7 +17,7 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QFrame, QCheckBox, QComboBox)
+    QPushButton, QSizePolicy, QFrame, QCheckBox, QComboBox, QSplitter)
 from PySide6.QtCore import Qt, Signal, QTimer, QRect, QPointF
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush
 
@@ -202,16 +202,22 @@ class AnimationPreviewPanel(QWidget):
             self._viewport_slot_layout = QVBoxLayout(self.viewport_slot)
             self._viewport_slot_layout.setContentsMargins(0, 0, 0, 0)
             self.canvas = None
-            layout.addWidget(self.viewport_slot, 1)
 
             # Phase 5 믹서 UI - 실제 블렌딩(LayerMixer)은 전부 C++에 위임하고, 여기서는
             # weight/frame/mask 값 전달만 한다("UI blending 로직 재구현 금지").
             self.mixer_panel = MotionMixerPanel(self._get_preview_state)
-            # 버튼 제거(로드/설정 통합, motion_mixer.py) + 여백 축소로 줄어든 만큼
-            # 뷰포트가 더 넓은 영역을 쓰도록 높이를 낮춘다(모션 에디터 레이아웃을
-            # 뷰포트/모션그래프 위주로 재조정).
-            self.mixer_panel.setFixedHeight(205)
-            layout.addWidget(self.mixer_panel)
+            # 뷰포트와 믹서 사이를 끌어서 조절한다. 예전에는 믹서를 205px로 고정해서, 레이어가 없어 비어 있는
+            # 레이어 목록까지 그 높이를 차지했고 뷰포트는 남는 공간(창 1080p에서 약 180px)만 받았다.
+            # 기본은 행 4개(스켈레톤·베이스·레이어 추가·상태)가 보이는 높이이고, 창을 키우면 뷰포트만 커진다.
+            self.mixer_panel.setMinimumHeight(118)
+            self.view_mixer_splitter = QSplitter(Qt.Vertical)
+            self.view_mixer_splitter.setChildrenCollapsible(False)
+            self.view_mixer_splitter.addWidget(self.viewport_slot)
+            self.view_mixer_splitter.addWidget(self.mixer_panel)
+            self.view_mixer_splitter.setStretchFactor(0, 1)
+            self.view_mixer_splitter.setStretchFactor(1, 0)
+            self.view_mixer_splitter.setSizes([600, 130])
+            layout.addWidget(self.view_mixer_splitter, 1)
         else:
             # 캔버스 (뷰어) - 엔진이 없을 때의 2D 더미 폴백
             self.canvas = PreviewCanvas()

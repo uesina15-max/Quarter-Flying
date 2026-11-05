@@ -1,6 +1,9 @@
 #pragma once
 
 #include "System.h"
+#include "StaticCollision.h"
+#include "RenderSystem.h"
+#include <array>
 #include "Components.h"
 #include "Entity.h"
 #include <glm/vec3.hpp>
@@ -62,13 +65,23 @@ namespace Engine
     // EffectInstance — 이펙트 하나의 런타임 상태
     // ============================================================================
 
+    struct ParticleStyleComponent {
+        std::string sheetPath;
+        int columns = 1, rows = 1, trailSamples = 0;
+        bool collide = false, gpuMotion = false;
+        bool operator==(const ParticleStyleComponent&) const = default;
+    };
+
     struct EffectInstance
     {
         EntityID owner{0};
+        ParticleStyleComponent style;
+        std::vector<std::array<glm::vec3,4>> history;
 
         // 스폰 시점의 설정 스냅샷. 매 프레임 컴포넌트에서 다시 읽지 않는다 — 시뮬레이션
         // 도중에 lifetime 같은 값이 바뀌면 이미 날아가고 있는 파티클의 t(진행도)가
-        // 튀어버리기 때문이다.
+        // 튀어버리기 때문이다. 컴포넌트 값이 바뀌면 이펙트를 처음부터 다시 시작한다
+        // (ParticleSystem::SyncEffectsWithRegistry).
         ParticleEffectComponent settings;
 
         // 생성 시 reserve(maxParticle) 한 번. 이후 런타임 내내 재할당이 없어야 한다(§5.5).
@@ -151,9 +164,15 @@ namespace Engine
         // 엔진에 연결할 때 쓰는 생성자. RenderSystem과 같은 규약으로 **둘 다 nullptr을
         // 허용한다** — 그 경우 인스턴스 수집을 조용히 건너뛰고 시뮬레이션만 돈다(시각화가
         // 안 될 뿐 크래시로 이어지지 않는다).
-        ParticleSystem(InstancedBatchManager* batchManager, Camera* camera);
+        ParticleSystem(InstancedBatchManager* batchManager, Camera* camera, RenderSystem::TextureLoader loader = {}, std::string root = {});
+        void SetAssetRoot(const std::string& root) { root_ = root; }
 
         void Update(ECSRegistry& registry, float deltaTime) override;
+
+        // Play 시작 = 게임 시작. 이펙트는 Edit 상태에서도 돌기 때문에(미리보기) 그대로 이어 가면, Burst가 Edit에서
+        // 이미 터져서 Play에서는 다시 터지지 않았다. 빌드한 게임(Player)에서는 첫 프레임에 터지므로 에디터 Play와
+        // 화면이 달랐다. 여기서 비우면 다음 Update에서 새로 만들어져 Player와 같아진다.
+        void OnStart(ECSRegistry&) override { effects_.clear(); }
 
         const char* GetName() const override { return "ParticleSystem"; }
 
@@ -184,6 +203,10 @@ namespace Engine
         // 살아있는 파티클을 InstancedBatchManager의 인스턴스 배치로 옮긴다.
         // batchManager_/camera_ 중 하나라도 없으면 아무 것도 하지 않는다.
         void CollectInstances();
+        RenderSystem::TextureLoader loader_;
+        std::string root_;
+        std::unordered_map<std::string,RenderSystem::LoadedTexture> textures_;
+        std::vector<CollisionBounds> obstacles_;
         bool EnsureBatch();
         static std::shared_ptr<Mesh> CreateQuadMesh();
 

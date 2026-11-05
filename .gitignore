@@ -118,3 +118,7 @@ wheels/
 *.bak
 *.swp
 archive_docs/
+
+# Editor per-project session (engine/editor/project/session.py) - open scene/actions, editor camera.
+# User-local state like .vs/; the sample project (engine/) writes it here too.
+.quarterflying/

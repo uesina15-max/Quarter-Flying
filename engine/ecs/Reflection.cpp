@@ -6,6 +6,11 @@
 #include <fstream>
 #include "Components.h"
 #include "ScriptComponent.h"
+#include "KeyboardMovementComponent.h"
+#include "StaticCollision.h"
+#include "ParticleSystem.h"
+#include "../animation/LocomotionSystem.h"
+#include "GameUI.h"
 #include "../prefab/PrefabInstanceComponent.h"
 #include <string>
 #include <unordered_map>
@@ -160,6 +165,44 @@ namespace Engine {
     }
 
     void RegisterPODComponentsReflection() {
+        GE_BEGIN_COMPONENT(CanvasComponent)
+            GE_FIELD(CanvasComponent, enabled, Bool, "enabled")
+        GE_END_COMPONENT(CanvasComponent)
+        GE_BEGIN_COMPONENT(RectTransformComponent)
+            GE_FIELD(RectTransformComponent, x, Float, "x")
+            GE_FIELD(RectTransformComponent, y, Float, "y")
+            GE_FIELD(RectTransformComponent, width, Float, "width")
+            GE_FIELD(RectTransformComponent, height, Float, "height")
+            GE_FIELD(RectTransformComponent, order, Int, "order")
+        GE_END_COMPONENT(RectTransformComponent)
+        GE_BEGIN_COMPONENT(UITextComponent)
+            GE_FIELD(UITextComponent, text, String, "text")
+            GE_FIELD(UITextComponent, fontSize, Float, "fontSize")
+        GE_END_COMPONENT(UITextComponent)
+        GE_BEGIN_COMPONENT(UIImageComponent)
+            GE_FIELD(UIImageComponent, imagePath, String, "imagePath")
+        GE_END_COMPONENT(UIImageComponent)
+        GE_BEGIN_COMPONENT(UIButtonComponent)
+            GE_FIELD(UIButtonComponent, interactable, Bool, "interactable")
+        GE_END_COMPONENT(UIButtonComponent)
+        GE_BEGIN_COMPONENT(LocomotionComponent)
+            GE_FIELD(LocomotionComponent, skeletonPath, String, "Skeleton path")
+            GE_FIELD(LocomotionComponent, idleClip, String, "Idle clip")
+            GE_FIELD(LocomotionComponent, walkClip, String, "Walk clip")
+            GE_FIELD(LocomotionComponent, runClip, String, "Run clip")
+            GE_FIELD(LocomotionComponent, walkThreshold, Float, "Walk threshold")
+            GE_FIELD(LocomotionComponent, runThreshold, Float, "Run threshold")
+        GE_END_COMPONENT(LocomotionComponent)
+        GE_BEGIN_COMPONENT(BoxColliderComponent)
+            GE_FIELD(BoxColliderComponent, halfExtents, Vec3, "Half extents")
+            GE_FIELD(BoxColliderComponent, offset, Vec3, "Local center")
+            GE_FIELD(BoxColliderComponent, enabled, Bool, "Enabled")
+        GE_END_COMPONENT(BoxColliderComponent)
+        GE_BEGIN_COMPONENT(KeyboardMovementComponent)
+            GE_FIELD(KeyboardMovementComponent, enabled, Bool, "Enabled")
+            GE_FIELD(KeyboardMovementComponent, speed, Float, "Speed (units/s)")
+        GE_END_COMPONENT(KeyboardMovementComponent)
+
         GE_BEGIN_COMPONENT(TransformComponent)
             GE_FIELD(TransformComponent, position, Vec3, "Position")
             GE_FIELD(TransformComponent, rotation, EulerRotation, "Rotation")  // 저장은 Quaternion, 직렬화/편집은 오일러 각(도)
@@ -380,6 +423,14 @@ namespace Engine {
         // switch에 Enum case가 없어서 조용히 누락되기 때문(docs/VFX_LITE_PLAN.md §7.3).
         // 블렌드 모드를 파라미터로 만들지 않기로 한 결정(구현 계획서 §2.2) 덕분에
         // enum이 필요한 필드가 애초에 생기지 않았다.
+        GE_BEGIN_COMPONENT(ParticleStyleComponent)
+            GE_FIELD(ParticleStyleComponent, sheetPath, String, "Sprite sheet path")
+            GE_FIELD(ParticleStyleComponent, rows, Int, "Sheet rows")
+            GE_FIELD(ParticleStyleComponent, columns, Int, "Sheet columns")
+            GE_FIELD(ParticleStyleComponent, trailSamples, Int, "Trail samples (0-4)")
+            GE_FIELD(ParticleStyleComponent, collide, Bool, "Collide with boxes")
+            GE_FIELD(ParticleStyleComponent, gpuMotion, Bool, "GPU motion (without collision)")
+        GE_END_COMPONENT(ParticleStyleComponent)
         GE_BEGIN_COMPONENT(ParticleEffectComponent)
             // 생성
             GE_FIELD(ParticleEffectComponent, spawnRate, Float, "Spawn Rate")

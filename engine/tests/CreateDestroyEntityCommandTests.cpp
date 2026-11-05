@@ -353,3 +353,60 @@ TEST_F(EntityCommandTest, ChangeCount_DoesNotChangeOnFailedUndoOrRedo)
     EXPECT_FALSE(cm.Redo().has_value());
     EXPECT_EQ(cm.GetChangeCount(), start);
 }
+
+TEST_F(EntityCommandTest, DestroyUndo_RestoresExternalCameraTargetsAcrossRepeatedRedo)
+{
+    ASSERT_NE(ComponentRegistry::GetComponentInfo("CameraFollowComponent"), nullptr);
+    Entity target = registry.CreateEntity();
+    registry.AddComponent(target, TransformComponent{});
+    const UUID targetUUID = registry.GetUUID(target);
+    Entity camera = registry.CreateEntity();
+    CameraFollowComponent follow;
+    follow.target = target;
+    follow.offset = Vec3(2, 5, 9);
+    follow.damping = 0.7f;
+    registry.AddComponent(camera, follow);
+    CameraLookAtComponent look;
+    look.target = target;
+    registry.AddComponent(camera, look);
+    Entity other = registry.CreateEntity();
+    Entity untouchedCamera = registry.CreateEntity();
+    follow.target = other;
+    registry.AddComponent(untouchedCamera, follow);
+    DestroyEntityCommand command(&registry, target);
+    for (int i = 0; i < 3; ++i)
+    {
+        ASSERT_TRUE(command.Apply().has_value());
+        EXPECT_FALSE(registry.GetComponent<CameraFollowComponent>(camera)->target.IsValid());
+        ASSERT_TRUE(command.Undo().has_value());
+        const Entity restored = registry.GetEntityByUUID(targetUUID);
+        ASSERT_TRUE(registry.IsValid(restored));
+        EXPECT_EQ(registry.GetComponent<CameraFollowComponent>(camera)->target.id, restored.id);
+        EXPECT_EQ(registry.GetComponent<CameraLookAtComponent>(camera)->target.id, restored.id);
+        EXPECT_FLOAT_EQ(registry.GetComponent<CameraFollowComponent>(camera)->offset.x, 2.0f);
+        EXPECT_FLOAT_EQ(registry.GetComponent<CameraFollowComponent>(camera)->damping, 0.7f);
+        EXPECT_EQ(registry.GetComponent<CameraFollowComponent>(untouchedCamera)->target.id, other.id);
+    }
+}
+
+TEST_F(EntityCommandTest, DestroySubtree_RestoresExternalReferenceToChild)
+{
+    ASSERT_NE(ComponentRegistry::GetComponentInfo("CameraFollowComponent"), nullptr);
+    Entity parent = registry.CreateEntity();
+    Entity child = registry.CreateEntity();
+    registry.AddComponent(parent, TransformComponent{});
+    registry.AddComponent(child, TransformComponent{});
+    HierarchyComponent hierarchy;
+    hierarchy.parent = parent;
+    registry.AddComponent(child, hierarchy);
+    const UUID childUUID = registry.GetUUID(child);
+    Entity camera = registry.CreateEntity();
+    CameraFollowComponent follow;
+    follow.target = child;
+    registry.AddComponent(camera, follow);
+    DestroyEntityCommand command(&registry, parent);
+    ASSERT_TRUE(command.Apply().has_value());
+    ASSERT_TRUE(command.Undo().has_value());
+    EXPECT_EQ(registry.GetComponent<CameraFollowComponent>(camera)->target.id,
+              registry.GetEntityByUUID(childUUID).id);
+}

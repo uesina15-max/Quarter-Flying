@@ -341,6 +341,17 @@ namespace Engine
             }
         }
 
+        // 에디터 오버레이(이동 기즈모). 메시 뒤에 그려야 메시에 덮이지 않는다 - 깊이 테스트도 끈다.
+        if (renderMode == RenderMode::Scene && drawEditorGizmos && !overlayLines.empty()
+            && boneLineRenderer && boneLineRenderer->IsInitialized() && mainCamera)
+        {
+            glm::mat4 viewProjection = mainCamera->getProjectionMatrix() * mainCamera->getViewMatrix();
+            for (const ColoredLines& group : overlayLines)
+            {
+                boneLineRenderer->Render(viewProjection, group.lines, group.color, /*depthTest=*/false);
+            }
+        }
+
         // Check if RenderGraph has passes to execute
         if (renderGraph->GetPassCount() == 0)
         {
@@ -518,6 +529,7 @@ namespace Engine
         // 기즈모 선은 그렸든 안 그렸든(Motion 모드, 게임 카메라 보기) 매 프레임 비운다.
         // 그리지 않는 프레임에 비우지 않으면 System이 매 프레임 추가하는 선이 끝없이 쌓인다.
         debugLines.Clear();
+        overlayLines.clear();
 
         if (!frameInProgress)
         {

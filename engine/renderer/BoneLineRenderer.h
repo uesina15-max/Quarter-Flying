@@ -32,8 +32,9 @@ namespace Engine
 
         // lines: (parent.world.position, bone.world.position) 쌍의 목록.
         // color: 선 색(기본 = 본 라인용 밝은 노랑). 카메라 기즈모 등 다른 디버그 선도 이 렌더러를 쓴다.
+        // depthTest=false: 다른 물체에 가려지지 않고 항상 위에 그린다(이동 기즈모 - 물체 안에 있는 화살표도 잡을 수 있어야 한다).
         void Render(const glm::mat4& viewProjection, const std::vector<std::pair<glm::vec3, glm::vec3>>& lines,
-                    const glm::vec3& color = glm::vec3(1.0f, 0.85f, 0.2f));
+                    const glm::vec3& color = glm::vec3(1.0f, 0.85f, 0.2f), bool depthTest = true);
 
         bool IsInitialized() const { return initialized; }
 

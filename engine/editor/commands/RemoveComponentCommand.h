@@ -2,6 +2,7 @@
 
 #include "../../core/ICommand.h"
 #include "../../ecs/Entity.h"
+#include "../../core/UUID.h"
 #include <nlohmann/json.hpp>
 #include <string>
 
@@ -23,6 +24,7 @@ public:
 private:
     ECSRegistry*   registry_;
     Entity         entity_;
+    UUID entityUUID_;
     std::string    componentType_;
     nlohmann::json snapshot_;
     bool           snapshotCaptured_ = false;

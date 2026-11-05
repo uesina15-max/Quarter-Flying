@@ -458,3 +458,57 @@ JSON 접근. 그래서 컴포넌트를 바꾸는 항목(R-1, R-2)은 이 경로 
 - G3 자동화 스크립트가 테스트 프로젝트에 `materials/`를 복사하지 않아 Build Game이 "엔티티 'Material Gold' … 파일이 없습니다"로 빌드를 막았다 — 수집 검사가 의도대로 동작한 것이다. 스크립트에 폴더를 추가해 통과.
 
 - 전체 회귀: C++ 643/643, Python 단위 테스트 전부(`test_game_builder.py` 21/21 포함), 에디터 자동화 13종 + R-4 자동화 2종 통과, 빌드한 게임 자동화(G3) 12/12, `player_template_smoke` 통과. Player 템플릿은 마지막 빌드로 다시 만들었고 Build Game의 템플릿 해시 검사에서 불일치 없음.
+
+### 5.12 프로젝트 단위 저장 — Save Project + 프로젝트 세션 (2026-10-16)
+
+이전에는 저장이 대상마다 따로였다(Save Scene, Motion > Save Action, Input Actions 패널의 "저장"). 에디터를 닫거나
+프로젝트·씬을 바꿀 때 아무것도 묻지 않아서, 저장 안 한 씬·액션·입력 맵 수정이 경고 없이 사라졌다. 프로젝트를 다시
+열면 항상 시작 씬부터 시작했고, Motion Editor 목록은 비어 있었다.
+
+| 항목 | 한 일 | 검증 수준 |
+|---|---|---|
+| File > Save Project (`Ctrl+Alt+S`) | 바뀐 씬·입력 액션 맵·액션 + `project.json`(샘플 제외) + 세션을 한 번에 저장한다. 대상별 결과를 상태바에 남기고("프로젝트 저장: 저장 4개 - Saved"), 실패한 대상은 이름과 원인을 대화상자로 보여 준다. 하나가 실패해도 나머지는 저장한다 | 단위 테스트 + 실제 실행 |
+| 저장 안 된 변경 확인 | 종료·New/Open Project 전에는 전체를, New/Open Scene 전에는 씬만 "저장 / 저장 안 함 / 취소"로 묻는다. "저장"했는데 하나라도 못 하면(위치 대화상자 취소 포함) 계속하지 않는다. 종료 중 확인 자체가 예외로 실패하면 묻지 않고 닫지 않고, 원인을 보여 주고 종료 여부를 따로 묻는다 | 단위 테스트 + 실제 실행 |
+| 프로젝트 세션 | `<프로젝트>/.quarterflying/session.json`(`quarterflying.editor-session` v1): 열어 둔 씬, Motion Editor에 열어 둔 액션과 선택, 에디터 카메라(target·distance·yaw·pitch), 모드(Scene / Motion만, Play는 복원하지 않음). 프로젝트 안 경로는 프로젝트 상대 경로라 폴더를 옮겨도 맞는다. 종료·프로젝트 전환·Save Project 때 쓰고, 열 때 세션 씬 → 없으면 시작 씬 순서로 연다 | 단위 테스트 + 실제 실행 |
+| 액션 변경 감지 | `ActionData.is_modified()` — 지금 `to_json()`과 마지막 로드·저장 때 내용을 비교한다. 편집 경로마다 플래그를 세우지 않으므로 어느 패널로 바꿨든 잡힌다. 파일이 없는 새 액션은 항상 "변경 있음" | 단위 테스트 |
+
+**바뀌는 곳**: `editor/project/session.py`·`project_save.py`(신규, Qt 없음), `project_actions.py`(`_unsaved_items` 한 곳에서
+변경 목록을 모음, `_confirm_unsaved`, `_on_save_project`, 세션 캡처·복원), `main.py`(시작 시 세션 복원, `closeEvent`),
+`motion_editor.py`(`unsaved_actions`·`save_action_data`·`restore_actions` 등), `core/action_data.py`(`is_modified`),
+`viewport.py`(`editor_camera_view`/`set_editor_camera_view`), `.gitignore`(`.quarterflying/`).
+
+**영향받는 곳**: 엔진·바인딩·리플렉션·Player 영향 없음(C++ 변경 없음, Player 템플릿 재빌드 불필요). Build Game은 씬 의존성과
+`includeDirs`만 복사하므로 세션 폴더가 빌드 출력에 들어가지 않는다(`GAME_BUILD_PLAN.md` §3.2에 행 추가).
+
+**호환성**: 기존 형식(`*.scene.json`, `*.action.json`, `project.json`, `actions.json`) 변경 없음. 세션은 새 파일이라 없으면
+예전처럼 시작 씬으로 연다. 세션 읽기는 실패하지 않는다 — 깨진 파일·더 새 version·틀린 필드는 그 부분만 기본값으로 두고
+`[Session]` 태그로 원인을 로그한다(편의 데이터 때문에 프로젝트를 못 여는 일이 없게).
+
+**고장 시 갈리는 지점**: "무엇이 바뀌었나"는 `_unsaved_items()` 하나, "어느 대상이 안 써졌나"는 `SaveResult.not_saved`의
+대상 이름, 세션 문제는 콘솔의 `[Session]` 줄. 확인 대화상자에 항목이 안 나오면 그 대상의 변경 기준(씬: CommandManager 변경
+카운터, 입력 맵: `InputActionsPanel.is_dirty`, 액션: `is_modified`)을 본다.
+
+**회귀 확인**: `engine/editor/test_project_save.py`(한글 경로, 세션 왕복·폴더 이동·깨진 세션 6종, 저장 실행부의 실패 계속,
+액션 변경 감지, 오프스크린 Qt로 실제 `MotionEditorWidget`·`InputActionsPanel`을 붙인 확인 대화상자·세션 복원).
+
+**실제 실행 검증 (에디터 `HAS_ENGINE=True` 자동화, 한글 경로 프로젝트 "qf_실행 테스트\세이브 프로젝트")**
+
+- 1회차: Save Scene As로 `작업.scene.json` → 엔티티 추가(제목 `*작업.scene.json`) → 액션 열고 fps 30 → 48 → 카메라 이동 → Save
+  Project. 상태바 "프로젝트 저장: 저장 4개 - Saved", 제목의 `*` 사라짐, 저장 안 된 변경 0개, 액션 파일 fps 48, 세션 파일 내용 확인.
+  엔티티를 하나 더 만들고 Motion Editor로 바꾼 뒤 창을 닫자 "저장하지 않은 변경이 있습니다: 씬 작업.scene.json"을 물었고,
+  "저장 안 함"으로 닫혔다.
+- 2회차(새 프로세스): 시작 씬(`Main`)이 아니라 `작업.scene.json`이 열렸고(엔티티 2개 — 버린 엔티티 없음), 모드 Motion Editor,
+  카메라 `[1,2,3]`/12/40/−20, 액션 목록 "발차기" fps 48·변경 없음. 닫을 때 묻지 않음.
+- 값은 실행 중인 에디터에서 읽어 확인했다. **화면 캡처는 하지 않았다** — 자동화 창이 앞에 오지 않아 캡처에 다른 창이 찍혀
+  지웠다. 그래서 "복원한 카메라로 그려진 화면"은 눈으로 확인하지 않았다(카메라 값이 엔진에 전달되는 경로는 기존
+  `_push_editor_camera`와 같다).
+- 처음 실행 때 `InputActionsPanel.is_dirty`(프로퍼티)를 메서드로 불러 `'bool' object is not callable`이 났고, `closeEvent`의
+  예외를 Qt가 삼켜 창이 묻지 않고 닫혔다. 오프스크린 테스트에는 그 패널이 없어서 통과했었다 — 고친 뒤 테스트에 실제 패널을
+  붙였고, 위의 "확인 자체가 실패하면 닫지 않는다" 방어를 넣었다.
+
+**남은 것**
+
+- 창 제목의 `*`는 지금도 씬 변경만 나타낸다. 액션·입력 맵 변경은 Save Project/종료 확인에는 잡히지만 제목에는 안 보인다
+  (`is_modified`가 직렬화 비교라 16ms 폴링마다 부르기에는 비싸다 — 변경 신호를 모으는 방식으로 따로 할 일).
+- Build Game의 "빌드 전에 현재 씬을 저장할까요?"는 씬만 묻는다. 빌드는 디스크의 파일을 쓰므로 Save Project로 바꿀지 검토가 필요하다.
+- Inspector 등 명령을 거치지 않는 편집은 씬 변경 카운터에 잡히지 않는다(5.1의 한계 그대로).

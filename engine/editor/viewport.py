@@ -1,13 +1,15 @@
 import sys
 import os
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QTimer, Qt, Signal
 from engine_binding import binding as ge_python
 
 from style.theme import COLORS
 from core.editor_camera import OrbitCamera
 
 class EngineViewport(QWidget):
+    frame_profile = Signal(object)
+    profile_enabled = False
     # 키보드 포커스를 얻거나 잃었다(Play 화면의 "클릭하면 입력 받음" 안내가 쓴다, E-3).
     focus_changed = Signal(bool)
 
@@ -19,6 +21,11 @@ class EngineViewport(QWidget):
         self._use_editor_camera = editor_camera
         self._drag_mode = None          # 'orbit' | 'pan' | None
         self._last_mouse = None
+        # 좌클릭 선택·드래그 이동(core/viewport_manipulation.py). main.py가 엔진 연결 뒤 넣고, 켜질 조건(Edit 모드의
+        # Scene Editor 화면)도 main이 정한다 - Play 중 좌클릭은 게임 입력이고 Motion Editor에는 씬 오브젝트가 없다.
+        self.manipulator = None
+        self.manipulation_enabled = lambda: False
+        self._manipulating = False
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
 
@@ -42,8 +49,8 @@ class EngineViewport(QWidget):
     def showEvent(self, event):
         if not self.initialized:
             config = ge_python.EngineConfig()
-            config.windowWidth = self.width()
-            config.windowHeight = self.height()
+            config.windowWidth = self._to_pixels(self.width())
+            config.windowHeight = self._to_pixels(self.height())
             # RenderableComponent.meshPath("assets/models/...")의 기준 = 현재 프로젝트 폴더
             # (샘플 프로젝트면 engine/). 프로젝트를 바꾸면 Engine.SetAssetRoot로 갱신한다.
             from project import current_project
@@ -65,6 +72,30 @@ class EngineViewport(QWidget):
     def tick(self):
         if self.initialized:
             self.engine.TickFrame()
+            if self.profile_enabled:
+                self.frame_profile.emit(self.engine.GetFrameCosts())
+
+    def _to_pixels(self, logical) -> int:
+        """Qt 논리 좌표 -> 실제 화면 픽셀. 엔진은 픽셀로 일한다(glViewport, 게임 UI 배치, 기즈모 잡기 허용 거리).
+
+        증상: 디스플레이 배율이 150%면 3D 화면과 게임 UI가 위젯의 왼쪽 아래 2/3에만 그려지고 나머지는 빈 영역이었다.
+        클릭 위치도 그만큼 어긋났다. 에러 없음. 배율 100%에서는 두 좌표가 같아서 드러나지 않았다
+        (QT_SCALE_FACTOR=1.5로 재현). 이 변환은 엔진으로 넘어가는 크기·마우스 좌표에만 쓴다.
+        """
+        return round(logical * self.devicePixelRatioF())
+
+    def _push_window_size(self):
+        e = ge_python.InputEvent()
+        e.type = ge_python.InputEventType.WindowResize
+        e.windowWidth = self._to_pixels(self.width())
+        e.windowHeight = self._to_pixels(self.height())
+        self.engine.PushInputEvent(e)
+
+    def event(self, event):
+        # 배율이 다른 모니터로 창을 옮기면 논리 크기는 그대로라 resizeEvent가 오지 않을 수 있다.
+        if event.type() == QEvent.Type.DevicePixelRatioChange and self.initialized:
+            self._push_window_size()
+        return super().event(event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -74,11 +105,7 @@ class EngineViewport(QWidget):
             # 재부모 이동시키는 경우 반드시 필요하다(그렇지 않으면 예전 크기 기준으로 그려져
             # 화면이 검게 보이거나 잘린다). PushInputEvent는 스레드 세이프한 비동기 큐라서
             # 여기서 바로 불러도 안전하다.
-            e = ge_python.InputEvent()
-            e.type = ge_python.InputEventType.WindowResize
-            e.windowWidth = self.width()
-            e.windowHeight = self.height()
-            self.engine.PushInputEvent(e)
+            self._push_window_size()
 
     def paintEngine(self):
         # Qt의 QPainter 기반 페인트 엔진을 비활성화 — 렌더링은 네이티브 HWND에 엔진이
@@ -105,6 +132,22 @@ class EngineViewport(QWidget):
         if self._orbit is not None:
             self._orbit.reset()
             self._push_editor_camera()
+
+    def editor_camera_view(self):
+        """(target, distance, yaw, pitch) 또는 에디터 카메라가 없으면 None. 프로젝트 세션(project/session.py)이 저장한다."""
+        if self._orbit is None:
+            return None
+        return list(self._orbit.target), self._orbit.distance, self._orbit.yaw, self._orbit.pitch
+
+    def set_editor_camera_view(self, target, distance: float, yaw: float, pitch: float):
+        """세션에서 에디터 카메라를 복원한다. 엔진 초기화 전에 불러도 된다 - 초기화 때(showEvent) 이 값을 보낸다."""
+        if self._orbit is None:
+            return
+        self._orbit.target = [float(v) for v in target]
+        self._orbit.distance = float(distance)
+        self._orbit.yaw = float(yaw)
+        self._orbit.pitch = float(pitch)
+        self._push_editor_camera()
 
     def _apply_view_camera(self):
         if not self.initialized:
@@ -153,11 +196,17 @@ class EngineViewport(QWidget):
             else:
                 self._orbit.pan(dx, dy, self.height())
             self._push_editor_camera()
+        if self._manipulating:
+            pos = event.position()
+            self.manipulator.move(*self._ndc(pos), (pos.x(), pos.y()), bool(event.modifiers() & Qt.ShiftModifier))
+        elif (event.buttons() == Qt.NoButton and self.initialized and self.manipulator is not None
+              and self.manipulation_enabled()):
+            self.manipulator.hover(*self._ndc(event.position()))   # 기즈모 화살표 강조
         if self.initialized:
             e = ge_python.InputEvent()
             e.type = ge_python.InputEventType.MouseMove
-            e.mouseX = event.x()
-            e.mouseY = event.y()
+            e.mouseX = self._to_pixels(event.position().x())
+            e.mouseY = self._to_pixels(event.position().y())
             # 델타 계산은 엔진 내부에서 처리되거나 여기서 계산해서 전달 가능
             self.engine.PushInputEvent(e)
 
@@ -166,23 +215,33 @@ class EngineViewport(QWidget):
             self._drag_mode = self._camera_drag_mode(event)
             self._last_mouse = event.position() if self._drag_mode else None
         self.setFocus()   # F 키(카메라 리셋)를 받으려면 포커스가 필요하다
+        if (event.button() == Qt.LeftButton and not event.modifiers() & (Qt.AltModifier | Qt.ControlModifier)
+                and self.initialized and self.manipulator is not None and self.manipulation_enabled()):
+            pos = event.position()
+            try:
+                self.manipulator.press(*self._ndc(pos), (pos.x(), pos.y()))
+                self._manipulating = True
+            except Exception as e:
+                print(f"[Viewport] 선택 실패: {e}")
         if self.initialized:
             e = ge_python.InputEvent()
             e.type = ge_python.InputEventType.MouseButtonDown
             e.mouseButton = self._map_mouse_button(event.button())
-            e.mouseX = event.x()
-            e.mouseY = event.y()
+            e.mouseX = self._to_pixels(event.position().x())
+            e.mouseY = self._to_pixels(event.position().y())
             self.engine.PushInputEvent(e)
 
     def mouseReleaseEvent(self, event):
         self._drag_mode = None
         self._last_mouse = None
+        if self._manipulating and event.button() == Qt.LeftButton:
+            self._end_manipulation()
         if self.initialized:
             e = ge_python.InputEvent()
             e.type = ge_python.InputEventType.MouseButtonUp
             e.mouseButton = self._map_mouse_button(event.button())
-            e.mouseX = event.x()
-            e.mouseY = event.y()
+            e.mouseX = self._to_pixels(event.position().x())
+            e.mouseY = self._to_pixels(event.position().y())
             self.engine.PushInputEvent(e)
 
     def keyPressEvent(self, event):
@@ -214,10 +273,24 @@ class EngineViewport(QWidget):
         # (Engine::HandleFocusLost)에서 하고, 여기서는 이벤트만 넣는다 - Player 창의 WM_KILLFOCUS와 같은 경로.
         super().focusOutEvent(event)
         self.focus_changed.emit(False)
+        if self._manipulating:
+            self._end_manipulation()   # 놓기 이벤트가 오지 않는다 - 드래그(병합 세션)를 여기서 닫는다
         if self.initialized:
             e = ge_python.InputEvent()
             e.type = ge_python.InputEventType.FocusLost
             self.engine.PushInputEvent(e)
+
+    def _ndc(self, pos):
+        """위젯 좌표 -> 정규화 장치 좌표(-1..1, y 위가 +). 비율이라 DPI 배율과 무관하다."""
+        w, h = max(self.width(), 1), max(self.height(), 1)
+        return 2.0 * pos.x() / w - 1.0, 1.0 - 2.0 * pos.y() / h
+
+    def _end_manipulation(self):
+        self._manipulating = False
+        try:
+            self.manipulator.release()
+        except Exception as e:
+            print(f"[Viewport] 드래그 정리 실패: {e}")
 
     def _map_mouse_button(self, qt_button):
         if qt_button == Qt.LeftButton: return ge_python.MouseButton.Left

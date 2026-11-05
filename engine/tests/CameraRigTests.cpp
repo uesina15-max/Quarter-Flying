@@ -3,6 +3,12 @@
 
 #include <gtest/gtest.h>
 #include "../ecs/CameraRigSystem.h"
+#include "../ecs/StaticCollision.h"
+#include "../animation/LocomotionSystem.h"
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <vector>
 #include "../ecs/ECSRegistry.h"
 #include "../ecs/Components.h"
 #include "../input/InputState.h"
@@ -10,6 +16,119 @@
 #include <glm/gtc/quaternion.hpp>
 
 using namespace Engine;
+
+TEST(Locomotion, SwitchesClipsAtMeasuredWalkAndRunSpeeds)
+{
+    const auto root = std::filesystem::temp_directory_path() / ("qf-locomotion-" + UUID::Generate().ToString());
+    ASSERT_TRUE(std::filesystem::create_directory(root));
+    std::ofstream(root / "rig.json") << R"({"format":"core.skeleton","version":1,"axis":"Y_UP_RH","unit":"meter","name":"Rig","bones":[{"name":"Joint","parent":-1,"bindPos":[0,0,0]}]})";
+    for (int slot = 0; slot < 3; ++slot) {
+        std::ofstream(root / (std::to_string(slot) + ".json")) << R"({"format":"core.clip","version":1,"axis":"Y_UP_RH","unit":"meter","name":"Test","skeletonRef":"Rig","fps":30,"totalFrames":2,"tracks":[{"bone":"Joint","keyframes":[{"frame":0,"pos":[)" << slot << R"(,0,0],"rot":[0,0,0,1]}]}]})";
+    }
+    ECSRegistry registry;
+    Entity actor = registry.CreateEntity(), joint = registry.CreateEntity();
+    registry.AddComponent(actor, TransformComponent{});
+    registry.AddComponent(joint, TransformComponent{});
+    registry.SetEntityName(joint, "Joint");
+    HierarchyComponent child;
+    child.parent = actor;
+    registry.AddComponent(joint, child);
+    registry.AddComponent(actor, LocomotionComponent{"rig.json","0.json","1.json","2.json"});
+    LocomotionSystem system(root.string());
+    for (float position : {0.f, .2f, 1.f, 1.f}) {
+        registry.SetTransformPosition(actor, position, 0, 0);
+        system.Update(registry, .1f);
+        const float value = registry.GetTransformComponent(joint)->position.x;
+        if (position == 0) EXPECT_FLOAT_EQ(value, 0);
+        if (position == .2f) EXPECT_FLOAT_EQ(value, 1);
+    }
+    registry.SetTransformPosition(actor, 2, 0, 0);
+    system.Update(registry, .1f);
+    EXPECT_FLOAT_EQ(registry.GetTransformComponent(joint)->position.x, 2);
+
+    // 키프레임에 크기가 없으므로 작성한 크기는 그대로다(팔 큐브가 Play에서 (1,1,1)로 커지던 버그).
+    registry.GetTransformComponent(joint)->scale = Vec3(.2f, .6f, .2f);
+    system.Update(registry, .1f);
+    EXPECT_FLOAT_EQ(registry.GetTransformComponent(joint)->scale.x, .2f);
+    EXPECT_FLOAT_EQ(registry.GetTransformComponent(joint)->scale.y, .6f);
+
+    for (const auto* name : {"rig.json", "0.json", "1.json", "2.json"}) std::filesystem::remove(root / name);
+    std::filesystem::remove(root);
+}
+
+TEST(CharacterCollision, StopsAtThinWallAndSlidesWithoutTunneling)
+{
+    ECSRegistry registry;
+    Entity wall = registry.CreateEntity();
+    TransformComponent pose;
+    pose.position = Vec3(3, 1, 0);
+    registry.AddComponent(wall, pose);
+    BoxColliderComponent box;
+    box.halfExtents = Vec3(.05f, 2, 10);
+    registry.AddComponent(wall, box);
+    auto result = MoveCharacter(registry, {}, {0,0,0}, {50,0,4});
+    EXPECT_NEAR(result.feet.x, 2.65f, .0001f);
+    EXPECT_NEAR(result.feet.z, 4, .0001f);
+}
+
+TEST(CharacterCollision, LandsOnPlatformAndCanLeaveItsEdge)
+{
+    ECSRegistry registry;
+    Entity platform = registry.CreateEntity();
+    registry.AddComponent(platform, TransformComponent{});
+    registry.AddComponent(platform, BoxColliderComponent{});
+    auto result = MoveCharacter(registry, {}, {0,4,0}, {0,-10,0});
+    EXPECT_TRUE(result.grounded);
+    EXPECT_NEAR(result.feet.y, .5f, .0001f);
+    auto walking = MoveCharacter(registry, {}, result.feet, {2,0,0});
+    auto falling = MoveCharacter(registry, {}, walking.feet, {0,-1,0});
+    EXPECT_FALSE(falling.grounded);
+    EXPECT_NEAR(falling.feet.y, -.5f, .0001f);
+}
+
+// 아래 네 개: 착지 위치가 면보다 float 한 칸 안쪽에 놓이면 고프레임의 작은 이동량에서 바닥·벽을 통과하거나 타일 경계에
+// 걸렸다(StaticCollision.cpp kContactSkin 주석). 240fps 중력 한 프레임 이동량이 약 0.00016이다.
+TEST(CharacterCollision, FloorHoldsWhenStartingOneUlpBelowItsTop)
+{
+    const std::vector<CollisionBounds> floor{{{-5, -1, -5}, {5, .5f, 5}}};
+    const float justBelow = std::nextafter(.5f, 0.f);
+    const auto result = SweepCharacter(floor, {0, justBelow, 0}, {0, -.00016f, 0});
+    EXPECT_TRUE(result.grounded);
+    EXPECT_EQ(result.feet.y, .5f);
+}
+
+TEST(CharacterCollision, WallHoldsAtFarCoordinatesWithSmallSteps)
+{
+    const std::vector<CollisionBounds> wall{{{1000, -5, -5}, {1001, 5, 5}}};
+    const float justInside = std::nextafter(1000.f, 2000.f);
+    const auto result = SweepCharacter(wall, {justInside, 0, 0}, {.0069f, 0, 0});
+    EXPECT_EQ(result.feet.x, 1000.f);
+}
+
+TEST(CharacterCollision, WalkingAcrossTileSeamDoesNotSnagWhenOneUlpBelowTop)
+{
+    const std::vector<CollisionBounds> tiles{{{-2, -1, -5}, {0, .5f, 5}}, {{0, -1, -5}, {2, .5f, 5}}};
+    const float justBelow = std::nextafter(.5f, 0.f);
+    const auto walking = SweepCharacter(tiles, {-.1f, justBelow, 0}, {.3f, 0, 0});
+    EXPECT_NEAR(walking.feet.x, .2f, .0001f);
+    const auto withGravity = SweepCharacter(tiles, {-.1f, justBelow, 0}, {.3f, -.00016f, 0});
+    EXPECT_TRUE(withGravity.grounded);
+    EXPECT_NEAR(withGravity.feet.x, .2f, .0001f);
+}
+
+TEST(CharacterCollision, TouchingSurfacesDoNotHoldBackMovementAwayOrEscapeFromInside)
+{
+    const std::vector<CollisionBounds> box{{{-1, -1, -1}, {1, 1, 1}}};
+    const auto jump = SweepCharacter(box, {0, 1, 0}, {.1f, .2f, 0});   // 윗면에서 점프
+    EXPECT_FALSE(jump.grounded);
+    EXPECT_FALSE(jump.hitCeiling);
+    EXPECT_NEAR(jump.feet.y, 1.2f, .0001f);
+    EXPECT_NEAR(jump.feet.x, .1f, .0001f);
+    const auto away = SweepCharacter(box, {-1, 0, 0}, {-.1f, 0, .1f});   // 옆면에서 떨어지기
+    EXPECT_NEAR(away.feet.x, -1.1f, .0001f);
+    const auto inside = SweepCharacter(box, {.5f, 0, 0}, {.1f, 0, 0});   // 상자 안에서 시작하면 나갈 수 있다
+    EXPECT_NEAR(inside.feet.x, .6f, .0001f);
+}
 
 namespace
 {
@@ -359,4 +478,81 @@ TEST(CameraGizmoTest, System_AddsLinesPerCameraEntity)
     AddAt(registry, 9.0f, 0.0f, 0.0f);              // 카메라 아님
     system.Update(registry, 0.016f);
     EXPECT_EQ(buffer.Lines().size(), 22u);
+}
+
+#include "../ecs/KeyboardMovementComponent.h"
+#include "../ecs/KeyboardMovementSystem.h"
+#include "../ecs/ScriptComponent.h"
+#include "../ecs/Hierarchy.h"
+#include "../ecs/Reflection.h"
+#include "../ecs/World.h"
+
+TEST(KeyboardMovementTest, FrameRateDiagonalAndFocusRelease) {
+    for (int fps : {30,60,144}) {
+        ECSRegistry r; Entity e=AddAt(r,0,2,0); r.AddComponent(e,KeyboardMovementComponent{});
+        InputState input; auto key=Ev(InputEventType::KeyDown);key.keyCode=KeyCode::W;input.Apply(key);
+        key.keyCode=KeyCode::D;input.Apply(key); KeyboardMovementSystem movement(&input);
+        for(int n=0;n<fps;++n) movement.Update(r,1.0f/fps);
+        auto* t=r.GetTransformComponent(e);
+        EXPECT_NEAR(std::hypot(t->position.x,t->position.z),4,1e-4f);EXPECT_FLOAT_EQ(t->position.y,2);
+        Vec3 before=t->position;input.ReleaseAll();movement.Update(r,0.1f);
+        EXPECT_FLOAT_EQ(t->position.x,before.x);EXPECT_FLOAT_EQ(t->position.z,before.z);
+    }
+}
+TEST(KeyboardMovementTest, CameraRelativeAndShortcutGuard) {
+    ECSRegistry r; Entity e=AddAt(r,0,0,0);r.AddComponent(e,KeyboardMovementComponent{});
+    Entity camera=AddAt(r,0,4,10);CameraComponent c;c.isMainCamera=true;r.AddComponent(camera,c);
+    auto rot=glm::angleAxis(glm::radians(-90.0f),glm::vec3(0,1,0));
+    r.GetTransformComponent(camera)->rotation=Quaternion(rot.x,rot.y,rot.z,rot.w);
+    InputState input;auto key=Ev(InputEventType::KeyDown);key.keyCode=KeyCode::Up;input.Apply(key);
+    KeyboardMovementSystem movement(&input);movement.Update(r,0.1f);
+    EXPECT_NEAR(r.GetTransformComponent(e)->position.x,0.4f,1e-5f);
+    EXPECT_NEAR(r.GetTransformComponent(e)->position.z,0,1e-5f);
+    key.keyCode=KeyCode::Control;input.Apply(key);movement.Update(r,0.1f);
+    EXPECT_NEAR(r.GetTransformComponent(e)->position.x,0.4f,1e-5f);
+}
+TEST(KeyboardMovementTest, UnsupportedAndDisabledObjectsStayStill) {
+    ECSRegistry r;InputState input;auto key=Ev(InputEventType::KeyDown);key.keyCode=KeyCode::W;input.Apply(key);
+    KeyboardMovementSystem movement(&input);
+    Entity disabled=AddAt(r,0,0,0);KeyboardMovementComponent c;c.enabled=false;r.AddComponent(disabled,c);
+    Entity script=AddAt(r,0,0,0);r.AddComponent(script,KeyboardMovementComponent{});r.AddComponent(script,ScriptComponent{});
+    Entity camera=AddAt(r,0,0,0);r.AddComponent(camera,KeyboardMovementComponent{});r.AddComponent(camera,CameraComponent{});
+    Entity parent=AddAt(r,0,0,0);Entity child=AddAt(r,0,0,0);r.AddComponent(child,KeyboardMovementComponent{});
+    HierarchyComponent hierarchy;hierarchy.parent=parent;r.AddComponent(child,hierarchy);
+    movement.Update(r,0.1f);
+    for(Entity e : {disabled,script,camera,child}) EXPECT_FLOAT_EQ(r.GetTransformComponent(e)->position.z,0);
+}
+TEST(KeyboardMovementTest, EditPauseAndStopRestoreAuthoredPosition) {
+    RegisterPODComponentsReflection();World w;auto& r=*w.GetRegistry();
+    Entity e=AddAt(r,0,0,0);UUID uid=r.GetUUID(e);r.AddComponent(e,KeyboardMovementComponent{});
+    InputState input;auto key=Ev(InputEventType::KeyDown);key.keyCode=KeyCode::W;input.Apply(key);
+    w.RegisterSystem(std::make_unique<KeyboardMovementSystem>(&input));w.Initialize();
+    w.Update(0.1f);EXPECT_FLOAT_EQ(r.GetTransformComponent(e)->position.z,0);
+    w.Play();w.Update(0.1f);EXPECT_FLOAT_EQ(r.GetTransformComponent(e)->position.z,-0.4f);
+    w.Pause();w.Update(0.1f);EXPECT_FLOAT_EQ(r.GetTransformComponent(e)->position.z,-0.4f);
+    w.Stop();e=r.GetEntityByUUID(uid);EXPECT_FLOAT_EQ(r.GetTransformComponent(e)->position.z,0);
+    EXPECT_TRUE(r.GetComponent<KeyboardMovementComponent>(e)->enabled);
+}
+
+#include <limits>
+TEST(KeyboardMovementTest, DifferentSpeedsAndZeroAreAppliedPerEntity) {
+    ECSRegistry r;InputState input;auto key=Ev(InputEventType::KeyDown);key.keyCode=KeyCode::W;input.Apply(key);
+    KeyboardMovementSystem movement(&input);
+    Entity slow=AddAt(r,0,0,0),fast=AddAt(r,0,0,0),zero=AddAt(r,0,0,0);
+    KeyboardMovementComponent c;c.speed=2;r.AddComponent(slow,c);c.speed=8;r.AddComponent(fast,c);c.speed=0;r.AddComponent(zero,c);
+    movement.Update(r,0.1f);
+    EXPECT_FLOAT_EQ(r.GetTransformComponent(slow)->position.z,-0.2f);
+    EXPECT_FLOAT_EQ(r.GetTransformComponent(fast)->position.z,-0.8f);
+    EXPECT_FLOAT_EQ(r.GetTransformComponent(zero)->position.z,0);
+    c.speed=std::numeric_limits<float>::quiet_NaN();*r.GetComponent<KeyboardMovementComponent>(zero)=c;
+    movement.Update(r,0.1f);EXPECT_FLOAT_EQ(r.GetTransformComponent(zero)->position.z,0);
+}
+TEST(KeyboardMovementTest, SnapshotPreservesSpeedAndMissingSpeedDefaults) {
+    RegisterPODComponentsReflection();ECSRegistry r;
+    Entity e=AddAt(r,0,0,0);UUID uid=r.GetUUID(e);KeyboardMovementComponent c;c.speed=7.5f;r.AddComponent(e,c);
+    auto snapshot=SerializeRegistry(r);r.Clear();DeserializeRegistry(r,snapshot);
+    EXPECT_FLOAT_EQ(r.GetComponent<KeyboardMovementComponent>(r.GetEntityByUUID(uid))->speed,7.5f);
+    const auto* info=ComponentRegistry::GetComponentInfo("KeyboardMovementComponent");ASSERT_NE(info,nullptr);
+    Entity old=AddAt(r,0,0,0);info->deserialize(r,old,nlohmann::json{{"enabled",true}});
+    EXPECT_FLOAT_EQ(r.GetComponent<KeyboardMovementComponent>(old)->speed,4.0f);
 }

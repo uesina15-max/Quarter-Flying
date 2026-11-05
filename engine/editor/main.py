@@ -137,8 +137,14 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         # 설정 적용
         self._apply_config()
         # 도킹·분할 배치(E-6). 기본 배치를 먼저 기억해 두고(View > Reset Layout), 저장된 배치가 있으면 복원한다.
+        self._apply_default_dock_height()
         self._default_dock_state = self.saveState()
         self._restore_layout()
+        # 프로젝트 세션(project/session.py): 액션 목록·에디터 카메라는 지금, 씬과 모드는 엔진이 연결된 뒤
+        # (_connect_engine_later). 엔진이 없으면 씬을 열 수 없으니 모드만 바로 복원한다.
+        self._apply_session_ui(self._load_project_session())
+        if not self._viewport_is_engine():
+            self._apply_session_mode()
         
         # 기본 씬 로드
         self._load_default_scene()
@@ -185,6 +191,13 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         act_reset = QAction("Reset Layout", self)
         act_reset.triggered.connect(self._reset_layout)
         view_menu.addAction(act_reset)
+        view_menu.addSeparator()   # 아래쪽 패널 표시/숨김은 도크를 만든 뒤 붙인다(_build_prefab_browser_dock)
+        self._view_menu = view_menu
+        from panels.production_tools import open_references, open_material, open_profiler
+        tools_menu = mb.addMenu("Tools")
+        tools_menu.addAction("Asset References…", lambda: open_references(self))
+        tools_menu.addAction("Material Editor…", lambda: open_material(self))
+        tools_menu.addAction("Frame Profiler…", lambda: open_profiler(self))
 
         # Motion (New)
         motion_menu = mb.addMenu("Motion")
@@ -376,6 +389,10 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         tb.addActions([self.act_game_camera, act_reset_camera, act_align_camera, act_look_through])
         tb.addSeparator()
 
+        # 뷰포트 기즈모 도구(0 이동, 1 회전, 2 크기). 고르는 곳은 Inspector Transform의 줄 이름과 뷰포트의 W/E/R이다
+        # (사용자 결정 2026-10-30: 값을 보는 곳에서 도구를 고른다 - 툴바 버튼은 두지 않는다).
+        self._gizmo_mode = 0
+
         # 씬 이름
         self.lbl_scene = QLabel("  Untitled Scene  ")
         self.lbl_scene.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px; padding: 0 8px;")
@@ -489,6 +506,7 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
                 self._move_viewport_to_play()
 
         self.stack.setCurrentIndex(index)
+        self._update_bottom_docks_for_mode(index)
 
         # 버튼 상태 초기화 (btn_mode_play도 포함 — Play/Pause/Stop이 이 메서드를 거치지
         # 않고 objectName만 직접 바꾸면 unpolish/polish가 빠져 스타일이 갱신되지 않는다)
@@ -579,7 +597,10 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         dock = QDockWidget("Prefabs", self)
         dock.setObjectName("prefab_browser_dock")   # saveState/restoreState가 이 이름으로 도크를 찾는다(E-6)
         dock.setWidget(self.prefab_browser)
-        dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        # Closable: View 메뉴의 표시/숨김(toggleViewAction)은 close()로 숨기는데, Qt는 닫기 기능이 없는 도크의 close를
+        # 무시한다 - 이 플래그 없이 메뉴만 달면 눌러도 아무 일도 안 일어난다. 닫은 패널은 View 메뉴로 다시 연다.
+        _features = QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetClosable
+        dock.setFeatures(_features)
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
 
         # 입력 액션 맵 편집(G2). 프리팹 브라우저와 같은 아래쪽 영역에 탭으로 둔다.
@@ -590,10 +611,50 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         input_dock = QDockWidget("Input Actions", self)
         input_dock.setObjectName("input_actions_dock")
         input_dock.setWidget(self.input_actions_panel)
-        input_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        input_dock.setFeatures(_features)
         self.addDockWidget(Qt.BottomDockWidgetArea, input_dock)
         self.tabifyDockWidget(dock, input_dock)
         dock.raise_()
+
+        # 뷰포트를 넓히려고 아래쪽 패널을 숨길 수 있게 한다(도크의 × 또는 View 메뉴, 다시 켜는 것은 View 메뉴).
+        self._bottom_docks = (dock, input_dock)
+        self._docks_hidden_for_motion = None   # Motion Editor가 숨긴 동안 {도크: 숨기기 전 표시 여부}
+        # 탭으로 묶인 도크는 뒤쪽 탭도 isVisible()이 True라 앞에 있던 탭을 알 수 없다 - 활성화 시그널로 기억한다.
+        self._raised_bottom_dock = dock
+        self.tabifiedDockWidgetActivated.connect(
+            lambda d: setattr(self, '_raised_bottom_dock', d) if d in self._bottom_docks else None)
+        for d in self._bottom_docks:
+            self._view_menu.addAction(d.toggleViewAction())
+
+    # 아래쪽 도크의 기본 높이. 예전에는 높이를 정하지 않아 Qt가 패널 sizeHint로 잡았고(약 310px), Motion Editor에서는
+    # 뷰포트가 180px 남짓으로 눌렸다.
+    _BOTTOM_DOCK_HEIGHT = 180
+    # 저장된 도킹 배치(config.json layout.dockState)의 형식. 기본 배치를 바꾸면 올린다 - 옛 배치를 복원하면 큰 도크가
+    # 그대로 돌아온다. 2: 아래쪽 도크 기본 높이 축소(2026-10-30).
+    _LAYOUT_VERSION = 2
+
+    def _apply_default_dock_height(self):
+        self.resizeDocks([self._bottom_docks[0]], [self._BOTTOM_DOCK_HEIGHT], Qt.Vertical)
+
+    def _update_bottom_docks_for_mode(self, index: int):
+        """Motion Editor(2)에서는 아래쪽 도크(프리팹·입력 액션)를 숨긴다 - 씬 편집용이라 거기서는 쓰지 않고, 뷰포트
+        높이만 차지했다. 다른 모드로 돌아가면 숨기기 전 표시 여부로 되돌린다(Motion 중 View 메뉴로 켠 것은 그때만 유효)."""
+        if not hasattr(self, '_bottom_docks'):
+            return
+        if index == 2 and self._docks_hidden_for_motion is None:
+            # isVisible()이 아니라 isHidden(): 시작할 때 세션 복원이 창을 띄우기 전에 Motion Editor로 바꾸는데, 그때는
+            # 모든 위젯의 isVisible()이 False라 "원래 숨겨져 있었다"로 기억해 Scene Editor로 돌아가도 도크가 사라졌다.
+            self._docks_hidden_for_motion = {d: not d.isHidden() for d in self._bottom_docks}
+            for d in self._bottom_docks:
+                d.hide()
+        elif index != 2 and self._docks_hidden_for_motion is not None:
+            restore = self._docks_hidden_for_motion
+            self._docks_hidden_for_motion = None
+            for d, visible in restore.items():
+                d.setVisible(visible)
+            raised = self._raised_bottom_dock
+            if restore.get(raised):
+                raised.raise_()   # 다시 보이면 마지막에 보인 탭이 앞으로 온다 - 숨기기 전 앞에 있던 탭으로 되돌린다
 
     # ----------------------------------------------------------------
     # 패널 시그널 연결
@@ -608,6 +669,10 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
             self._viewport_edit_shortcuts = [
                 widget_shortcut(QKeySequence.Delete, self.viewport, self.scene_panel.delete_selected_entity),
                 widget_shortcut(QKeySequence("Ctrl+D"), self.viewport, self.scene_panel.duplicate_selected_entity),
+                # 기즈모 도구. Play 중에는 꺼진다(같은 목록) - 그때 W는 게임 입력(키보드 이동)이다.
+                widget_shortcut(QKeySequence("W"), self.viewport, lambda: self._set_gizmo_mode(0)),
+                widget_shortcut(QKeySequence("E"), self.viewport, lambda: self._set_gizmo_mode(1)),
+                widget_shortcut(QKeySequence("R"), self.viewport, lambda: self._set_gizmo_mode(2)),
             ]
             self.viewport.focus_changed.connect(lambda has: self._update_play_hint(has))
 
@@ -615,13 +680,15 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         self.scene_panel.entity_selected.connect(self.inspector.on_entity_selected)
         self.scene_panel.entity_deselected.connect(self.inspector.on_entity_deselected)
 
-        # 씬 계층 뷰 → 상태 바
+        # 씬 계층 뷰 → 상태 바. 예전에는 이름 자리에 "Entity_<id>"를 넣어서 큐브를 골라도 "Entity_11"로 보였다.
         self.scene_panel.entity_selected.connect(
-            lambda eid: self.status.set_selection(eid, f"Entity_{eid}")
+            lambda eid: self.status.set_selection(eid, self._entity_display_name(eid))
         )
         self.scene_panel.entity_deselected.connect(
             lambda: self.status.set_selection(-1)
         )
+        # 씬 계층 뷰 선택(여러 개 포함) → 뷰포트 선택 강조
+        self.scene_panel.tree.itemSelectionChanged.connect(self._sync_engine_selection)
 
         # Create Prefab(Scene Hierarchy) → 상태 바 + 프리팹 목록 즉시 갱신
         self.scene_panel.prefab_capture_status.connect(self.status.log)
@@ -638,6 +705,9 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 
         # Revert(Inspector) → 상태 바
         self.inspector.prefab_revert_status.connect(self.status.log)
+        self.inspector.authoring_status.connect(self.status.log)
+        self.inspector.follow_camera_play_requested.connect(self._on_play)
+        self.inspector.gizmo_tool_selected.connect(self._set_gizmo_mode)
 
     # ----------------------------------------------------------------
     # 2단계: 엔진 ECS 연동
@@ -705,7 +775,8 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         if not getattr(self, '_demo_scene_seeded', False):
             self._demo_scene_seeded = True
             project = current_project()
-            start = project.start_scene_path
+            # 마지막에 열었던 씬(세션)이 있으면 그것, 없으면 프로젝트 시작 씬.
+            start = self._session_scene_path() or project.start_scene_path
             if start and start.is_file():
                 # 샘플 프로젝트도 보통 프로젝트와 같은 경로: 시작 씬 파일(샘플은 assets/scenes/Demo.scene.json).
                 self._load_scene_file(start)
@@ -718,6 +789,7 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
                 self._new_scene_in_world()
             # 시작 월드(데모 시드·시작 씬)를 만든 명령들은 "저장 안 된 변경"이 아니다 - 그 뒤를 기준으로 삼는다.
             self._mark_scene_clean()
+            self._apply_session_mode()
 
     def _instantiate_loaded_scene(self, editor_api, registry):
         """이미 파싱해 둔 scene.json 오브젝트를 ECS 엔티티로 만든다 (scene_instantiation.py 참고)."""
@@ -767,7 +839,60 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         self.scene_panel.connect_editor(editor_api)
         self.prefab_browser.set_editor_api(editor_api)
         self._update_undo_redo_actions()
+        self._connect_viewport_manipulation(engine, registry, editor_api)
         return editor_api
+
+    # ── 뷰포트 조작(docs/VIEWPORT_MANIPULATION_PLAN.md) ─────────────────────────
+    def _connect_viewport_manipulation(self, engine, registry, editor_api):
+        if not (HAS_VIEWPORT and isinstance(self.viewport, EngineViewport)):
+            return
+        from core.viewport_manipulation import ViewportManipulator
+        self.viewport.manipulator = ViewportManipulator(
+            engine, registry, editor_api, ge_python,
+            on_select=self.scene_panel.select_entity,
+            on_moved=self._after_viewport_move,
+            on_error=self.status.log)
+        # Edit 모드의 Scene Editor 화면에서만. Play 중 좌클릭은 게임 입력이고, Motion Editor에는 씬 오브젝트가 없다.
+        self.viewport.manipulation_enabled = lambda: not self.is_playing and self.stack.currentIndex() == 0
+        self.viewport.manipulator.set_mode(self._gizmo_mode)   # 엔진 연결 전에 고른 도구
+
+    def _set_gizmo_mode(self, mode: int):
+        """기즈모 도구: 0 이동, 1 회전, 2 크기. Inspector Transform 줄 이름과 W/E/R이 같은 곳으로 온다."""
+        self._gizmo_mode = mode
+        self.inspector.set_gizmo_tool(mode)
+        manipulator = getattr(self.viewport, 'manipulator', None) if HAS_VIEWPORT else None
+        if manipulator is not None:
+            try:
+                manipulator.set_mode(mode)
+            except Exception as e:
+                print(f"[Viewport] 기즈모 도구 전환 실패: {e}")
+
+    def _after_viewport_move(self, entity_id: int):
+        self._update_undo_redo_actions()
+        if self.inspector._current_entity_id == entity_id:
+            self.inspector.on_entity_selected(entity_id)   # Inspector의 위치 칸을 드래그 결과로 다시 그린다
+
+    def _sync_engine_selection(self):
+        """트리에서 고른 엔티티들을 뷰포트에 강조한다(엔진은 Edit 상태일 때만 그린다)."""
+        if self._engine is None:
+            return
+        from panels.scene_hierarchy import EntityItem
+        entities = [to_entity(item.entity_id) for item in self.scene_panel.tree.selectedItems()
+                    if isinstance(item, EntityItem) and item.entity_id >= 0]
+        try:
+            self._engine.SetSelectedEntities(entities)
+        except Exception as e:
+            print(f"[Viewport] 선택 강조 실패: {e}")
+
+    def _entity_display_name(self, entity_id: int) -> str:
+        if self._world is not None and entity_id >= 0:
+            try:
+                name = self._world.GetRegistry().GetEntityName(to_entity(entity_id))
+                if name:
+                    return name
+            except Exception:
+                pass
+        return f"Entity_{entity_id}"
 
     def _log_engine(self, msg: str):
         """엔진 연동 관련 메시지를 상태바와 콘솔에 같이 남긴다."""
@@ -895,12 +1020,30 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
 
     def _reset_layout(self):
         self.main_splitter.setSizes([240, 900, 300])
+        # Motion Editor가 도크를 숨긴 채라면 기억을 지운다 - restoreState가 도크를 다시 보이게 하므로, 아래에서 지금
+        # 모드 기준으로 다시 숨긴다(안 그러면 Motion Editor 화면에 도크가 돌아온다).
+        self._docks_hidden_for_motion = None
         self.restoreState(self._default_dock_state)
+        self._apply_default_dock_height()
+        self._update_bottom_docks_for_mode(self.stack.currentIndex())
 
     # 도킹·분할 배치 저장/복원(E-6). 에디터 설정이라 config.json에 둔다(프로젝트 데이터가 아니다, R4).
     def _save_layout(self):
         import base64
-        self.config_manager.set("layout", "dockState", value=base64.b64encode(bytes(self.saveState())).decode("ascii"))
+        # Motion Editor에서 닫으면 도크가 숨겨진 채로 저장돼, 다음 실행의 Scene Editor에서도 도크가 사라져 있었을
+        # 것이다. 숨기기 전 표시 여부로 되돌린 상태를 저장한다(창이 닫히는 중이라 화면에는 보이지 않는다).
+        hidden = self._docks_hidden_for_motion
+        if hidden:
+            for d, visible in hidden.items():
+                d.setVisible(visible)
+            if hidden.get(self._raised_bottom_dock):
+                self._raised_bottom_dock.raise_()
+        state = bytes(self.saveState())
+        if hidden:
+            for d in hidden:
+                d.hide()
+        self.config_manager.set("layout", "dockState", value=base64.b64encode(state).decode("ascii"))
+        self.config_manager.set("layout", "version", value=self._LAYOUT_VERSION)
         self.config_manager.set("layout", "splitter", value=list(self.main_splitter.sizes()))
 
     def _restore_layout(self):
@@ -908,6 +1051,9 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         from PySide6.QtCore import QByteArray
         state = self.config_manager.get("layout", "dockState", default=None)
         sizes = self.config_manager.get("layout", "splitter", default=None)
+        if state and self.config_manager.get("layout", "version", default=1) != self._LAYOUT_VERSION:
+            print("[Layout] 저장된 도킹 배치가 이전 형식이라 새 기본 배치를 씁니다(아래쪽 패널 높이 변경)")
+            state = None
         try:
             if state:
                 if not self.restoreState(QByteArray(base64.b64decode(state))):
@@ -935,10 +1081,16 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         # E-3 모드 표시, E-4 편집 단축키는 Edit 모드에서만(Play 중 Delete 등은 게임 키다)
         mode = "Pause" if self.is_paused else ("Play" if self.is_playing else "Edit")
         self.status.set_mode(mode)
+        # 증상(2026-10-16 점검, docs/EDITOR_BUGFIX_PLAN_2026-10-22.md F2): Play 중에도 Inspector 입력칸과
+        # "＋ Component"가 켜져 있어 값을 바꿀 수 있었고, 바꾼 값은 Stop 때 안내 없이 사라졌다.
+        # 원인: Inspector.set_play_mode(True)를 부르는 곳이 없었다(Stop의 set_play_mode(False)만 있었다) -
+        # 읽기 전용 기능은 구현돼 있었지만 한 번도 켜진 적이 없다. 일시정지도 Play 세션이므로 읽기 전용이다.
+        self.inspector.set_play_mode(self.is_playing)
         self.scene_panel.set_edit_shortcuts_enabled(not self.is_playing)
         for sc in getattr(self, '_viewport_edit_shortcuts', ()):
             sc.setEnabled(not self.is_playing)
         self._update_play_hint()
+        self._update_undo_redo_actions()
 
     def _update_play_hint(self, viewport_has_focus=None):
         """Play 화면 위 안내 줄(E-3). 키보드 입력이 게임으로 가는지(뷰포트 포커스)를 알려 준다.
@@ -967,6 +1119,12 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
             return
 
         if not self.is_playing:
+            # Toolbar and camera preview also reach this entry point. Without this
+            # guard an unapplied speed could be displayed while Play used the old value.
+            pending = self.inspector.pending_authoring_message()
+            if pending:
+                self.status.log(pending)
+                return
             self.is_playing = True
             self.is_paused = False
             # Stop하면 월드가 Play 시작 시점으로 되돌아가므로, 저장 안 된 변경 표시도 그때 상태로 돌린다.
@@ -995,6 +1153,8 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
                 except Exception as e:
                     print(f"[Editor] Play start error: {e}")
                     self.status.log(f"Play error: {e}")
+                    self._on_stop()
+                    return
             else:
                 self.status.log("Play mode (no engine)")
             
@@ -1063,7 +1223,18 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         if self._engine and HAS_ENGINE:
             try:
                 if self._world:
+                    registry = self._world.GetRegistry()
+                    selected_id = self.inspector._current_entity_id
+                    selected_uuid = registry.GetEntityUUID(to_entity(selected_id)) if selected_id >= 0 else 0
                     self._world.Stop()
+                    # Stop restores entities with new runtime IDs. Keeping the old
+                    # selected ID used to empty the Inspector after a camera test.
+                    restored = registry.GetEntityByUUID(selected_uuid)
+                    self.inspector._current_entity_id = restored.id if restored.IsValid() else -1
+                    self.scene_panel._selected_entity_id = self.inspector._current_entity_id
+                    self.scene_panel._last_structure = None
+                    self.scene_panel.refresh_from_engine()
+                    self._sync_engine_selection()   # 강조도 새 id로(Stop이 엔티티를 새 id로 다시 만든다)
                 self.status.log("Stopped")
             except Exception as e:
                 print(f"[Editor] Stop error: {e}")
@@ -1074,7 +1245,8 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         if self.inspector._current_entity_id != -1:
             self.inspector.on_entity_selected(self.inspector._current_entity_id)
             
-        self.status.log("Play 모드 종료")
+        self._update_undo_redo_actions()
+        self.status.log("Play 모드 종료 — 이전 편집을 Undo/Redo할 수 있습니다")
         if was_playing:
             self._restore_dirty_after_stop()
 
@@ -1132,7 +1304,29 @@ class EditorMainWindow(ProjectActionsMixin, QMainWindow):
         print(f"[Editor] Scene error: {error_msg}")
 
     def closeEvent(self, event):
-        """종료 시 설정 저장"""
+        """종료 시: 저장 안 된 변경 확인 → 프로젝트 세션 → 에디터 설정.
+
+        예전에는 묻지 않고 바로 닫혀서, 저장 안 한 씬·액션·입력 맵 수정이 경고 없이 사라졌다.
+        Play 중이면 먼저 멈춘다 - 변경 여부와 세션은 Play 전 월드 기준이다(Play 중 월드는 저장 대상이 아니다).
+        """
+        if self.is_playing:
+            self._on_stop()
+        try:
+            proceed = self._confirm_unsaved("Exit", include_project_data=True)
+        except Exception as e:
+            # 확인 자체가 실패하면 변경이 있는지 모른다. 예전처럼 그냥 닫으면(Qt는 closeEvent의 예외를 삼키고
+            # 창을 닫는다) 작업이 경고 없이 사라진다. 처음 연결할 때 InputActionsPanel.is_dirty(프로퍼티)를
+            # 메서드로 불러 "'bool' object is not callable"이 났고, 창이 묻지 않고 닫혔다.
+            import traceback
+            from PySide6.QtWidgets import QMessageBox
+            traceback.print_exc()
+            proceed = QMessageBox.question(
+                self, "Exit", f"저장 안 된 변경을 확인하지 못했습니다:\n{type(e).__name__}: {e}\n\n"
+                "저장하지 않고 종료할까요?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+        if not proceed:
+            event.ignore()
+            return
+        self._write_session_quietly()
         self._save_layout()
         self.config_manager.save_config()
         super().closeEvent(event)

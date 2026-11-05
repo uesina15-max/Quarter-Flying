@@ -305,6 +305,45 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
         return mesh;
     }
 
+    LocalBounds RenderSystem::GetMeshBounds(const RenderableComponent& renderable) const
+    {
+        // ResolveMeshHandle과 같은 순서로 찾되 불러오지는 않는다.
+        uint32_t handle = 0;
+        if (!renderable.meshPath.empty())
+        {
+            if (auto reg = registeredMeshes_.find(renderable.meshPath); reg != registeredMeshes_.end())
+            {
+                handle = reg->second;
+            }
+            else if (auto it = pathHandles_.find(renderable.meshPath); it != pathHandles_.end())
+            {
+                handle = it->second;
+            }
+        }
+        if (handle != 0)
+        {
+            if (auto it = meshRegistry_.find(handle); it != meshRegistry_.end() && it->second && it->second->hasBounds())
+            {
+                const float* lo = it->second->boundsMin();
+                const float* hi = it->second->boundsMax();
+                return LocalBounds{glm::vec3(lo[0], lo[1], lo[2]), glm::vec3(hi[0], hi[1], hi[2])};
+            }
+        }
+        return kUnitCubeBounds;
+    }
+
+    bool RenderSystem::IsSelected(ECSRegistry& registry, Entity entity) const
+    {
+        for (Entity selected : selected_)
+        {
+            if (IsSelfOrAncestor(registry, selected, entity))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     std::shared_ptr<Mesh> RenderSystem::GetOrCreateMesh(uint32_t meshHandle)
     {
         auto it = meshRegistry_.find(meshHandle);
@@ -405,7 +444,7 @@ InstancedBatchKey MakeMeshBatchKey(uint32_t meshHandle, uint32_t glTexture)
                     data.roughness = surface.roughness;
                     data.metallic = surface.metallic;
                     data.entityId = id;
-                    data.isSelected = 0;
+                    data.isSelected = IsSelected(registry, Entity(id)) ? 1u : 0u;
                     auto addResult = batchManager_->AddInstance(key, data, id);
                     if (!addResult)
                     {

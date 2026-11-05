@@ -16,3 +16,15 @@ from project.project import (  # noqa: F401
     sample_project,
     set_current_project,
 )
+from project.project_save import SaveItem, SaveResult, save_items  # noqa: F401
+from project.session import (  # noqa: F401
+    CameraView,
+    EditorSession,
+    MODE_MOTION,
+    MODE_SCENE,
+    from_session_path,
+    load_session,
+    save_session,
+    session_file,
+    to_session_path,
+)

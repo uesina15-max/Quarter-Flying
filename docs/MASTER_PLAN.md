@@ -1,5 +1,17 @@
 # Quarter Flying — 개발 마스터플랜
 
+## 2026-11-04 제작 기능 사용법
+
+다음 표는 아래의 과거 계획표보다 최근에 구현한 항목이다. 검수·수정 기록과 검증 수준은 [PRODUCTION_FEATURES_BUGFIX_2026-11-05.md](PRODUCTION_FEATURES_BUGFIX_2026-11-05.md)에 있다.
+
+| 기능 | 에디터에서 사용하는 방법 |
+|---|---|
+| 캐릭터 충돌 | 바닥·벽 객체에 Transform과 `BoxColliderComponent`를 추가한다. `halfExtents`는 로컬 반크기, `offset`은 로컬 중심이다. 회전·스케일·부모 변환을 적용한 월드 축 정렬 상자로 판정한다. 캐릭터 원점은 발 위치이며 기본 반경은 0.3, 높이는 1.8이다. 키보드 이동은 벽에서 미끄러지고, 점프·낙하는 `character_controller.py` 샘플에서 처리한다. 충돌체가 없는 프로젝트에서는 기존 샘플처럼 시작 높이에 착지한다. |
+| 이동 애니메이션 | 캐릭터 루트에 `LocomotionComponent`를 추가하고 프로젝트 상대 경로로 스켈레톤과 대기·걷기·달리기 클립을 지정한다. 클립의 로컬 포즈를 적용할 자식 Transform은 본과 이름·계층을 맞춘다. 수평 속도가 `walkThreshold` 이하이면 대기, `runThreshold` 이상이면 달리기, 그 사이는 걷기다. 상태가 달라지면 새 클립은 첫 프레임부터 재생된다. |
+| 프리팹 | Inspector의 **Apply**는 원본의 배치 위치를 보존하며 인스턴스의 컴포넌트를 파일에 반영한다. 다른 인스턴스는 Revert로 갱신한다. **Variant…**로 새 파일을 만들면 원본과 다른 필드만 기록해 이후 원본 변경을 상속한다. 기존 계층과 이름을 유지하는 편집에 사용한다. |
+| 파티클 | `ParticleEffectComponent`가 있는 객체에 `ParticleStyleComponent`를 추가한다. `sheetPath`와 행·열 수를 지정하면 수명에 따라 시트 셀을 순서대로 재생한다. `trailSamples`는 뒤에 그릴 잔상 개수(0~4)다. `gpuMotion`은 이동·중력·감쇠를 정점 셰이더에서 계산한다. 생성 및 수명 관리는 CPU가 맡고, `collide`를 켜면 상자와의 접촉을 처리하는 CPU 이동 경로를 사용한다. 값을 바꾸면 이펙트가 처음부터 다시 시작하고, Play를 시작할 때도 새로 시작한다. |
+| 제작 도구 | **Tools → Asset References**에서 저장한 씬·프리팹·머티리얼·액션의 참조와 누락 파일을 찾고 지원하는 경로를 교체한다. **Material Editor**에서 색·거칠기·금속성·텍스처를 편집한다. **Frame Profiler**는 최근 240프레임의 월드 업데이트·렌더 제출·Present 경과 시간을 평균, P95, 최대로 표시한다. 이 수치는 메인 스레드 측정값이다. |
+
 **작성일**: 2026-08-18
 **기준**: `C:\QuarterFlying` (정본 경로 — `D:\Quarter Flying`는 구버전 사본, [CLAUDE.md](../CLAUDE.md) 참고)
 

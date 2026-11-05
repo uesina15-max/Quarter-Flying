@@ -136,7 +136,7 @@ void main()
     }
 
     void BoneLineRenderer::Render(const glm::mat4& viewProjection, const std::vector<std::pair<glm::vec3, glm::vec3>>& lines,
-                                  const glm::vec3& color)
+                                  const glm::vec3& color, bool depthTest)
     {
         if (!initialized || lines.empty())
         {
@@ -152,9 +152,13 @@ void main()
         }
 
         GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-        if (!depthWasEnabled)
+        if (depthTest && !depthWasEnabled)
         {
             glEnable(GL_DEPTH_TEST);
+        }
+        else if (!depthTest && depthWasEnabled)
+        {
+            glDisable(GL_DEPTH_TEST);
         }
 
         glUseProgram(shaderProgram);
@@ -172,9 +176,9 @@ void main()
         glBindVertexArray(0);
         glUseProgram(0);
 
-        if (!depthWasEnabled)
+        if (depthWasEnabled != static_cast<GLboolean>(glIsEnabled(GL_DEPTH_TEST)))   // 들어올 때 상태로 되돌린다
         {
-            glDisable(GL_DEPTH_TEST);
+            if (depthWasEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
         }
     }
 }

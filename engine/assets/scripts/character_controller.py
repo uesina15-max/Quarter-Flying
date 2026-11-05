@@ -11,7 +11,8 @@
 계산이 틀렸나(step) / 적용이 틀렸나(Transform)"를 경계의 값으로 가를 수 있다. step()은
 editor/test_character_controller.py가 프레임률을 바꿔 가며 검사한다.
 
-한계(샘플이라서): 충돌·물리가 없다. 바닥은 "시작했을 때의 높이"이고 그보다 아래로 내려가지 않는다.
+BoxColliderComponent가 있는 씬에서는 정적 상자에 착지하고 벽을 따라 미끄러진다.
+충돌체가 없는 기존 씬은 시작 높이를 바닥으로 사용한다.
 """
 
 import math
@@ -53,7 +54,7 @@ class Inputs:
     forward_z: float = -1.0
 
 
-def step(state: State, inputs: Inputs, dt: float, settings: Settings = Settings()) -> State:
+def step(state: State, inputs: Inputs, dt: float, settings: Settings = Settings(), clamp_floor=True) -> State:
     """state를 dt초 진행한 새 State. 프레임률과 무관하게 같은 움직임이 나와야 한다."""
     dt = max(0.0, min(float(dt), MAX_STEP_SECONDS))
 
@@ -77,7 +78,7 @@ def step(state: State, inputs: Inputs, dt: float, settings: Settings = Settings(
     # 144fps 0.979 - 프레임률마다 점프 높이가 8% 다르다(test_character_controller.py가 잡는다).
     y = state.y + vy * dt - 0.5 * settings.gravity * dt * dt
     vy -= settings.gravity * dt
-    if y <= state.ground_y:
+    if clamp_floor and y <= state.ground_y:
         y, vy = state.ground_y, 0.0
 
     return State(state.x + mx * speed * dt, y, state.z + mz * speed * dt, vy, state.ground_y)
@@ -109,6 +110,7 @@ class CharacterController:
         import quarterflying
         registry = quarterflying.script.registry()
         p = registry.GetTransformComponent(self.entity).position
+        self.fallback_floor = p.y
         self.state = State(p.x, p.y, p.z, 0.0, ground_y=p.y)
 
     def on_update(self, dt):
@@ -121,5 +123,12 @@ class CharacterController:
         inputs = Inputs(move_x=inp.get_axis("MoveX"), move_y=inp.get_axis("MoveY"),
                         jump_pressed=inp.was_pressed("Jump"), sprint=inp.is_down("Sprint"),
                         forward_x=fx, forward_z=fz)
-        self.state = step(self.state, inputs, dt, self.settings)
-        registry.SetTransformPosition(self.entity, self.state.x, self.state.y, self.state.z)
+        previous = self.state
+        proposed = step(previous, inputs, dt, self.settings, clamp_floor=False)
+        x, y, z, geometry, grounded, ceiling = registry.MoveCharacter(
+            self.entity, proposed.x - previous.x, proposed.y - previous.y, proposed.z - previous.z)
+        if not geometry and y <= self.fallback_floor:
+            y, grounded = self.fallback_floor, True
+            registry.SetTransformPosition(self.entity, x, y, z)
+        self.state = State(x, y, z, 0.0 if grounded or ceiling else proposed.vy,
+                           y if grounded else -math.inf)

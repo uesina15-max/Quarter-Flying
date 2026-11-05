@@ -125,6 +125,19 @@ class ActionData:
     # 아직 한 번도 저장되지 않은 액션은 None이고, 그 경우 clip은 절대 경로로 둔다.
     source_path: Optional[str] = None
 
+    # 마지막으로 파일과 같았던 때의 to_json() 결과(load_action/save_action이 기록). 직렬화하지 않는다.
+    # "저장 안 된 변경"(File > Save Project, 종료 확인)은 지금 to_json()과 이 값을 비교해 정한다. 편집 경로
+    # (Section Inspector, 타임라인, 이름 바꾸기 …)마다 "바꿨음" 플래그를 세우지 않는 이유: 한 곳만 빠뜨려도
+    # 종료할 때 변경이 조용히 사라지고, 어느 패널이 빠뜨렸는지 추적하기 어렵다. 파일에 쓰일 내용 자체를 비교하면
+    # 어느 경로로 바꿨든 잡힌다. None이면 파일이 없는 새 액션이라 항상 "변경 있음"이다.
+    _saved_json: Optional[str] = field(default=None, repr=False, compare=False)
+
+    def mark_saved(self) -> None:
+        self._saved_json = self.to_json()
+
+    def is_modified(self) -> bool:
+        return self._saved_json is None or self.to_json() != self._saved_json
+
     # ── 직렬화 ───────────────────────────────────────────────────────────────
 
     def to_dict(self) -> dict:
@@ -234,17 +247,46 @@ def relativize_clip_paths(data: ActionData, base_dir: str) -> None:
             pass  # 예: Windows에서 드라이브가 다른 경우
 
 
+def absolutize_clip_paths(data: ActionData, base_dir: str) -> None:
+    """Sound 이벤트의 상대 clip 경로를 base_dir 기준 절대 경로로 되돌린다(save_action이 다른 폴더로 저장하기 전에 쓴다)."""
+    for e in data.events:
+        if e.type != EventType.SOUND:
+            continue
+        clip = (e.params or {}).get("clip")
+        if clip and not os.path.isabs(clip):
+            e.params["clip"] = os.path.normpath(os.path.join(base_dir, clip))
+
+
 def save_action(data: ActionData, filepath: str) -> None:
     """ActionData를 .action.json 파일로 저장."""
     abs_path = os.path.abspath(filepath)
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
-    # 저장될 폴더가 확정된 지금이 clip 경로를 상대화할 유일한 시점이다(§6.4).
-    relativize_clip_paths(data, os.path.dirname(abs_path))
+    # 증상(2026-10-16 점검, docs/EDITOR_BUGFIX_PLAN_2026-10-22.md F3): 저장된 액션을 다른 폴더로 Save As 하면
+    # Sound 이벤트 clip이 없는 파일을 가리켰다 - 미리듣기·Scene Play 무음, Build Game "액션이 참조하는 클립이 없습니다".
+    # 원인: 한 번 저장했거나 파일에서 불러온 액션의 clip은 이미 옛 폴더 기준 상대 경로인데, relativize_clip_paths는
+    # 절대 경로만 바꾸고 상대 경로는 건너뛴다. 그 상대 경로가 새 파일에 그대로 쓰이고 source_path만 새 폴더로 바뀌었다.
+    # 그래서 상대화하기 전에, 지금 출처(source_path) 기준으로 먼저 절대 경로로 되돌린다.
+    # 쓰기에 실패하면(권한·디스크 부족) clip이 새 폴더 기준으로 바뀐 채 source_path만 옛 폴더로 남아 메모리의
+    # 액션이 깨진다. 그래서 원래 값을 기억해 두었다가 실패하면 되돌린다.
+    original_clips = [(e, e.params.get("clip")) for e in data.events
+                      if e.type == EventType.SOUND and e.params and "clip" in e.params]
+    try:
+        if data.source_path:
+            absolutize_clip_paths(data, os.path.dirname(os.path.abspath(data.source_path)))
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(data.to_json())
+        # 저장될 폴더가 확정된 지금이 clip 경로를 상대화할 유일한 시점이다(§6.4).
+        relativize_clip_paths(data, os.path.dirname(abs_path))
+
+        text = data.to_json()
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(text)
+    except BaseException:
+        for e, clip in original_clips:
+            e.params["clip"] = clip
+        raise
     data.source_path = abs_path
+    data._saved_json = text
 
 
 def load_action(filepath: str) -> ActionData:
@@ -253,6 +295,7 @@ def load_action(filepath: str) -> ActionData:
         action = ActionData.from_json(f.read())
     # clip의 상대 경로를 풀 기준 폴더를 액션 자신이 들고 있게 한다(§6.4).
     action.source_path = os.path.abspath(filepath)
+    action.mark_saved()
     return action
 
 

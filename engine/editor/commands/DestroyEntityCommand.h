@@ -26,6 +26,16 @@ public:
     std::string GetName() const override { return "Destroy Entity"; }
 
 private:
+    struct ExternalReference
+    {
+        UUID owner;
+        std::string component;
+        std::string field;
+        UUID target;
+    };
+    void WriteExternalReferences(bool restore);
+    std::vector<ExternalReference> externalReferences_;
+
     ECSRegistry*                registry_;
     Entity                      entity_;
     std::vector<EntitySnapshot> snapshots_;          // [0] = 대상, 이후 자손(부모 먼저)

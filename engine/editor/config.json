@@ -12,5 +12,14 @@
     "engine": {
         "numWorkerThreads": 0,
         "logFrameInterval": 60
+    },
+    "layout": {
+        "dockState": "AAAA/wAAAAD9AAAAAQAAAAMAAAeAAAAAmPwBAAAAAfwAAAAAAAAHgAAAATkA////+gAAAAABAAAAAvsAAAAmAHAAcgBlAGYAYQBiAF8AYgByAG8AdwBzAGUAcgBfAGQAbwBjAGsBAAAAAP////8AAACtAP////sAAAAkAGkAbgBwAHUAdABfAGEAYwB0AGkAbwBuAHMAXwBkAG8AYwBrAQAAAAD/////AAABOQD///8AAAeAAAADFgAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAAGABtAGEAaQBuAF8AdABvAG8AbABiAGEAcgEAAAAA/////wAAAAAAAAAA",
+        "splitter": [
+            240,
+            1376,
+            300
+        ],
+        "version": 2
     }
 }

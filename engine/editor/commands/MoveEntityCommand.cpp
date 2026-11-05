@@ -8,6 +8,7 @@ namespace Engine
 MoveEntityCommand::MoveEntityCommand(ECSRegistry* registry, Entity entity, Vec3 newPosition)
     : registry_(registry)
     , entity_(entity)
+    , entityUUID_(registry && registry->IsValid(entity) ? registry->GetUUID(entity) : UUID(0))
     , newPosition_(newPosition)
 {
     if (registry_ && registry_->HasTransformComponent(entity_))
@@ -25,6 +26,8 @@ std::expected<void, EngineError> MoveEntityCommand::Apply()
     {
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "MoveEntityCommand");
     }
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!entity_.IsValid())
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "MoveEntityCommand");
@@ -44,6 +47,8 @@ std::expected<void, EngineError> MoveEntityCommand::Undo()
     {
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "MoveEntityCommand");
     }
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!entity_.IsValid())
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "MoveEntityCommand");
@@ -60,7 +65,7 @@ std::expected<void, EngineError> MoveEntityCommand::Undo()
 bool MoveEntityCommand::CanMergeWith(const ICommand& other) const
 {
     const auto* otherMove = dynamic_cast<const MoveEntityCommand*>(&other);
-    return otherMove != nullptr && otherMove->entity_.id == entity_.id;
+    return otherMove != nullptr && otherMove->registry_ == registry_ && entityUUID_.IsValid() && otherMove->entityUUID_ == entityUUID_;
 }
 
 std::expected<void, EngineError> MoveEntityCommand::MergeWith(const ICommand& other)

@@ -63,4 +63,8 @@ namespace Engine
     // 회전돼 있으면(전단 변형) 근사다 - 그 경우에도 그리기는 ComputeWorldMatrix(정확)를 쓴다.
     // 카메라/파티클처럼 "위치와 방향"만 필요한 곳이 쓴다.
     TransformComponent ComputeWorldTransform(ECSRegistry& registry, Entity entity);
+
+    // 엔티티 원점이 월드 worldPosition에 오려면 TransformComponent.position(부모 기준 로컬)이 얼마여야 하는가.
+    // 부모가 없으면 그대로다. 에디터 뷰포트 드래그가 월드에서 계산한 위치를 로컬 값으로 바꿀 때 쓴다.
+    glm::vec3 LocalPositionForWorld(ECSRegistry& registry, Entity entity, const glm::vec3& worldPosition);
 }

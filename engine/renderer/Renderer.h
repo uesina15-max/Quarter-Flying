@@ -94,6 +94,14 @@ namespace Engine
         // 에디터 기즈모(카메라 시야 선 등). ECS System이 매 프레임 채우고, 여기서 그린 뒤 EndFrame에서 비운다.
         // 에디터 카메라로 볼 때만 그린다(Engine::SetViewCamera가 켜고 끔). 게임 화면에는 나오지 않는다.
         DebugLineBuffer& GetDebugLineBuffer() { return debugLines; }
+        // 에디터 오버레이(이동 기즈모). 색마다 한 묶음. 씬 메시·파티클 뒤에 깊이를 무시하고(항상 위에) 그린다.
+        // 그리는 조건은 GetDebugLineBuffer와 같다(Scene 모드 + 에디터 카메라). EndFrame에서 비운다.
+        struct ColoredLines
+        {
+            std::vector<DebugLineBuffer::Line> lines;
+            glm::vec3 color{1.0f};
+        };
+        std::vector<ColoredLines>& GetOverlayLines() { return overlayLines; }
         void SetDrawEditorGizmos(bool draw) { drawEditorGizmos = draw; }
         // 디버그 그리드 표시(EngineConfig::showDebugGrid). 기즈모와 달리 뷰 카메라와 무관하게 그려지므로
         // 게임 실행 파일에서는 이 플래그로 끈다.
@@ -169,6 +177,7 @@ namespace Engine
 
         // 에디터 기즈모 (GetDebugLineBuffer 주석 참고)
         DebugLineBuffer debugLines;
+        std::vector<ColoredLines> overlayLines;
         bool drawEditorGizmos = false;
         bool drawDebugGrid = true;
         

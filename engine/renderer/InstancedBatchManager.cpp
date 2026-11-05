@@ -377,7 +377,17 @@ namespace Engine
             for (size_t i = 0; i < batch.instanceData.size(); ++i)
             {
                 const InstanceData& instance = batch.instanceData[i];
-                
+
+                // model[3].w <= 0은 GPU 이동 파티클이다(ParticleSystem::CollectInstances). 여기 있는 위치는 스폰 지점이고
+                // 실제 위치는 정점 셰이더가 나이로 계산한다. 증상: 시야 밖에서 스폰해 시야로 날아오는 파티클이 CPU 경로로는
+                // 보이는데 gpuMotion을 켜면 통째로 사라졌다(GL 에러 없음). 위치를 모르므로 컬링하지 않는다.
+                if (instance.model[3][3] <= 0.0f)
+                {
+                    visibleCount++;
+                    batch.visibleInstanceData.push_back(instance);
+                    continue;
+                }
+
                 // Extract position from model matrix (translation component)
                 glm::vec3 position(instance.model[3][0], instance.model[3][1], instance.model[3][2]);
                 

@@ -12,6 +12,7 @@
 #include <string>
 #include <memory>
 #include <utility>
+#include <stdexcept>
 
 namespace Engine
 {
@@ -30,6 +31,7 @@ namespace Engine
 
     World::~World()
     {
+        CommandManager::GetInstance().ForgetRegistry(registry.get());
         if (initialized)
         {
             Shutdown();
@@ -103,10 +105,14 @@ namespace Engine
     void World::Play() {
         if (m_EditorState == EditorState::Edit) {
             m_Snapshot = SerializeRegistry(*registry);
+            auto ready = CommandManager::GetInstance().BeginPlay(registry.get());
+            if (!ready) throw std::runtime_error(ready.error().message);
             m_EditorState = EditorState::Play;
-            
-            for (const auto& system : systems) {
-                system->OnStart(*registry);
+            try {
+                for (const auto& system : systems) system->OnStart(*registry);
+            } catch (...) {
+                Stop();
+                throw;
             }
             
             Logger::Info("PIE: Play started (Snapshot saved)");
@@ -129,7 +135,9 @@ namespace Engine
 
             // 스냅샷에서 레지스트리 상태 복원
             DeserializeRegistry(*registry, m_Snapshot);
-            CommandManager::GetInstance().Clear();
+            // Clearing here discarded every edit just because the user tried the game.
+            // Commands now resolve stable UUIDs after snapshot recreation.
+            CommandManager::GetInstance().EndPlay(registry.get());
             m_EditorState = EditorState::Edit;
             Logger::Info("PIE: Stop (Snapshot restored)");
         }

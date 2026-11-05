@@ -1,6 +1,7 @@
 #include "ParticleSystem.h"
 #include "ECSRegistry.h"
 #include "Hierarchy.h"
+#include "../core/Utf8Path.h"
 #include "../renderer/InstancedBatchManager.h"
 #include "../renderer/Camera.h"
 #include "../renderer/Mesh.h"
@@ -106,8 +107,9 @@ namespace Engine
         }
     }
 
-    ParticleSystem::ParticleSystem(InstancedBatchManager* batchManager, Camera* camera)
-        : batchManager_(batchManager)
+    ParticleSystem::ParticleSystem(InstancedBatchManager* batchManager, Camera* camera,
+                                   RenderSystem::TextureLoader loader, std::string root)
+        : loader_(std::move(loader)), root_(std::move(root)), batchManager_(batchManager)
         , camera_(camera)
     {
     }
@@ -166,6 +168,7 @@ namespace Engine
                     continue;
                 }
 
+                if (effect.style.collide) obstacles_ = CollectCollisionBounds(registry, Entity(effect.owner), 0, 0);
                 SpawnParticles(effect, deltaTime);
                 IntegrateAndRemoveDead(effect, deltaTime);
                 UpdateActiveState(effect);
@@ -245,6 +248,12 @@ namespace Engine
         // 이 배치의 instanceData가 곧 "재사용되는 CPU 인스턴스 버퍼"다(§5.6이 요구한
         // "매 프레임 새로 만들지 않는다"를 별도 버퍼 없이 만족한다).
         batchManager_->ClearInstances(ParticleBatchKey());
+        for (const auto& [path, texture] : textures_) {
+            if (!texture.glId) continue;
+            auto key = ParticleBatchKey();
+            key.materialId = texture.glId;
+            if (batchManager_->GetBatch(key)) batchManager_->ClearInstances(key);
+        }
 
         // 빌보드 회전은 프레임당 1회만 구해서 모든 파티클이 재사용한다. 뷰 행렬 회전부의
         // 전치가 곧 그 역회전이라, 쿼드가 항상 카메라를 마주보게 된다.
@@ -258,8 +267,21 @@ namespace Engine
                 continue;
             }
 
-            for (const Particle& p : effect.particles)
+            auto key = ParticleBatchKey();
+            if (loader_ && !effect.style.sheetPath.empty()) {
+                auto path = Utf8FromPath(PathFromUtf8(root_) / PathFromUtf8(effect.style.sheetPath));
+                auto found = textures_.find(path);
+                if (found == textures_.end()) found = textures_.emplace(path, loader_(path)).first;
+                if (found->second.glId) {
+                    key.materialId = found->second.glId;
+                    if (!batchManager_->GetBatch(key) &&
+                        !batchManager_->CreateBatch(key, BatchType::Dynamic, quadMesh_)) continue;
+                    batchManager_->SetBatchTexture(key, found->second.glId);
+                }
+            }
+            for (size_t index = 0; index < effect.particles.size(); ++index)
             {
+                const Particle& p = effect.particles[index];
                 InstanceData data{};
 
                 // model = T(위치) * R_billboard * R_z(회전) * S(크기).
@@ -275,7 +297,26 @@ namespace Engine
 
                 // entityId/isSelected/roughness/metallic은 파티클 셰이더가 읽지 않는다.
                 // 파티클은 ECS 엔티티가 아니라 피킹 대상도 아니므로 0으로 둔다.
-                auto added = batchManager_->AddInstance(ParticleBatchKey(), data, 0);
+                const float age = std::max(0.f, effect.settings.lifetime - p.lifetime);
+                const int cols = std::clamp(effect.style.columns, 1, 255), rows = std::clamp(effect.style.rows, 1, 255);
+                data.entityId = cols | (rows << 8);
+                data.isSelected = std::min(cols * rows - 1, static_cast<int>(cols * rows * age / std::max(1e-6f,effect.settings.lifetime)));
+                bool gpu = effect.style.gpuMotion && !effect.style.collide;
+                if (gpu) {
+                    for (int axis = 0; axis < 3; ++axis) data.model[axis][3] = p.velocity[axis];
+                    data.model[3][3] = -age;
+                    data.roughness = effect.settings.gravity;
+                    data.metallic = std::max(0.f, effect.settings.drag);
+                }
+                int count = std::clamp(effect.style.trailSamples, 0, 4);
+                for (int sample = count; sample > 0; --sample) {
+                    InstanceData tail = data;
+                    tail.alpha *= 0.55f * (count+1-sample)/(count+1);
+                    if (gpu) tail.model[3][3] = -std::max(0.f, age - sample / 60.f);
+                    else tail.model[3] = glm::vec4(effect.history[index][sample-1], 1.f);
+                    if (!batchManager_->AddInstance(key, tail, 0)) break;
+                }
+                auto added = batchManager_->AddInstance(key, data, 0);
                 if (!added)
                 {
                     Logger::Log(LogLevel::Warning,
@@ -320,12 +361,27 @@ namespace Engine
             // 순간이동시키는 것보다는 낫다.
         }
 
+        static const ParticleStyleComponent kDefaultStyle;
         for (size_t i = 0; i < components->Size(); ++i)
         {
             EntityID id = components->GetEntityIDs()[i];
-            if (effects_.find(id) != effects_.end())
+            const ParticleEffectComponent& settings = components->GetDenseArray()[i];
+            const auto* styleComponent = registry.GetComponent<ParticleStyleComponent>(Entity(id));
+            const ParticleStyleComponent& style = styleComponent ? *styleComponent : kDefaultStyle;
+
+            // 증상: 문서대로 ParticleEffectComponent를 붙인 뒤 ParticleStyleComponent를 추가하면 시트·트레일이 Edit에도
+            // Play에도 나오지 않고 Stop을 한 뒤에야 나타났다. Inspector에서 이펙트 색을 바꿔도 마찬가지였다. 에러 없음.
+            // 원인: 설정을 이펙트 생성 시 한 번만 복사했고, 이펙트는 Edit 상태에서 바로 만들어지므로 그 뒤의 편집을 볼
+            // 기회가 없었다(Stop은 엔티티 id가 바뀌어 새로 만들어졌기 때문에 그제야 보였다).
+            // 값이 바뀌면 진행 중인 파티클을 고치지 않고 처음부터 다시 시작한다(EffectInstance::settings 주석의 이유).
+            auto existing = effects_.find(id);
+            if (existing != effects_.end())
             {
-                continue;
+                if (existing->second.settings == settings && existing->second.style == style)
+                {
+                    continue;
+                }
+                effects_.erase(existing);
             }
 
             // §5.7: 이펙트 단위 전역 상한. 이펙트 하나가 조절할 값이 아니라 엔진 정책이라
@@ -335,11 +391,10 @@ namespace Engine
                 break;
             }
 
-            const ParticleEffectComponent& settings = components->GetDenseArray()[i];
-
             EffectInstance effect;
             effect.owner    = id;
             effect.settings = settings;
+            effect.style    = style;
             effect.rng.seed(static_cast<std::mt19937::result_type>(id * 2654435761u + 1u));
 
             // §5.5: 여기서 딱 한 번. 이후 Spawn/Update/Remove 어디에서도 재할당이 없어야
@@ -350,6 +405,8 @@ namespace Engine
             const size_t capacity = std::min(
                 static_cast<size_t>(std::max(0, settings.maxParticle)), kPreviewMaxParticle);
             effect.particles.reserve(capacity);
+            if (effect.style.trailSamples > 0 && (!effect.style.gpuMotion || effect.style.collide))
+                effect.history.reserve(capacity);
 
             // 새 이펙트는 스폰 전에 이미터 위치를 한 번 맞춰둔다 - 안 그러면 생성된 첫
             // 프레임의 파티클만 원점에서 튀어나온다.
@@ -477,6 +534,8 @@ namespace Engine
         // 않도록 이미 막았으므로 여기서 재할당이 일어나면 안 된다(§5.5). 유닛테스트가
         // capacity 불변을 검사한다.
         effect.particles.push_back(p);
+        if (effect.style.trailSamples > 0 && (!effect.style.gpuMotion || effect.style.collide))
+            effect.history.push_back({p.position, p.position, p.position, p.position});
     }
 
     void ParticleSystem::IntegrateAndRemoveDead(EffectInstance& effect, float deltaTime)
@@ -503,14 +562,29 @@ namespace Engine
                 // 파티클 순서는 시뮬레이션 결과에 영향을 주지 않으므로 안전하다.
                 // 마지막 원소를 당겨온 자리는 다시 검사해야 하므로 i를 증가시키지 않는다.
                 p = effect.particles.back();
+                  if (!effect.history.empty()) {
+                      effect.history[i] = effect.history.back();
+                      effect.history.pop_back();
+                  }
                 effect.particles.pop_back();
                 continue;
             }
 
             // §4.1의 적분 순서 그대로.
-            p.velocity.y += s.gravity * deltaTime;
-            p.velocity   *= dragFactor;
-            p.position   += p.velocity * deltaTime;
+            if (!effect.history.empty()) {
+                auto& samples = effect.history[i];
+                std::move_backward(samples.begin(), samples.end()-1, samples.end());
+                samples[0] = p.position;
+            }
+            if (effect.style.collide || !effect.style.gpuMotion) {
+                p.velocity.y += s.gravity * deltaTime;
+                p.velocity *= dragFactor;
+                const auto travel = p.velocity * deltaTime;
+                const auto position = effect.style.collide ? SweepCharacter(obstacles_, p.position, travel).feet : p.position + travel;
+                for (int axis = 0; axis < 3; ++axis)
+                    if (std::abs(position[axis] - (p.position[axis] + travel[axis])) > 1e-5f) p.velocity[axis] = 0;
+                p.position = position;
+            }
 
             // t = 1 - life/maxLife  (0 = 갓 태어남, 1 = 소멸 직전)
             const float t = std::clamp(1.0f - (p.lifetime / maxLifetime), 0.0f, 1.0f);

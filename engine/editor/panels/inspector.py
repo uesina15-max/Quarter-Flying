@@ -6,11 +6,18 @@ Inspector Panel
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
     QDoubleSpinBox, QSpinBox, QCheckBox, QGroupBox, QSizePolicy,
-    QFrame, QPushButton, QComboBox, QLineEdit
+    QFrame, QPushButton, QComboBox, QLineEdit, QFileDialog, QMessageBox, QGridLayout
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
 import json
 import os
+from pathlib import Path
+from core.prefab_variants import write_instance
+
+from project import current_project, ProjectError
+from scene_authoring import ASSET_FIELDS, project_asset_path
+from panels.follow_camera import FollowCameraWidget
+from panels.keyboard_movement import KeyboardMovementWidget
 
 from style.theme import COLORS
 
@@ -34,6 +41,7 @@ class PrefabInstanceHeader(QWidget):
     (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4). 일반 컴포넌트 편집 위젯들 위에 얹힌다."""
 
     revert_requested = Signal(int)  # entity_id
+    write_requested = Signal(int, str, bool)
 
     def __init__(self, entity_id: int, prefab_path: str, parent=None):
         super().__init__(parent)
@@ -59,14 +67,13 @@ class PrefabInstanceHeader(QWidget):
         btn_revert.clicked.connect(lambda: self.revert_requested.emit(self.entity_id))
         layout.addWidget(btn_revert)
 
-        # §2.5: v1은 인스턴스 -> 원본 역전파(Apply)를 지원하지 않는다 - 버튼은 두되
-        # 비활성화 + 안내 툴팁으로 "여기 있고, 아직 안 됨"을 명확히 한다(motion_editor.py의
-        # do_import_fbx() 자리표시자와 같은 관례).
         btn_apply = QPushButton("Apply")
         btn_apply.setFixedHeight(22)
-        btn_apply.setEnabled(False)
-        btn_apply.setToolTip("다음 단계에서 지원 예정 (인스턴스 → 원본 역전파)")
+        btn_apply.clicked.connect(lambda: self.write_requested.emit(self.entity_id, prefab_path, False))
         layout.addWidget(btn_apply)
+        variant = QPushButton("Variant…")
+        variant.clicked.connect(lambda: self.write_requested.emit(self.entity_id, prefab_path, True))
+        layout.addWidget(variant)
 
 
 class ComponentWidget(QGroupBox):
@@ -97,8 +104,17 @@ class ComponentWidget(QGroupBox):
         self.content_layout.setSpacing(6)
         outer.addWidget(self.content)
 
+# 축 이름과 색(뷰포트 기즈모와 같은 색 - engine/core/Engine.cpp UpdateTransformGizmo).
+AXIS_COLORS = (("X", "#f25050"), ("Y", "#66e65a"), ("Z", "#5a8cff"))
+# TransformComponent의 세 줄 = 뷰포트 기즈모 도구(0 이동, 1 회전, 2 크기 - core/viewport_manipulation.py MODE_*).
+TRANSFORM_TOOLS = {"position": (0, "✥ 이동", "W"), "rotation": (1, "⟳ 회전", "E"), "scale": (2, "⤢ 크기", "R")}
+
+
 # 0: Int, 1: Float, 2: Bool, 3: Vec3, 4: String, 5: EntityRef, 6: Enum
 class DynamicComponentWidget(ComponentWidget):
+    # TransformComponent에서 줄 이름(이동·회전·크기)을 눌렀다 - 그 기즈모 도구로 바꾼다(InspectorPanel이 받는다).
+    tool_selected = Signal(int)
+
     def __init__(self, comp_name: str, schema_jsonstr: str, entity_id: int, registry, editor_api=None, parent=None):
         super().__init__(f"  {comp_name}", parent)
         self.comp_name = comp_name
@@ -106,6 +122,8 @@ class DynamicComponentWidget(ComponentWidget):
         self.registry = registry
         self.editor_api = editor_api
         self._merge_active = False
+        self._read_only = False
+        self._asset_buttons = {}
         
         schema_data = json.loads(schema_jsonstr) if schema_jsonstr else {}
         self._schema_version = schema_data.get("version", 1)
@@ -114,7 +132,33 @@ class DynamicComponentWidget(ComponentWidget):
         self._fields = {}
         self._building = True
 
+        # bind _on_change with the field name so we can do partial update
+        # Python scoping workaround for lambda in loop
+        def make_change_handler(fname):
+            return lambda *args: self._on_field_change(fname)
+
+        # TransformComponent: 위치·회전·크기를 표 하나로(축 이름은 맨 위 한 줄), 줄 이름은 기즈모 도구 버튼.
+        # 예전에는 줄마다 X·Y·Z 글자가 반복됐고, 도구는 툴바에만 있어 값을 보는 곳과 고르는 곳이 떨어져 있었다.
+        self.tool_buttons = {}
+        self._grid = None
+        if comp_name == "TransformComponent":
+            grid_host = QWidget()
+            self._grid = QGridLayout(grid_host)
+            self._grid.setContentsMargins(0, 0, 0, 0)
+            self._grid.setHorizontalSpacing(4)
+            self._grid.setVerticalSpacing(6)
+            for column, (axis, color) in enumerate(AXIS_COLORS, start=1):
+                header = QLabel(axis)
+                header.setAlignment(Qt.AlignCenter)
+                header.setStyleSheet(f"color: {color}; font-weight: bold;")
+                self._grid.addWidget(header, 0, column)
+                self._grid.setColumnStretch(column, 1)
+            self.content_layout.addWidget(grid_host)
+
         for field in self._schema_fields:
+            if self._grid is not None and field['name'] in TRANSFORM_TOOLS and field['type'] in (3, 7):
+                self._add_transform_row(field, make_change_handler(field['name']))
+                continue
             row = QWidget()
             h = QHBoxLayout(row)
             h.setContentsMargins(0, 0, 0, 0)
@@ -125,12 +169,7 @@ class DynamicComponentWidget(ComponentWidget):
             
             ftype = field['type']
             widget = None
-            
-            # bind _on_change with the field name so we can do partial update
-            # Python scoping workaround for lambda in loop
-            def make_change_handler(fname):
-                return lambda *args: self._on_field_change(fname)
-            
+
             if ftype == 2: # Bool
                 widget = QCheckBox()
                 widget.toggled.connect(make_change_handler(field['name']))
@@ -142,6 +181,8 @@ class DynamicComponentWidget(ComponentWidget):
                 widget.setRange(-999999, 999999)
                 widget.setButtonSymbols(QSpinBox.NoButtons)
                 widget.valueChanged.connect(make_change_handler(field['name']))
+                if self.editor_api is not None:
+                    widget.installEventFilter(self)
                 h.addWidget(widget)
                 
             elif ftype == 1: # Float
@@ -150,29 +191,36 @@ class DynamicComponentWidget(ComponentWidget):
                 widget.setDecimals(3)
                 widget.setButtonSymbols(QDoubleSpinBox.NoButtons)
                 widget.valueChanged.connect(make_change_handler(field['name']))
+                if self.editor_api is not None:
+                    widget.installEventFilter(self)
                 h.addWidget(widget)
                 
             elif ftype == 4: # String
                 widget = QLineEdit()
                 widget.editingFinished.connect(make_change_handler(field['name']))
                 h.addWidget(widget)
+                if comp_name == "RenderableComponent" and field['name'] in ASSET_FIELDS:
+                    button = QPushButton("…")
+                    button.setFixedWidth(28)
+                    button.setToolTip("프로젝트 안의 파일 선택")
+                    button.setEnabled(editor_api is not None)
+                    button.clicked.connect(lambda _=False, name=field['name']: self._browse_asset(name))
+                    self._asset_buttons[field['name']] = button
+                    h.addWidget(button)
                 
             elif ftype in (3, 7): # Vec3 / EulerRotation(오일러 각 도 단위 3개 값 - Reflection.h FieldType)
                 v_layout = QHBoxLayout()
                 v_layout.setSpacing(2)
                 widget = []
-                for axis in ["X", "Y", "Z"]:
-                    v_layout.addWidget(QLabel(axis))
-                    sp = QDoubleSpinBox()
-                    sp.setRange(-99999.0, 99999.0)
-                    sp.setDecimals(2)
-                    sp.setButtonSymbols(QDoubleSpinBox.NoButtons)
-                    sp.valueChanged.connect(make_change_handler(field['name']))
-                    if self._uses_editor_api(field['name']):
-                        sp.installEventFilter(self)
-                    v_layout.addWidget(sp)
+                for axis, color in AXIS_COLORS:
+                    axis_label = QLabel(axis)
+                    axis_label.setFixedWidth(10)
+                    axis_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+                    v_layout.addWidget(axis_label)
+                    sp = self._make_axis_spinbox(make_change_handler(field['name']))
+                    v_layout.addWidget(sp, 1)
                     widget.append(sp)
-                h.addLayout(v_layout)
+                h.addLayout(v_layout, 1)
                 
             elif ftype == 5: # EntityRef
                 # 콤보 항목의 데이터는 runtime id가 아니라 UUID(문자열)다. 엔진은 EntityRef를 UUID로
@@ -279,8 +327,47 @@ class DynamicComponentWidget(ComponentWidget):
             and fname == "position"
         )
 
+    def _make_axis_spinbox(self, on_change):
+        sp = QDoubleSpinBox()
+        sp.setRange(-99999.0, 99999.0)
+        sp.setDecimals(2)
+        sp.setButtonSymbols(QDoubleSpinBox.NoButtons)
+        # 세 칸이 남는 폭을 나눠 쓰게 한다. 예전에는 칸의 최소 폭이 범위 문자열(-99999.00) 길이로 잡혀서
+        # 이름(80px) + 세 칸이 Inspector 폭(약 300px)을 넘었고, Z 칸이 패널 오른쪽 밖으로 밀려 보이지 않았다.
+        sp.setMinimumWidth(36)
+        sp.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        sp.valueChanged.connect(on_change)
+        if self.editor_api is not None:
+            # 입력칸에 포커스가 있는 동안의 키 입력을 Undo 한 번으로 묶는다(병합 세션, eventFilter).
+            sp.installEventFilter(self)
+        return sp
+
+    def _add_transform_row(self, field, on_change):
+        mode, text, key = TRANSFORM_TOOLS[field['name']]
+        row = self._grid.rowCount()
+        button = QPushButton(text)
+        button.setCheckable(True)
+        button.setToolTip(f"{field['displayName']} - 뷰포트 기즈모를 이 도구로 (뷰포트에서 {key})")
+        button.setStyleSheet(
+            f"QPushButton {{ text-align: left; padding: 3px 8px; }}"
+            f"QPushButton:checked {{ background-color: {COLORS['accent']}; color: white; }}")
+        button.clicked.connect(lambda _=False, m=mode: self.tool_selected.emit(m))
+        self.tool_buttons[mode] = button
+        self._grid.addWidget(button, row, 0)
+        spins = []
+        for column in range(3):
+            sp = self._make_axis_spinbox(on_change)
+            self._grid.addWidget(sp, row, column + 1)
+            spins.append(sp)
+        self._fields[field['name']] = {'widget': spins, 'type': field['type']}
+
+    def set_tool(self, mode: int):
+        """지금 기즈모 도구의 줄 이름을 눌린 상태로(버튼을 눌러 꺼진 경우에도 다시 켠다)."""
+        for m, button in self.tool_buttons.items():
+            button.setChecked(m == mode)
+
     def eventFilter(self, obj, event):
-        if not self._uses_editor_api("position"):
+        if self.editor_api is None:
             return super().eventFilter(obj, event)
 
         from PySide6.QtCore import QEvent
@@ -311,7 +398,44 @@ class DynamicComponentWidget(ComponentWidget):
         finally:
             self._merge_active = False
 
+    def _browse_asset(self, fname: str):
+        if self._read_only or self.editor_api is None or not self.registry:
+            return
+        project = current_project()
+        title, file_filter, _, folder = ASSET_FIELDS[fname]
+        start = project.assets_dir / folder
+        current = self._fields[fname]['widget'].text()
+        if current:
+            candidate = Path(current)
+            if not candidate.is_absolute():
+                candidate = project.root / candidate
+            try:
+                project.relative(candidate)
+                if candidate.is_file():
+                    start = candidate
+            except (ValueError, OSError, ProjectError):
+                pass
+        if not start.exists():
+            start = project.root
+        selected, _ = QFileDialog.getOpenFileName(self, title, str(start), file_filter)
+        if not selected or self._read_only or current_project() is not project:
+            return
+        try:
+            relative = project_asset_path(project, fname, selected)
+            entity = to_entity(self.entity_id)
+            values = json.loads(self.registry.GetComponentJson(entity, self.comp_name) or "{}")
+            if values.get(fname) != relative:
+                self.editor_api.set_component_field(
+                    entity, self.comp_name, fname, json.dumps(relative), self._schema_version)
+            # Update the text only after the engine accepts the command.
+            self._fields[fname]['widget'].setText(relative)
+        except Exception as e:
+            QMessageBox.warning(self, title, str(e))
+
     def set_read_only(self, read_only: bool):
+        self._read_only = read_only
+        for button in self._asset_buttons.values():
+            button.setEnabled(not read_only and self.editor_api is not None)
         for data in self._fields.values():
             w = data['widget']
             if isinstance(w, list):
@@ -393,7 +517,26 @@ class DynamicComponentWidget(ComponentWidget):
                 self.editor_api.set_parent(to_entity(self.entity_id), parent)
                 return
 
-            # Partial Single-Field Update calling with schema version protection!
+            if self.editor_api is not None:
+                # 값이 그대로면 명령을 만들지 않는다. 문자열 칸의 editingFinished는 값을 안 바꾸고 포커스만 옮겨도
+                # 오므로, 그대로 두면 아무것도 안 바꿨는데 "저장 안 된 변경"이 켜진다.
+                try:
+                    current = json.loads(self.registry.GetComponentJson(to_entity(self.entity_id), self.comp_name) or "{}")
+                    if current.get(fname) == val:
+                        return
+                except (ValueError, TypeError):
+                    pass   # 비교를 못 하면 그냥 쓴다(명령이 원인을 보고한다)
+                # 증상(2026-10-16 점검, docs/EDITOR_BUGFIX_PLAN_2026-10-22.md F1): position·parent 외 필드
+                # (rotation, scale, 색, 메시 경로 …)를 바꿔도 Undo가 안 됐고, 창 제목 '*'·종료 확인에도 잡히지 않아
+                # 저장하지 않고 닫으면 경고 없이 사라졌다. 크래시도 로그도 없었다.
+                # 원인: 이 필드들은 아래 SetComponentFieldJson으로 레지스트리에 직접 써서 CommandManager를 거치지
+                # 않았다. "저장 안 된 변경"은 CommandManager 변경 카운터로만 판단한다(project_actions.py).
+                # 이제 EditorAPI 명령(SetComponentFieldCommand)으로 보낸다 - 스키마 버전 보호는 명령이 한다.
+                self.editor_api.set_component_field(
+                    to_entity(self.entity_id), self.comp_name, fname, json.dumps(val), self._schema_version)
+                return
+
+            # 엔진 EditorAPI가 연결되지 않은 경우(단독 패널 테스트 등)만 레지스트리에 직접 쓴다 - Undo·변경 표시 없음.
             self.registry.SetComponentFieldJson(
                 to_entity(self.entity_id),
                 self.comp_name, 
@@ -406,6 +549,9 @@ class DynamicComponentWidget(ComponentWidget):
 
 
 class InspectorPanel(QWidget):
+    follow_camera_play_requested = Signal()
+    gizmo_tool_selected = Signal(int)   # Transform 줄 이름(이동·회전·크기)을 눌렀다 - main이 기즈모 도구를 바꾼다
+    authoring_status = Signal(str)
     prefab_revert_status = Signal(str)  # 상태 바 표시용 (성공/실패 메시지 텍스트)
 
     def __init__(self, parent=None):
@@ -414,6 +560,10 @@ class InspectorPanel(QWidget):
         self.editor_api = None
         self._current_entity_id = -1
         self._play_mode = False
+        self.follow_camera = None
+        self.keyboard_movement = None
+        self.transform_widget = None   # 위쪽 고정 영역의 TransformComponent(스크롤에 묻히지 않게)
+        self._gizmo_tool = 0
         self._build_ui()
 
     def _build_ui(self):
@@ -440,6 +590,12 @@ class InspectorPanel(QWidget):
         h.addWidget(self.btn_add_component)
         layout.addWidget(self.name_bar)
 
+        # Keep the task controls inside the visible panel width. Generic Vec3
+        # component rows can make the scroll contents wider than the Inspector.
+        self.authoring_layout = QVBoxLayout()
+        self.authoring_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(self.authoring_layout)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         self.scroll_content = QWidget()
@@ -450,7 +606,11 @@ class InspectorPanel(QWidget):
         layout.addWidget(scroll)
 
     # 메뉴에 내지 않는 컴포넌트: 다른 기능이 관리하는 메타데이터(프리팹 인스턴스 표시는 Instantiate/Create Prefab이 붙인다).
-    _NOT_USER_ADDABLE = {_PREFAB_INSTANCE_COMPONENT_NAME}
+    # KeyboardMovementComponent는 "키보드로 움직이기" 위젯(panels/keyboard_movement.py)만 붙인다. 증상: 이 메뉴로
+    # 붙이면 기본값 enabled=True라 기존 조작 대상과 함께 두 객체가 동시에 움직였고, 카메라에 붙이면 전용 위젯도
+    # 일반 목록도 그리지 않아 Inspector 어디에도 보이지 않았다(지울 방법도 없음). 원인: 메뉴가 위젯의 대상 해제·
+    # 자격 검사(core/keyboard_movement.eligibility)를 거치지 않았다.
+    _NOT_USER_ADDABLE = {_PREFAB_INSTANCE_COMPONENT_NAME, 'KeyboardMovementComponent'}
 
     def addable_components(self, entity_id: int):
         """이 엔티티에 아직 없는, 사용자가 붙일 수 있는 등록 컴포넌트 이름(정렬)."""
@@ -496,8 +656,20 @@ class InspectorPanel(QWidget):
             bool(self.registry and self.editor_api and HAS_ENGINE) and self._current_entity_id >= 0
             and not self._play_mode)
 
+    def set_gizmo_tool(self, mode: int):
+        """지금 기즈모 도구(0 이동, 1 회전, 2 크기)를 Transform 줄 이름에 표시한다. 다시 그려도 유지된다."""
+        self._gizmo_tool = mode
+        if self.transform_widget is not None:
+            self.transform_widget.set_tool(mode)
+
     def set_play_mode(self, is_playing: bool):
         self._play_mode = is_playing
+        if self.transform_widget is not None:
+            self.transform_widget.set_read_only(is_playing)
+        if self.keyboard_movement is not None:
+            self.keyboard_movement.set_read_only(is_playing)
+        if self.follow_camera is not None:
+            self.follow_camera.set_read_only(is_playing)
         self._update_add_button()
         # 위젯 Read-Only 반영
         for i in range(self.scroll_layout.count()):
@@ -519,6 +691,7 @@ class InspectorPanel(QWidget):
 
     @Slot()
     def on_entity_deselected(self):
+        self._clear_authoring_widgets()
         self._current_entity_id = -1
         self._update_add_button()
         while self.scroll_layout.count() > 1:
@@ -527,7 +700,33 @@ class InspectorPanel(QWidget):
                 item.widget().deleteLater()
         self.lbl_entity_name.setText("No Selection")
 
+    def pending_authoring_message(self):
+        if self.keyboard_movement is not None and self.keyboard_movement._speed_dirty:
+            return '이동 속도를 먼저 적용한 뒤 Play로 시험하세요.'
+        if self.follow_camera is not None and self.follow_camera._offset_edited:
+            return '카메라 거리·높이를 먼저 적용한 뒤 Play로 시험하세요.'
+        return ''
+
+    def _clear_authoring_widgets(self):
+        """위쪽 고정 영역(Transform, 키보드로 움직이기, 따라가기 카메라)을 비운다."""
+        if self.transform_widget is not None:
+            self.authoring_layout.removeWidget(self.transform_widget)
+            self.transform_widget.hide()
+            self.transform_widget.deleteLater()
+            self.transform_widget = None
+        if self.keyboard_movement is not None:
+            self.authoring_layout.removeWidget(self.keyboard_movement)
+            self.keyboard_movement.hide()
+            self.keyboard_movement.deleteLater()
+            self.keyboard_movement = None
+        if self.follow_camera is not None:
+            self.authoring_layout.removeWidget(self.follow_camera)
+            self.follow_camera.hide()
+            self.follow_camera.deleteLater()
+            self.follow_camera = None
+
     def _refresh_inspector(self, entity_id: int):
+        self._clear_authoring_widgets()
         while self.scroll_layout.count() > 1:
             item = self.scroll_layout.takeAt(0)
             if item.widget():
@@ -546,6 +745,40 @@ class InspectorPanel(QWidget):
 
                 comps = self.registry.GetRegisteredComponents()
 
+                # Transform은 위쪽 고정 영역 맨 위에 둔다. 예전에는 아래 작업 위젯(키보드·카메라) 뒤 스크롤 영역에 있어
+                # 위치·회전·크기가 패널 아래로 밀려 잘려 보였다. 줄 이름이 기즈모 도구 버튼이다(DynamicComponentWidget).
+                if self.registry.HasTransformComponent(entity):
+                    transform = DynamicComponentWidget(
+                        "TransformComponent", self.registry.GetComponentSchema("TransformComponent"), entity_id,
+                        self.registry, self.editor_api)
+                    transform.set_read_only(self._play_mode)
+                    transform.set_tool(self._gizmo_tool)
+                    transform.tool_selected.connect(self.gizmo_tool_selected.emit)
+                    self.authoring_layout.addWidget(transform)
+                    self.transform_widget = transform
+
+                if self.editor_api and self.registry.HasTransformComponent(entity) and not self.registry.HasCameraComponent(entity):
+                    connected_registry = self.registry
+                    movement = KeyboardMovementWidget(
+                        self.registry, self.editor_api, self.registry.GetEntityUUID(entity),
+                        lambda: (not self._play_mode and self.registry is connected_registry
+                                 and self._current_entity_id == entity_id))
+                    movement.status.connect(self.authoring_status.emit)
+                    movement.play_requested.connect(self.follow_camera_play_requested.emit)
+                    movement.set_read_only(self._play_mode)
+                    self.authoring_layout.addWidget(movement)
+                    self.keyboard_movement = movement
+                    follow = FollowCameraWidget(
+                        self.registry, self.editor_api, self.registry.GetEntityUUID(entity),
+                        lambda: (not self._play_mode and self.registry is connected_registry
+                                 and self._current_entity_id == entity_id))
+                    follow.status.connect(self.authoring_status.emit)
+                    follow.status.connect(lambda _message: movement.reload())
+                    follow.play_requested.connect(self.follow_camera_play_requested.emit)
+                    follow.set_read_only(self._play_mode)
+                    self.authoring_layout.addWidget(follow)
+                    self.follow_camera = follow
+
                 # PrefabInstanceComponent가 있으면 일반 위젯 대신 전용 헤더를 맨 위에 얹는다
                 # (docs/PREFAB_IMPLEMENTATION_PLAN.md §3 Phase 4) - 아래 루프에서는
                 # 이 컴포넌트를 건너뛴다(같은 데이터를 두 번 보여주지 않도록).
@@ -554,11 +787,19 @@ class InspectorPanel(QWidget):
                     prefab_data = json.loads(prefab_json_str)
                     header = PrefabInstanceHeader(entity_id, prefab_data.get("prefabPath", ""))
                     header.revert_requested.connect(self._on_revert_requested)
+                    header.write_requested.connect(self._write_prefab)
+                    header.setEnabled(not self._play_mode)
                     self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, header)
 
                 # 등록된 컴포넌트 스키마 중 데이터가 {} 가 아닌 것들만 UI 생성
                 for c in comps:
                     if c == _PREFAB_INSTANCE_COMPONENT_NAME:
+                        continue
+                    if c == "TransformComponent" and self.transform_widget is not None:
+                        continue   # 위쪽 고정 영역에 이미 있다
+                    # 전용 위젯이 있을 때만 일반 위젯을 생략한다. 카메라처럼 전용 위젯을 그리지 않는 엔티티에 옛 씬
+                    # 파일 등으로 붙어 있으면 일반 위젯으로라도 보여야 한다(실행 시스템은 카메라를 움직이지 않는다).
+                    if c == 'KeyboardMovementComponent' and self.keyboard_movement is not None:
                         continue
                     json_str = self.registry.GetComponentJson(entity, c)
                     if json_str and json_str != "{}":
@@ -568,6 +809,30 @@ class InspectorPanel(QWidget):
                         self.scroll_layout.insertWidget(self.scroll_layout.count() - 1, w)
             except Exception as e:
                 print(f"Inspect Error: {e}")
+
+    def _write_prefab(self, entity_id, source_path, variant):
+        if self._play_mode or not source_path:
+            return
+        try:
+            root = current_project().root
+            source = (root / source_path).resolve()
+            destination = None
+            if variant:
+                path, _ = QFileDialog.getSaveFileName(self, "새 베리언트", str(source.parent / "Variant.prefab.json"), "Prefab (*.prefab.json)")
+                if not path:
+                    return
+                destination = Path(path).resolve()
+                if destination.exists() or not destination.name.endswith(".prefab.json"):
+                    raise ValueError("새 .prefab.json 파일명을 선택하세요.")
+            elif QMessageBox.question(self, "Apply", f"{source.name}에 선택한 인스턴스의 변경을 저장할까요?") != QMessageBox.StandardButton.Yes:
+                return
+            write_instance(ge_python, self.registry, to_entity(entity_id), root, source, destination)
+            self.prefab_revert_status.emit(f"프리팹 저장: {destination or source}")
+        except Exception as error:
+            # Exception 전체를 받는다. 엔진 오류(quarterflying.EngineError)는 RuntimeError의 자식이 아니라서, 예전처럼
+            # (OSError, RuntimeError, ValueError)만 받으면 EntityRef가 있는 인스턴스의 Apply("has an EntityRef field")가
+            # 대화상자 없이 콘솔 트레이스백으로만 끝나 버튼이 고장 난 것처럼 보였다.
+            QMessageBox.warning(self, "프리팹 저장 실패", str(error))
 
     def _on_revert_requested(self, entity_id: int):
         """Revert 버튼 클릭 -> EditorAPI::RevertPrefabInstance 호출 후 인스펙터 갱신

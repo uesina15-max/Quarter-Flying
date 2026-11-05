@@ -8,6 +8,7 @@ namespace Engine
 RemoveComponentCommand::RemoveComponentCommand(ECSRegistry* registry, Entity entity, std::string componentType)
     : registry_(registry)
     , entity_(entity)
+    , entityUUID_(registry && registry->IsValid(entity) ? registry->GetUUID(entity) : UUID(0))
     , componentType_(std::move(componentType))
 {
 }
@@ -19,6 +20,8 @@ std::expected<void, EngineError> RemoveComponentCommand::Apply()
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "RemoveComponentCommand");
     }
 
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!registry_->IsValid(entity_))
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Target entity is not valid", "RemoveComponentCommand");
@@ -67,6 +70,8 @@ std::expected<void, EngineError> RemoveComponentCommand::Undo()
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "RemoveComponentCommand");
     }
 
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!registry_->IsValid(entity_))
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Target entity is not valid", "RemoveComponentCommand");

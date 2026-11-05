@@ -201,6 +201,34 @@ def test_material_texture_missing_is_reported():
     check("'Painted'" in text and "gone.png" in text and "머티리얼" in text, f"머티리얼 텍스처 누락 보고가 없음: {text}")
 
 
+def test_utf8_bom_script_material_and_scene_are_accepted():
+    """Windows 메모장/Visual Studio의 "UTF-8 with BOM"으로 저장한 파일도 빌드가 받아야 한다.
+
+    예전에는 read_text(encoding="utf-8")로 읽어 BOM(U+FEFF)이 남은 채 ast.parse/json.loads에 넘겼다. 그래서 같은 스크립트가
+    에디터 Play(Python import는 BOM 허용)에서는 도는데 빌드는 "스크립트 문법 오류 … U+FEFF"로 멈췄다.
+    """
+    p = new_project("한글 BOM")
+    (p.assets_dir / "textures" / "hull.png").write_bytes(b"png")
+    (p.assets_dir / "materials" / "hull.material.json").write_text(json.dumps({
+        "format": "quarterflying.material", "version": 1, "texture": "assets/textures/hull.png"}), encoding="utf-8-sig")
+    (p.scripts_dir / "player_move.py").write_text("# 플레이어 이동\nSPEED = 3\n\nclass Mover:\n    pass\n",
+                                                  encoding="utf-8-sig")
+    write_scene(p.start_scene_path, [
+        {"uuid": 1, "name": "Ship", "components": {
+            "RenderableComponent": {"materialPath": "assets/materials/hull.material.json"},
+            "ScriptComponent": {"module_name": "player_move", "class_name": "Mover"}}},
+    ])
+    scene_text = p.start_scene_path.read_text(encoding="utf-8")
+    p.start_scene_path.write_text(scene_text, encoding="utf-8-sig")   # 씬 파일도 BOM
+    check(p.start_scene_path.read_bytes()[:3] == b"\xef\xbb\xbf", "테스트 전제: 씬 파일에 BOM이 있어야 함")
+
+    deps = collect_dependencies(p, p.start_scene_path)
+    check(not deps.errors, f"BOM 파일이 에러로 거절됨: {deps.errors}")
+    rel = {p.relative(f) for f in deps.files}
+    for expected in ("scripts/player_move.py", "assets/materials/hull.material.json", "assets/textures/hull.png"):
+        check(expected in rel, f"수집되지 않음: {expected}")
+
+
 def test_pyside_import_gets_specific_warning():
     p = new_project("Qt")
     (p.scripts_dir / "ui.py").write_text("from PySide6.QtWidgets import QLabel\n", encoding="utf-8")
@@ -406,6 +434,7 @@ TESTS = [
     test_dependencies_follow_meshes_textures_actions_clips_and_scripts,
     test_missing_files_fail_with_entity_component_and_path,
     test_material_texture_missing_is_reported,
+    test_utf8_bom_script_material_and_scene_are_accepted,
     test_pyside_import_gets_specific_warning,
     test_non_scene_json_is_rejected,
     test_template_verification_catches_abi_engine_and_tampering,

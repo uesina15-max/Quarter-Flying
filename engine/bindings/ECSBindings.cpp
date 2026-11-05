@@ -7,6 +7,7 @@
 #include "../ecs/Reflection.h"
 #include "../ecs/CameraSystem.h"
 #include "../ecs/Hierarchy.h"
+#include "../ecs/StaticCollision.h"
 #include "../ecs/ScriptContext.h"
 #include "../core/logging/Logger.h"
 #include "../core/CommandManager.h"
@@ -140,6 +141,13 @@ void RegisterRegistryBindings(pybind11::module_& m) {
             &ECSRegistry::GetTransformComponent,
             py::return_value_policy::reference)
         .def("SetTransformPosition", &ECSRegistry::SetTransformPosition)
+        .def("MoveCharacter", [](ECSRegistry& registry, Entity entity, float dx, float dy, float dz) {
+            const glm::vec3 start(ComputeWorldMatrix(registry, entity)[3]);
+            const auto result = MoveCharacter(registry, entity, start, {dx, dy, dz});
+            const auto local = LocalPositionForWorld(registry, entity, result.feet);
+            registry.SetTransformPosition(entity, local.x, local.y, local.z);
+            return py::make_tuple(local.x, local.y, local.z, result.hasGeometry, result.grounded, result.hitCeiling);
+        })
         .def("SetTransformRotation", &ECSRegistry::SetTransformRotation)
         .def("SetTransformScale",    &ECSRegistry::SetTransformScale)
 
@@ -277,6 +285,21 @@ void RegisterActiveCameraBindings(pybind11::module_& m) {
           py::arg("registry"), py::arg("entity"));
     m.def("GetChildren", [](ECSRegistry& registry, Entity entity) { return GetChildren(registry, entity); },
           py::arg("registry"), py::arg("entity"));
+    // 뷰포트 드래그(docs/VIEWPORT_MANIPULATION_PLAN.md): 월드에서 계산한 위치를 로컬 값으로 바꾼다. 부모 행렬 계산은
+    // C++(ComputeWorldMatrix) 한 곳 - 에디터가 부모 회전·스케일을 다시 구현하지 않는다.
+    m.def("GetWorldPosition", [](ECSRegistry& registry, Entity entity) {
+        const glm::vec3 p = glm::vec3(ComputeWorldMatrix(registry, entity)[3]);
+        return py::make_tuple(p.x, p.y, p.z);
+    }, py::arg("registry"), py::arg("entity"));
+    // 월드 회전 (x, y, z, w). 부모 회전을 누적한다(ComputeWorldTransform). 회전 기즈모가 부모 기준 로컬 회전을 구할 때 쓴다.
+    m.def("GetWorldRotation", [](ECSRegistry& registry, Entity entity) {
+        const Quaternion q = ComputeWorldTransform(registry, entity).rotation;
+        return py::make_tuple(q.x, q.y, q.z, q.w);
+    }, py::arg("registry"), py::arg("entity"));
+    m.def("LocalPositionForWorld", [](ECSRegistry& registry, Entity entity, float x, float y, float z) {
+        const glm::vec3 p = LocalPositionForWorld(registry, entity, glm::vec3(x, y, z));
+        return py::make_tuple(p.x, p.y, p.z);
+    }, py::arg("registry"), py::arg("entity"), py::arg("x"), py::arg("y"), py::arg("z"));
 }
 
 void RegisterWorldBindings(pybind11::module_& m) {

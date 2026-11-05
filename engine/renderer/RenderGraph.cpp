@@ -502,8 +502,10 @@ namespace Engine
 
     void RenderGraph::Reset()
     {
-        Logger::Log(LogLevel::Info, "RenderGraph::Reset - Clearing render graph");
-        
+        // Trace: 프레임마다 불린다. 예전에는 Info라서 빌드한 게임(최소 레벨 Info)이 1초에 120줄씩 찍었고, stdout을 읽지
+        // 않는 프로세스가 게임을 띄우면 파이프가 차서 게임이 검은 화면으로 멈췄다(에러 없음).
+        Logger::Log(LogLevel::Trace, "RenderGraph::Reset - Clearing render graph");
+
         passes.clear();
         resources.clear();
         resourceNameMap.clear();
@@ -514,7 +516,7 @@ namespace Engine
         compiled = false;
         nextResourceId = RGTextureHandle(1, 0);  // Start from id=1, generation=0  // Start from 1, 0 is reserved for invalid handle
         
-        Logger::Log(LogLevel::Info, "RenderGraph::Reset - Render graph cleared");
+        Logger::Log(LogLevel::Trace, "RenderGraph::Reset - Render graph cleared");
     }
 
     const RGTexture& RenderGraph::GetResource(RGTextureHandle handle) const

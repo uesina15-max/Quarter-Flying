@@ -61,6 +61,9 @@ MATERIAL_PATH_FIELDS: List[Tuple[str, str]] = [("texture", "project")]
 COMPONENT_PATH_FIELDS: Dict[str, List[Tuple[str, str]]] = {
     "RenderableComponent": [("meshPath", "project"), ("materialPath", "project"), ("texturePath", "project")],
     "ActionPlayerComponent": [("action", "assets")],
+    "UIImageComponent": [("imagePath", "project")],
+    "ParticleStyleComponent": [("sheetPath", "project")],
+    "LocomotionComponent": [(field, "project") for field in ("skeletonPath", "idleClip", "walkClip", "runClip")],
 }
 
 # 빌드 출력 폴더에 있으면 안 되는 것(설계 제약 C4).
@@ -265,7 +268,7 @@ class Dependencies:
 
 def load_scene_document(path: Path) -> dict:
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(path.read_text(encoding="utf-8-sig"))   # BOM 허용: 엔진 SceneIO도 BOM을 건너뛴다(F4)
     except FileNotFoundError:
         raise BuildError(f"씬 파일이 없습니다: {path}") from None
     except (OSError, json.JSONDecodeError) as e:
@@ -366,7 +369,7 @@ def _collect_action_clips(project: Project, action_path: Path, where: str, deps:
 
 def _collect_material_files(project: Project, material_path: Path, where: str, deps: Dependencies) -> None:
     try:
-        doc = json.loads(material_path.read_text(encoding="utf-8"))
+        doc = json.loads(material_path.read_text(encoding="utf-8-sig"))   # BOM 허용(F4, _collect_script_imports 주석)
     except (OSError, json.JSONDecodeError) as e:
         deps.errors.append(f"{where} → 머티리얼 파일을 읽을 수 없습니다: {e}")
         return
@@ -414,7 +417,12 @@ def _collect_script_imports(project: Project, entry: Path, deps: Dependencies) -
                 pending.append(init)
             parent = parent.parent
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            # 증상(2026-10-16 점검, docs/EDITOR_BUGFIX_PLAN_2026-10-22.md F4): Windows 메모장/Visual Studio의
+            # "UTF-8 with BOM"으로 저장한 스크립트가 에디터 Play에서는 도는데, Build Game은
+            # "스크립트 문법 오류: …: invalid non-printable character U+FEFF"로 멈췄다.
+            # 원인: "utf-8" 코덱은 BOM을 지우지 않고 U+FEFF로 남기고, 문자열을 받은 ast.parse는 그것을 문법 오류로 본다.
+            # Python import(Play·Player)는 BOM을 허용한다. "utf-8-sig"는 BOM이 있으면 지우고 없으면 utf-8과 같다.
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
         except SyntaxError as e:
             deps.errors.append(f"스크립트 문법 오류: {path}: {e}")
             continue

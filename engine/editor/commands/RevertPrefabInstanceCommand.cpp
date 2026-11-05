@@ -11,6 +11,7 @@ namespace Engine
 RevertPrefabInstanceCommand::RevertPrefabInstanceCommand(ECSRegistry* registry, Entity entity, std::string projectRoot)
     : registry_(registry)
     , entity_(entity)
+    , entityUUID_(registry && registry->IsValid(entity) ? registry->GetUUID(entity) : UUID(0))
     , projectRoot_(std::move(projectRoot))
 {
 }
@@ -22,6 +23,8 @@ std::expected<void, EngineError> RevertPrefabInstanceCommand::Apply()
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "RevertPrefabInstanceCommand");
     }
 
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!registry_->IsValid(entity_))
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "RevertPrefabInstanceCommand");
@@ -123,6 +126,8 @@ std::expected<void, EngineError> RevertPrefabInstanceCommand::Undo()
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "RevertPrefabInstanceCommand");
     }
 
+    // Stop recreates runtime IDs; the old handle made Undo fail after preview.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!registry_->IsValid(entity_))
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Invalid entity", "RevertPrefabInstanceCommand");

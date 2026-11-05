@@ -8,6 +8,7 @@ namespace Engine
 AddComponentCommand::AddComponentCommand(ECSRegistry* registry, Entity entity, std::string componentType)
     : registry_(registry)
     , entity_(entity)
+    , entityUUID_(registry && registry->IsValid(entity) ? registry->GetUUID(entity) : UUID(0))
     , componentType_(std::move(componentType))
 {
 }
@@ -19,6 +20,8 @@ std::expected<void, EngineError> AddComponentCommand::Apply()
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "AddComponentCommand");
     }
 
+    // Redo may recreate the same UUID with a different runtime entity ID.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!registry_->IsValid(entity_))
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Target entity is not valid", "AddComponentCommand");
@@ -52,6 +55,8 @@ std::expected<void, EngineError> AddComponentCommand::Undo()
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "AddComponentCommand");
     }
 
+    // Redo may recreate the same UUID with a different runtime entity ID.
+    entity_ = registry_->GetEntityByUUID(entityUUID_);
     if (!registry_->IsValid(entity_))
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Target entity is not valid", "AddComponentCommand");

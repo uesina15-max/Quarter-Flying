@@ -3,6 +3,7 @@
 #include "../../core/ICommand.h"
 #include "../../core/Types.h"
 #include "../../ecs/Entity.h"
+#include "../../core/UUID.h"
 #include <string>
 
 namespace Engine
@@ -26,6 +27,7 @@ public:
 private:
     ECSRegistry* registry_;
     Entity entity_;
+    UUID entityUUID_;
     Quaternion oldRotation_;
     Quaternion newRotation_;
 };

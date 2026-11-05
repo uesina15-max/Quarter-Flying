@@ -3,6 +3,7 @@
 #include "System.h"
 #include "Components.h"
 #include "Hierarchy.h"   // ComposeWorldMatrix / ComputeWorldMatrix (예전엔 여기 선언돼 있었다)
+#include "Picking.h"     // LocalBounds
 #include "../renderer/SceneLighting.h"
 #include "../asset/MaterialAsset.h"   // MaterialData(순수 데이터). 파일 읽기는 주입된 로더가 한다
 #include <optional>
@@ -12,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace Engine
 {
@@ -150,6 +152,14 @@ namespace Engine
         uint32_t ResolveTexture(const RenderableComponent& renderable);
         uint32_t ResolveTexture(const std::string& texturePath);
 
+        // 이 컴포넌트가 그리는 메시의 로컬 경계(뷰포트 피킹, ecs/Picking.h). ResolveMeshHandle과 달리 파일을
+        // 불러오지 않는다(GL 불필요) - 아직 불러오지 않았거나 실패한 메시는 그 자리에 그려지는 유닛 큐브의 경계다.
+        LocalBounds GetMeshBounds(const RenderableComponent& renderable) const;
+
+        // 에디터 선택 강조(셰이더의 isSelected). 고른 엔티티와 그 자손의 메시가 강조된다(부모만 고르면 메시가 없는
+        // 경우가 많다 - 예: Lamp). 무엇을 넘길지(Edit 모드에서만 등)는 Engine이 정한다.
+        void SetSelectedEntities(std::vector<Entity> entities) { selected_ = std::move(entities); }
+
         // 경로 기반 메시에 배정하는 내부 핸들의 시작값. RegisterMesh(이름)가 배정하는 핸들은 이보다 작다
         // (에셋 기준 폴더가 바뀌면 이 값 이상만 비운다 - 코드가 등록한 메시는 남는다).
         static constexpr uint32_t kPathHandleBase = 0x40000000u;
@@ -160,6 +170,8 @@ namespace Engine
 
         InstancedBatchManager* batchManager_;
         SceneLighting* lightingTarget_ = nullptr;
+        std::vector<Entity> selected_;
+        bool IsSelected(ECSRegistry& registry, Entity entity) const;
         // 직전 프레임에 고른 라이트(로그는 선택이 바뀔 때만 남긴다 - 매 프레임 같은 경고가 쌓이지 않게).
         uint64_t lastLightUuid_ = ~0ull;
         size_t lastLightCandidates_ = ~size_t(0);

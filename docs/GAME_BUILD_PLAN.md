@@ -260,7 +260,9 @@ MyProject/
 │  ├─ models/ textures/ fonts/ prefabs/ actions/ sfx/ motion/
 │  └─ input/actions.json       # 입력 액션 맵(USABILITY_IMPROVEMENT_PLAN G0a, 2026-10-15). 새 프로젝트는 빈 맵
 ├─ scenes/Main.scene.json
-└─ scripts/player_controller.py        # ScriptComponent.moduleName이 가리키는 모듈
+├─ scripts/player_controller.py        # ScriptComponent.moduleName이 가리키는 모듈
+└─ .quarterflying/session.json # 에디터 세션(2026-10-16): 열어 둔 씬·액션, 에디터 카메라, 모드. 사용자별 상태 -
+                               # 버전 관리·빌드 출력에 넣지 않는다(editor/project/session.py)
 ```
 
 인게임 UI용 레이아웃 파일은 따로 없다. UI 요소는 씬·프리팹 안의 ECS 컴포넌트이고, 이미지는 `textures/`, 폰트는 `fonts/`의 파일을 컴포넌트가 경로로 참조한다(UI 계획 §3.2 기준).

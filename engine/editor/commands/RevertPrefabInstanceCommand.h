@@ -2,6 +2,7 @@
 
 #include "../../core/ICommand.h"
 #include "../../ecs/Entity.h"
+#include "../../core/UUID.h"
 #include "../../prefab/PrefabAsset.h"
 #include "EntitySnapshot.h"
 #include <nlohmann/json.hpp>
@@ -41,6 +42,7 @@ public:
 private:
     ECSRegistry* registry_;
     Entity       entity_;
+    UUID entityUUID_;
     std::string  projectRoot_;   // prefabPath가 상대 경로일 때의 기준(core/ProjectPath.h)
     bool         applied_ = false;
 

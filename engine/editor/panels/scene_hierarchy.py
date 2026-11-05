@@ -14,6 +14,7 @@ from PySide6.QtGui import QIcon, QColor, QBrush, QFont, QAction, QKeySequence, Q
 
 from style.theme import COLORS
 from project import current_project
+from scene_authoring import PRESET_COMPONENTS, create_scene_preset
 
 # 엔진 모듈이 없는 경우에도 더미 모드로 동작
 from engine_binding import binding as ge_python, HAS_ENGINE, to_entity
@@ -118,6 +119,7 @@ class SceneHierarchyPanel(QWidget):
         # clear()하면 진행 중인 드래그가 끊기고 접어 둔 항목이 다시 펼쳐졌다.
         self._last_structure = None
         self._collapsed_ids = set()
+        self._edit_enabled = True     # Play 중 False(set_edit_shortcuts_enabled)
 
         self._build_ui()
         self._connect_signals()
@@ -172,7 +174,7 @@ class SceneHierarchyPanel(QWidget):
         h.setContentsMargins(6, 2, 6, 2)
         h.setSpacing(4)
 
-        self.btn_create = QPushButton("＋ Entity")
+        self.btn_create = QPushButton("＋ Create")
         self.btn_create.setObjectName("btn_create")
         self.btn_create.setFixedHeight(22)
         self.btn_create.setToolTip("새 엔티티 생성")
@@ -205,7 +207,7 @@ class SceneHierarchyPanel(QWidget):
         self.tree.reparent_requested.connect(self._on_reparent_requested)
         self.tree.itemCollapsed.connect(lambda item: self._collapsed_ids.add(getattr(item, "entity_id", None)))
         self.tree.itemExpanded.connect(lambda item: self._collapsed_ids.discard(getattr(item, "entity_id", None)))
-        self.btn_create.clicked.connect(self.create_entity)
+        self.btn_create.clicked.connect(self._show_create_menu)
         self.btn_delete.clicked.connect(self.delete_selected_entity)
         self.ed_filter.textChanged.connect(lambda _: self._apply_filter())
 
@@ -215,8 +217,16 @@ class SceneHierarchyPanel(QWidget):
         self._shortcut_duplicate = widget_shortcut(QKeySequence("Ctrl+D"), self.tree, self.duplicate_selected_entity)
 
     def set_edit_shortcuts_enabled(self, enabled: bool):
+        """Play 중(enabled=False)에는 계층 편집을 막는다: 단축키, 생성·삭제 버튼, 컨텍스트 메뉴의 편집 항목, 드래그 재부모화.
+        예전에는 단축키만 껐다 - 버튼·메뉴로 만든 변경은 Play 월드에 들어갔다가 Stop 때 안내 없이 사라졌다(F2)."""
+        self._edit_enabled = enabled
         self._shortcut_delete.setEnabled(enabled)
         self._shortcut_duplicate.setEnabled(enabled)
+        self.btn_create.setEnabled(enabled)
+        self.btn_delete.setEnabled(enabled)
+        tip = "" if enabled else " (Play 중에는 편집할 수 없습니다)"
+        self.btn_create.setToolTip("새 엔티티 생성" + tip)
+        self.btn_delete.setToolTip("선택한 엔티티 삭제" + tip)
 
     def duplicate_selected_entity(self):
         items = self._selected_root_items()
@@ -475,6 +485,34 @@ class SceneHierarchyPanel(QWidget):
     # 엔티티 생성/삭제
     # ----------------------------------------------------------------
 
+    def _populate_create_menu(self, menu):
+        menu.addAction("Empty Entity", self.create_entity)
+        menu.addSeparator()
+        for preset in PRESET_COMPONENTS:
+            action = menu.addAction(preset, lambda _=False, name=preset: self.create_preset(name))
+            action.setEnabled(bool(self.registry is not None and self.editor_api is not None
+                                   and HAS_ENGINE and self._edit_enabled))
+
+    def _show_create_menu(self):
+        if not self._edit_enabled:
+            return
+        menu = QMenu(self)
+        self._populate_create_menu(menu)
+        menu.exec(self.btn_create.mapToGlobal(self.btn_create.rect().bottomLeft()))
+
+    def create_preset(self, preset):
+        if not self._edit_enabled or self.registry is None or self.editor_api is None or not HAS_ENGINE:
+            return
+        try:
+            entity = create_scene_preset(self.editor_api, self.registry, preset)
+            self._selected_entity_id = entity.id
+            self.ed_filter.clear()  # A new object must not be hidden by the old search.
+            self.hierarchy_status.emit(f"{preset} 생성 완료 (Ctrl+Z 한 번으로 되돌리기)")
+        except Exception as e:
+            self.hierarchy_status.emit(f"{preset} 생성 실패: {e}")
+        self._last_structure = None
+        self.refresh_from_engine()
+
     def create_entity(self):
         """새 엔티티 생성 (엔진 연동 시 ECS에도 반영).
 
@@ -483,6 +521,8 @@ class SceneHierarchyPanel(QWidget):
         복원되게 한다(엔진이 부여하는 런타임 id는 생성 전엔 알 수 없으므로 모노토닉 카운터로 이름을
         짓는다). 생성 후에는 삭제/복제와 같이 refresh_from_engine()이 엔진 기준으로 트리를 다시 그린다.
         """
+        if not self._edit_enabled:
+            return
         if self.registry and self.editor_api and HAS_ENGINE:
             name = f"Entity_{self._dummy_counter}"
             self._dummy_counter += 1
@@ -576,10 +616,12 @@ class SceneHierarchyPanel(QWidget):
     def _on_context_menu(self, pos):
         item = self.tree.itemAt(pos)
         menu = QMenu(self)
+        if not self._edit_enabled:
+            menu.addAction("Play 중에는 편집할 수 없습니다").setEnabled(False)
+            menu.exec(self.tree.viewport().mapToGlobal(pos))
+            return
 
-        action_create = QAction("➕  Create Entity", self)
-        action_create.triggered.connect(self.create_entity)
-        menu.addAction(action_create)
+        self._populate_create_menu(menu.addMenu("Create"))
 
         if item and isinstance(item, EntityItem):
             menu.addSeparator()
@@ -643,6 +685,9 @@ class SceneHierarchyPanel(QWidget):
         if not (self.registry and self.editor_api and HAS_ENGINE):
             self.hierarchy_status.emit("엔진에 연결돼 있어야 부모를 바꿀 수 있습니다")
             return
+        if not self._edit_enabled:
+            self.hierarchy_status.emit("Play 중에는 부모를 바꿀 수 없습니다")
+            return
         try:
             parent = to_entity(new_parent_id) if new_parent_id else None
             self.editor_api.set_parent(to_entity(child_id), parent)
@@ -688,6 +733,32 @@ class SceneHierarchyPanel(QWidget):
     # ----------------------------------------------------------------
     # Public API
     # ----------------------------------------------------------------
+
+    def select_entity(self, entity_id: int):
+        """트리 바깥(뷰포트 클릭)에서 고른 엔티티를 선택한다. -1이면 선택 해제. 트리 클릭과 같은 신호
+        (entity_selected / entity_deselected)로 나가므로 Inspector·상태바·강조가 같은 경로로 바뀐다."""
+        from PySide6.QtWidgets import QTreeWidgetItemIterator
+        from PySide6.QtCore import QModelIndex
+        if entity_id < 0:
+            self.tree.clearSelection()
+            self.tree.setCurrentIndex(QModelIndex())   # currentItemChanged(None) -> entity_deselected
+            return
+        for attempt in range(2):
+            it = QTreeWidgetItemIterator(self.tree)
+            while it.value():
+                item = it.value()
+                if isinstance(item, EntityItem) and item.entity_id == entity_id:
+                    if item.isHidden():   # 검색어에 걸려 숨겨진 항목이면 검색을 풀어 보이게 한다
+                        self.ed_filter.clear()
+                    self.tree.setCurrentItem(item)
+                    self.tree.scrollToItem(item)   # 접힌 부모를 펼친다
+                    return
+                it += 1
+            if attempt == 0:
+                # 방금 만든 엔티티라 트리(500ms 주기 갱신)에 아직 없다 - 한 번 다시 그리고 찾는다.
+                self._last_structure = None
+                self.refresh_from_engine()
+        print(f"[SceneHierarchy] 선택할 엔티티 {entity_id}가 트리에 없습니다")
 
     def get_selected_entity_id(self) -> int:
         return self._selected_entity_id

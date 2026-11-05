@@ -29,6 +29,7 @@ layout(location = 11) in uint  aIsSelected;    // 안 씀
 layout(location = 12) in float aAlpha;
 
 out vec2  TexCoords;
+out vec2 SheetUV;
 out vec3  Color;
 out float Alpha;
 
@@ -38,11 +39,26 @@ uniform mat4 projection;
 void main()
 {
     TexCoords = aTexCoords;
+    uint cols = max(1u, aEntityId & 255u);
+    uint rows = max(1u, (aEntityId >> 8u) & 255u);
+    uint frame = min(aIsSelected, rows * cols - 1u);
+    SheetUV = (aTexCoords + vec2(frame % cols, rows - 1u - frame / cols)) / vec2(cols, rows);
     Color     = aInstanceColor;
     Alpha     = aAlpha;
 
     // 빌보드 회전은 CPU(ParticleSystem::CollectInstances)가 aModel에 이미 넣어뒀다.
-    gl_Position = projection * view * aModel * vec4(aPos, 1.0);
+    mat4 model = aModel;
+    if (model[3].w <= 0.0) {
+        float age = -model[3].w;
+        vec3 velocity = vec3(model[0].w, model[1].w, model[2].w);
+        float drag = aMetallic;
+        float travel = drag > 0.001 ? (1.0 - exp(-drag * age))/drag : age;
+        float drop = drag > 0.001 ? (age - travel)/drag : 0.5*age*age;
+        model[3].xyz += velocity * travel + vec3(0, aRoughness * drop, 0);
+        model[0].w = model[1].w = model[2].w = 0.0;
+        model[3].w = 1.0;
+    }
+    gl_Position = projection * view * model * vec4(aPos, 1.0);
 }
 )GLSL";
 
@@ -58,12 +74,20 @@ void main()
         const char* kFragmentSrc = R"GLSL(
 #version 330 core
 in vec2  TexCoords;
+in vec2 SheetUV;
+uniform int uHasTexture;
+uniform sampler2D uTexture;
 in vec3  Color;
 in float Alpha;
 out vec4 FragColor;
 
 void main()
 {
+    if (uHasTexture != 0) {
+        vec4 sprite = texture(uTexture, SheetUV);
+        FragColor = vec4(sprite.rgb * Color * sprite.a * Alpha, 1.0);
+        return;
+    }
     float d    = length(TexCoords - vec2(0.5));
     float mask = 1.0 - smoothstep(0.35, 0.5, d);
     if (mask <= 0.0) discard;   // 모서리 픽셀은 블렌딩 비용조차 내지 않는다

@@ -52,6 +52,8 @@ std::expected<void, EngineError> CreateEntityCommand::Undo()
         return MakeError(EngineErrorCode::NotInitialized, "ECS registry not set", "CreateEntityCommand");
     }
 
+    // Preview restores the UUID with a new runtime ID.
+    createdEntity_ = registry_->GetEntityByUUID(savedUUID_);
     if (!registry_->IsValid(createdEntity_))
     {
         return MakeError(EngineErrorCode::EntityNotFound, "Entity is no longer valid", "CreateEntityCommand");

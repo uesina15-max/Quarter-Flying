@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "../prefab/PrefabAsset.h"
+#include <fstream>
 #include "../prefab/PrefabInstanceComponent.h"
 #include "../ecs/ECSRegistry.h"
 #include "../ecs/Components.h"
@@ -8,6 +9,27 @@
 #include <fstream>
 
 using namespace Engine;
+
+TEST(PrefabVariants, InheritsBaseChangesAndRejectsCycles)
+{
+    const auto folder = std::filesystem::temp_directory_path() / UUID::Generate().ToString();
+    ASSERT_TRUE(std::filesystem::create_directory(folder));
+    const auto base = folder / "base.prefab.json";
+    const auto variant = folder / "variant.prefab.json";
+    std::ofstream(variant) << R"({"variantVersion":1,"base":"base.prefab.json","overrides":[{"path":[],"components":{"TransformComponent":{"position":[2,0,0]}}}]})";
+    for (int scale : {1, 3}) {
+        std::ofstream(base) << R"({"version":1,"name":"Base","components":{"TransformComponent":{"scale":[)" << scale << R"(,1,1]}}})";
+        auto loaded = PrefabAsset::LoadFromFile(variant);
+        ASSERT_TRUE(loaded) << loaded.error().message;
+        EXPECT_EQ(loaded->componentsData["TransformComponent"]["position"][0], 2);
+        EXPECT_EQ(loaded->componentsData["TransformComponent"]["scale"][0], scale);
+    }
+    std::ofstream(base) << R"({"variantVersion":1,"base":"variant.prefab.json","overrides":[]})";
+    EXPECT_FALSE(PrefabAsset::LoadFromFile(variant));
+    std::filesystem::remove(base);
+    std::filesystem::remove(variant);
+    std::filesystem::remove(folder);
+}
 
 namespace
 {

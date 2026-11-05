@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1664"
+  height="928"
+  viewBox="0 0 1664 928"
+  fill="none"
+>
+  <title>Quarter Flying QF Logo</title>
+
+  <!-- Q : outer circular stroke -->
+  <path
+    d="M 620 742
+       A 360 360 0 1 1 752 610"
+    stroke="#050505"
+    stroke-width="90"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Q : top-left quarter -->
+  <path
+    d="M 440 430
+       L 180 430
+       A 260 260 0 0 1 440 170
+       Z"
+    fill="#050505"
+  />
+
+  <!-- Q : bottom-right quarter -->
+  <path
+    d="M 440 430
+       L 700 430
+       A 260 260 0 0 1 440 690
+       Z"
+    fill="#050505"
+  />
+
+  <!-- Q : tail -->
+  <path
+    d="M 585 690 L 820 892"
+    stroke="#050505"
+    stroke-width="92"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- F : vertical stem -->
+  <rect
+    x="960"
+    y="60"
+    width="155"
+    height="800"
+    rx="72"
+    fill="#050505"
+  />
+
+  <!-- F : upper arm -->
+  <rect
+    x="960"
+    y="60"
+    width="650"
+    height="135"
+    rx="67.5"
+    fill="#050505"
+  />
+
+  <!-- F : middle arm -->
+  <rect
+    x="960"
+    y="355"
+    width="535"
+    height="120"
+    rx="60"
+    fill="#050505"
+  />
+</svg>

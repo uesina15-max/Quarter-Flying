@@ -289,6 +289,8 @@ namespace Engine
         float sizeVariance;
         float rotationVariance;
 
+        bool operator==(const ParticleEffectComponent&) const = default;   // 필드를 추가해도 비교에서 빠지지 않는다
+
         // 기본값은 범위 정의서 §4.3의 에디터 폼 예시(작은 불꽃)와 §5.3의
         // "Max: 256" 예시를 그대로 따른다.
         ParticleEffectComponent()

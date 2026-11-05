@@ -9,6 +9,8 @@
 #include "../animation/MotionPreviewState.h"
 #include "../input/InputState.h"
 #include "../input/InputActions.h"
+#include "../ecs/Picking.h"
+#include "../renderer/TransformGizmo.h"
 #include "EngineError.h"
 #include "EngineConfig.h"
 #include <memory>
@@ -20,12 +22,15 @@
 #include <utility>
 #include <mutex>
 #include <functional>
+#include <optional>
+#include <array>
 
 namespace Engine
 {
     // Forward declarations
     class World;
     class WorldManager;
+    class GameOverlay;
     class JobSystem;
 
 
@@ -98,6 +103,7 @@ namespace Engine
         bool IsRunning() const { return isRunning; }
         float GetDeltaTime() const { return deltaTime; }
         uint64_t GetFrameCount() const { return frameCount; }
+        const std::array<double,3>& GetFrameCosts() const { return frameCosts; }
 
         IPlatform* GetPlatform() const { return platform.get(); }
 
@@ -116,6 +122,27 @@ namespace Engine
         void SetViewCamera(ViewCamera which);
         ViewCamera GetViewCamera() const { return viewCamera; }
         void SetEditorCameraView(float eyeX, float eyeY, float eyeZ, float targetX, float targetY, float targetZ);
+
+        // 에디터 뷰포트 조작(docs/VIEWPORT_MANIPULATION_PLAN.md). 화면 좌표는 정규화 장치 좌표(-1..1, y 위가 +)라서
+        // 창 크기·DPI와 무관하다. 광선은 지금 뷰포트가 그리는 카메라(SetViewCamera)로 만든다 - 그린 카메라와 다른
+        // 카메라로 계산하면 클릭한 곳과 다른 물체가 잡힌다.
+        std::optional<PickRay> GetViewRay(float ndcX, float ndcY) const;
+        // 활성 World에서 그 화면 점 아래 가장 가까운 엔티티(ecs/Picking.h 규칙). 없으면 nullopt.
+        std::optional<PickHit> PickEntityAtScreen(float ndcX, float ndcY);
+        // 선택 강조. 활성 World가 Edit 상태일 때만 그린다(Play 화면에는 에디터 표시가 없어야 한다).
+        void SetSelectedEntities(std::vector<Entity> entities) { selectedEntities = std::move(entities); }
+        // 변환 기즈모(renderer/TransformGizmo.h, 이동·회전·크기). 고른 엔티티가 하나이고 Transform이 있을 때, Edit
+        // 상태에서 에디터 카메라로 볼 때만 있다. 잡기는 마지막으로 그린 기즈모 기준이다(화면에 보이는 것과 같은 것).
+        struct GizmoPick
+        {
+            GizmoHandle handle = GizmoHandle::None;
+            Entity entity;
+            TransformGizmo gizmo;   // 잡은 기즈모(원점·축 방향·길이) - 에디터가 끌기 계산에 그대로 쓴다
+        };
+        std::optional<GizmoPick> PickGizmoAt(float ndcX, float ndcY) const;
+        void SetGizmoHighlight(GizmoHandle handle) { gizmoHighlight = handle; }
+        void SetGizmoMode(GizmoMode mode) { gizmoMode = mode; }
+        GizmoMode GetGizmoMode() const { return gizmoMode; }
 
         // Test-only method to access frame allocator state
         #ifdef ENABLE_TESTS
@@ -164,6 +191,7 @@ namespace Engine
         bool isRunning;
         bool initialized;
         float deltaTime;
+        std::array<double,3> frameCosts{};
         uint64_t frameCount;
 
         // Window handle
@@ -182,7 +210,15 @@ namespace Engine
 
         // 에디터 전용 카메라(ViewCamera::Editor). 투영은 defaultCamera와 같게 유지한다(HandleWindowResize).
         std::unique_ptr<Camera> editorCamera;
+        std::vector<Entity> selectedEntities;   // SetSelectedEntities - TickFrame이 Edit 상태일 때만 RenderSystem에 넘긴다
+        std::optional<TransformGizmo> gizmo;         // 마지막 프레임에 그린 기즈모(없으면 nullopt)
+        Entity gizmoTarget;
+        GizmoMode gizmoMode = GizmoMode::Move;
+        GizmoHandle gizmoHighlight = GizmoHandle::None;
+        uint32_t viewportPixelWidth = 0, viewportPixelHeight = 0;   // HandleWindowResize가 갱신(기즈모 잡기 허용 거리)
+        void UpdateTransformGizmo();
         ViewCamera viewCamera = ViewCamera::Game;
+        std::unique_ptr<GameOverlay> gameOverlay;
 
         // Motion Mixer 프리뷰 상태 (Phase 4A). Renderer가 매 프레임 읽어서 그린다.
         std::unique_ptr<MotionPreviewState> motionPreviewState;

@@ -6,6 +6,7 @@
 #include "../ecs/ECSRegistry.h"  // EditorAPI.h only forward-declares ECSRegistry; pybind11's
                                   // __is_base_of type-trait checks need the complete type here.
 #include "../core/Types.h"
+#include "../prefab/PrefabAsset.h"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/stl/filesystem.h>
@@ -20,6 +21,20 @@ namespace Engine::Bindings
 void RegisterEditorBindings(pybind11::module_& m)
 {
     py::register_exception<EngineException>(m, "EngineError");
+    m.def("ReadPrefab", [](const std::filesystem::path& path, const std::string& root) {
+        return UnwrapOrThrow(PrefabAsset::LoadFromFile(path, root)).ToJson().dump();
+    });
+    m.def("SnapshotPrefab", [](ECSRegistry& registry, Entity entity) {
+        return UnwrapOrThrow(PrefabAsset::CaptureFromEntity(registry, entity)).ToJson().dump();
+    });
+    // 프리팹 파일을 "지금 스폰하면 나올 모습"으로 돌려준다(임시 레지스트리에 스폰한 뒤 SnapshotPrefab과 같은 경로로 캡처).
+    // 인스턴스 스냅샷과 필드 하나하나 비교하려면 양쪽이 같은 경로를 지나야 한다(core/prefab_variants.py).
+    m.def("SnapshotPrefabFile", [](const std::filesystem::path& path, const std::string& root) {
+        const PrefabAsset asset = UnwrapOrThrow(PrefabAsset::LoadFromFile(path, root));
+        ECSRegistry scratch;
+        const auto entities = UnwrapOrThrow(asset.SpawnHierarchyInto(scratch));
+        return UnwrapOrThrow(PrefabAsset::CaptureFromEntity(scratch, entities.front())).ToJson().dump();
+    }, py::arg("path"), py::arg("root"));
 
     py::class_<Editor::EditorAPI>(m, "EditorAPI")
         .def_static("get_instance", &Editor::EditorAPI::GetInstance, py::return_value_policy::reference)
@@ -87,7 +102,12 @@ void RegisterEditorBindings(pybind11::module_& m)
         })
         .def("remove_component", [](Editor::EditorAPI& self, Entity entity, const std::string& componentType) {
             UnwrapOrThrow(self.RemoveComponent(entity, componentType));
-        });
+        })
+        // Inspector의 일반 필드 편집(docs/EDITOR_BUGFIX_PLAN_2026-10-22.md F1). json_value는 json.dumps 결과.
+        .def("set_component_field", [](Editor::EditorAPI& self, Entity entity, const std::string& componentType,
+                                       const std::string& fieldName, const std::string& jsonValue, uint32_t expectedVersion) {
+            UnwrapOrThrow(self.SetComponentField(entity, componentType, fieldName, jsonValue, expectedVersion));
+        }, py::arg("entity"), py::arg("component"), py::arg("field"), py::arg("json_value"), py::arg("expected_version"));
 
     // CommandManager is a singleton only ever exposed by reference via get_instance()
     // (never constructed or owned from the Python side), and it isn't copyable (holds

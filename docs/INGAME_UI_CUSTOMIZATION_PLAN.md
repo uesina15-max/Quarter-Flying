@@ -1,5 +1,15 @@
 # 인게임 UI 커스터마이징 기능 구현 계획서
 
+## 2026-11-04 구현된 Windows Player UI
+
+Inspector에서 객체에 `RectTransformComponent`를 추가한다. `x`와 `y`는 화면 왼쪽 위 기준 픽셀이고, 부모에 Rect가 있으면 부모의 위치에 더한다. `width`와 `height`는 표시 영역이다. 여러 요소가 겹치면 `order`가 큰 요소가 위에 표시된다. 부모에 `CanvasComponent`를 추가하고 `enabled`를 끄면 그 아래의 UI를 함께 숨긴다.
+
+- 텍스트는 같은 객체에 `UITextComponent`를 추가하고 `text`와 `fontSize`를 지정한다.
+- 이미지는 `UIImageComponent.imagePath`에 `assets/textures/button.png` 같은 프로젝트 상대 경로를 넣는다. Build Game이 이 파일을 출력 폴더로 복사한다.
+- 버튼은 `UIButtonComponent`를 추가한다. 같은 객체의 게임 스크립트에 인자 없는 `on_ui_enter(self)`, `on_ui_exit(self)`, `on_ui_click(self)`을 구현하면 해당 입력을 받는다. 클릭은 최상단의 같은 활성 버튼에서 왼쪽 버튼을 누르고 뗄 때 발생한다. 콜백 안에서도 `on_update`처럼 `quarterflying.input`과 `quarterflying.script`를 쓸 수 있다. 일시정지 중에는 UI가 화면에 남지만 콜백은 불리지 않는다.
+
+씬을 저장한 후 Play 또는 독립 Player에서 결과를 확인한다. 현재 구현은 픽셀 단위 배치와 Windows 시스템 글꼴을 사용한다. 아래의 앵커, 자동 레이아웃, 전용 UI 편집 패널은 후속 계획이다.
+
 **작성일**: 2026-09-19
 **목표**: 프리팹 시스템을 기반으로 인게임 UI를 커스텀 구현할 수 있는 기능을 추가하여, 실사용 가능한 수준으로 발전시키는 방안 제시
 

@@ -102,6 +102,7 @@ add_executable(SimpleEngineTests
     GameConfigTests.cpp
     ../runtime/GameConfig.cpp
     AddRemoveComponentCommandTests.cpp
+    SetComponentFieldCommandTests.cpp
     EditorCommandIntegrationTests.cpp
 
     # --- Editor Command Sources ---
@@ -117,6 +118,7 @@ add_executable(SimpleEngineTests
     ../editor/commands/RevertPrefabInstanceCommand.cpp
     ../editor/commands/EntitySnapshot.cpp
     ../editor/commands/SetParentCommand.cpp
+    ../editor/commands/SetComponentFieldCommand.cpp
 
     # --- RenderGraph Tests ---
     HandleTypeContractTests.cpp
@@ -149,6 +151,9 @@ add_executable(SimpleEngineTests
 
     # --- Camera rig (C5/C6) + InputState ---
     CameraRigTests.cpp
+
+    # --- 에디터 뷰포트 피킹 (docs/VIEWPORT_MANIPULATION_PLAN.md) ---
+    PickingTests.cpp
 
     # --- 입력 라우팅 + 포커스 상실 (USABILITY_IMPROVEMENT_PLAN E-2) ---
     InputRoutingTests.cpp
@@ -199,6 +204,9 @@ ${RENDERER_SOURCES}
 # glfw: 프로젝트 전체에서 이미 제거된 의존성인데("GLFW dependency excluded" - Dependencies.cmake)
 # 이 링크 목록에만 죽은 참조로 남아 있어서 링크 단계에서 LNK1181로 실패하고 있었다. 제거.
 target_link_libraries(SimpleEngineTests PRIVATE gtest rapidcheck fmt::fmt glm::glm nlohmann_json::nlohmann_json glew_s tinyobjloader)
+if(WIN32)
+    target_link_libraries(SimpleEngineTests PRIVATE gdiplus)
+endif()
 # STB_INCLUDE_DIR: ASSET_SOURCES의 TextureImporter.cpp가 stb_image.h를 쓴다.
 target_include_directories(SimpleEngineTests PRIVATE ${GLEW_TRUE_INCLUDE_DIR} ${STB_INCLUDE_DIR})
 # ScriptSystem.cpp는 pybind11/Python이 필요해 위 ECS_SOURCES에서 빠져 있다. Engine.cpp가 World에
